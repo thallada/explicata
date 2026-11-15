@@ -1,0 +1,29 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { defineConfig } from "@playwright/test";
+
+// IE_E2E_PORT lets two runs go side by side.
+const PORT = Number(process.env.IE_E2E_PORT ?? 4760);
+// Each run gets an empty data directory, so it starts from a freshly seeded document.
+const data = process.env.IE_E2E_DATA ?? mkdtempSync(join(tmpdir(), "ie-e2e-"));
+process.env.IE_E2E_DATA = data;
+
+export default defineConfig({
+  testDir: "e2e",
+  timeout: 60_000,
+  workers: 1,
+  reporter: [["list"]],
+  use: { baseURL: `http://localhost:${PORT}`, viewport: { width: 1440, height: 900 } },
+  webServer: {
+    // The production build with the deterministic mock model: what is measured is the app's
+    // own pipeline, not a model's speed.
+    // Each port builds into its own directory: two runs side by side must not rebuild the files the
+    // other is serving.
+    command: `npx vite build --outDir dist-e2e-${PORT} --emptyOutDir && npx tsx server/index.ts`,
+    env: { IE_DIST: `dist-e2e-${PORT}`, IE_PROD: "1", IE_LLM: "mock", IE_MOCK_DELAY: "10", IE_DATA: data, PORT: String(PORT), IE_USER: "tester", IE_WIKI: "mock", IE_EMBED: "fake", IE_WIKI_MOCK_BULK_MS: "60" },
+    url: `http://localhost:${PORT}/api/state`,
+    reuseExistingServer: false,
+    timeout: 60_000,
+  },
+});

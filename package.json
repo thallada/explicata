@@ -1,0 +1,41 @@
+{
+  "name": "infinispand",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A document you can expand without limit: an outline whose every node, sentence and word opens further, written ahead or by a model, versioned like git.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "tsx server/index.ts",
+    "build": "vite build",
+    "start": "IE_PROD=1 tsx server/index.ts",
+    "e2e": "playwright test",
+    "check": "tsc --noEmit",
+    "verify": "tsx scripts/verify.ts",
+    "fixtures": "tsx scripts/fixtures.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.325",
+    "@anthropic-ai/sdk": "^1.8.0",
+    "@fontsource-variable/source-sans-3": "^5.3.1",
+    "@fontsource-variable/source-serif-4": "^5.3.1",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@huggingface/transformers": "^4.3.2",
+    "loro-crdt": "^1.17.1",
+    "parse5": "^8.1.1",
+    "preact": "^11.2.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "@preact/preset-vite": "^2.10.6",
+    "@types/node": "^26.6.6",
+    "fast-check": "^4.10.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.8",
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.6.0",
+    "vitest": "^3.2.7"
+  }
+}
