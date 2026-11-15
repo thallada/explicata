@@ -1,0 +1,554 @@
+/*
+ * Typography and palette follow gwern.net (values read from its source): a serif body in
+ * grayscale, indented justified paragraphs, underlines only on things that respond, and
+ * visual differences only where there is a difference in meaning.
+ */
+:root {
+  --bg: #fff;
+  --fg: #000;
+  --soft: #333;
+  --dim: #666;
+  --faint: #888;
+  --rule: #bbb;
+  --hair: #e4e4e4;
+  --wash: #f5f5f5;
+  --sel: #e9e9e9;
+  --sel-strong: #d6d6d6;
+  --src: #f1efe6;
+  --attn: #8a5a00;
+  /* Links: the one colour on the page, kept to underlines and marks. */
+  --link: #3d6189;
+  /* Wikipedia's text sits on its own ground, so it is never mistaken for the reader's. */
+  --wiki-bg: #f2f5f8;
+  --wiki-rule: #c9d3dd;
+  --serif: "Source Serif 4 Variable", "Source Serif 4", "Apple Garamond", "Baskerville", "Libre Baskerville", "Times New Roman", serif;
+  --sans: "Source Sans 3 Variable", "Source Sans 3", "Lucida Sans Unicode", "Helvetica", sans-serif;
+  --mono: "IBM Plex Mono", "Liberation Mono", "Consolas", monospace;
+  --col: 700px;
+  --margin: 300px;
+  --gap: 44px;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161616;
+    --fg: #f1f1f1;
+    --soft: #dcdcdc;
+    --dim: #b4b4b4;
+    --faint: #999;
+    --rule: #6c6c6c;
+    --hair: #333;
+    --wash: #1d1d1d;
+    --sel: #2e2e2e;
+    --sel-strong: #444;
+    --src: #26241c;
+    --attn: #d9a441;
+    --link: #8fb1d8;
+    --wiki-bg: #182029;
+    --wiki-rule: #34414f;
+  }
+}
+
+* { box-sizing: border-box; }
+html { font-size: 19px; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--serif);
+  line-height: 1.55;
+  font-variant-numeric: oldstyle-nums;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+::selection { background: var(--sel-strong); }
+
+.app { min-height: 100vh; }
+.loading, .fatal { max-width: 34em; margin: 20vh auto; padding: 0 20px; font-family: var(--sans); color: var(--dim); }
+
+.page { max-width: calc(var(--col) + var(--gap) + var(--margin) + 40px); margin: 0 auto; padding: 44px 20px 30vh; }
+article { width: min(100%, var(--col)); }
+
+/* ---- the top of the page ---- */
+.crumbs { font-family: var(--sans); font-size: 0.72rem; color: var(--faint); margin-bottom: 0.5rem; }
+.crumbs a { cursor: pointer; border-bottom: 1px dotted var(--faint); }
+.top h1 {
+  margin: 0;
+  font-weight: 600;
+  font-size: 2rem;
+  line-height: 1;
+  font-variant-caps: small-caps;
+  letter-spacing: -0.02em;
+  text-align: right;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--faint);
+}
+.top.focused h1 { border-bottom-color: var(--fg); }
+.byline { font-family: var(--sans); font-size: 0.68rem; color: var(--faint); text-align: right; margin-top: 0.3rem; letter-spacing: 0.02em; }
+
+.abstract { margin: 1.4rem 0 1.6rem; }
+.abstract.seed { border: 1px solid var(--rule); padding: 0.9rem 1.2rem; font-size: 0.86rem; line-height: 1.5; position: relative; }
+.abstract.seed::before {
+  content: "the prompt, verbatim";
+  position: absolute; top: -0.62em; left: 0.9rem; padding: 0 0.4em;
+  background: var(--bg); font-family: var(--sans); font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint);
+}
+
+.abstract.seed.folded { cursor: pointer; border-bottom-style: dashed; margin-bottom: 0.3rem; }
+.abstract.seed.folded .body { max-height: 6.1em; overflow: hidden; }
+.abstract.seed.folded .body { -webkit-mask-image: linear-gradient(#000 35%, transparent 96%); mask-image: linear-gradient(#000 35%, transparent 96%); }
+.unfold { font-family: var(--sans); font-size: 0.64rem; color: var(--faint); margin-bottom: 1.5rem; letter-spacing: 0.02em; }
+
+/* ---- prose ---- */
+.body { display: block; }
+.para { display: block; margin: 0; text-align: justify; hyphens: auto; text-indent: 1.75em; }
+.para.first { text-indent: 0; }
+.para.empty { color: var(--faint); font-style: italic; text-align: left; }
+.abstract.seed .para { text-indent: 0; margin-top: 0.6em; }
+.abstract.seed .para.first { margin-top: 0; }
+.em { font-style: italic; }
+.code { font-family: var(--mono); font-size: 0.82em; background: var(--wash); padding: 0 0.2em; border-radius: 2px; font-style: normal; }
+
+/* Text that already carries an expansion: a dotted underline, as on gwern's annotated links. */
+.anchor {
+  cursor: pointer;
+  background-image: linear-gradient(to right, var(--dim) 50%, transparent 50%);
+  background-size: 3px 1px; background-repeat: repeat-x; background-position: 0 calc(100% - 0.08em);
+}
+.anchor:hover { background-image: linear-gradient(var(--fg), var(--fg)); background-size: 1px 1px; }
+.anchor.on { background-image: linear-gradient(var(--faint), var(--faint)); background-size: 1px 1px; }
+.anchor.writing { background-image: none; background-color: var(--sel); }
+
+/* The keyboard selection. */
+.sel { background: var(--sel); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.sel.word { background: var(--sel-strong); }
+.src { background-color: var(--src); }
+
+/* ---- expansions, in three sizes ---- */
+
+/* 1. a gloss: a few words, inline, right after the term */
+.gloss { color: var(--dim); font-size: 0.9em; text-indent: 0; }
+.gloss::before { content: " ["; color: var(--faint); }
+.gloss::after { content: "]"; color: var(--faint); }
+.gloss .body, .gloss .para { display: inline; text-indent: 0; }
+.gloss.focused { background: var(--sel); color: var(--fg); }
+
+/* 2. a note: a sentence or three, in the margin beside its line */
+.sidenote {
+  float: right; clear: right;
+  width: var(--margin); margin-right: calc(-1 * (var(--margin) + var(--gap))); margin-bottom: 0.9rem;
+  font-size: 0.8rem; line-height: 1.42; text-indent: 0; text-align: left; hyphens: manual;
+  color: var(--soft); padding: 0.3rem 0 0.35rem; border-top: 1px dotted var(--rule); border-bottom: 1px dotted var(--rule);
+  position: relative;
+}
+.sidenote .para, .inset .para, .popup .para { text-indent: 0; text-align: left; hyphens: manual; }
+.sidenote .para + .para, .inset .para + .para, .popup .para + .para { margin-top: 0.5em; }
+.sidenote.focused { border-top: 1px solid var(--fg); border-bottom: 1px solid var(--fg); color: var(--fg); }
+.inset.focused { border-left-color: var(--fg); color: var(--fg); }
+
+/* 3. a passage: paragraphs, set into the column under the text it expands */
+.inset {
+  display: block; clear: both;
+  margin: 0.55rem 0 0.75rem 1.75em; padding: 0.45rem 0.9rem 0.5rem;
+  font-size: 0.88rem; line-height: 1.5; text-indent: 0;
+  border-left: 2px solid var(--rule); background: var(--wash); color: var(--soft);
+}
+.sidenote .inset, .inset .inset { margin-left: 0.4rem; font-size: 0.95em; }
+.inset.orphan { border-left-style: dashed; }
+.meta { display: block; font-family: var(--sans); font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); margin-bottom: 0.15rem; }
+.stale > .meta, .orphan > .meta { color: var(--attn); }
+
+/* Below the width where a margin fits, notes fall into the column. */
+@media (max-width: 1139px) {
+  .page { max-width: calc(var(--col) + 40px); }
+  .sidenote { float: none; display: block; width: auto; margin: 0.5rem 0 0.7rem 1.75em; padding: 0.4rem 0.8rem; border: 0; border-left: 2px dotted var(--rule); }
+}
+.with-panel .sidenote { float: none; display: block; width: auto; margin: 0.5rem 0 0.7rem 1.75em; padding: 0.4rem 0.8rem; border: 0; border-left: 2px dotted var(--rule); }
+
+/* Text arriving. */
+.caret { display: inline-block; width: 0.45em; height: 1em; vertical-align: -0.15em; background: var(--faint); animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.pending { color: var(--dim); }
+.pending-sections { margin: 0.4rem 0 0 1.35rem; color: var(--dim); }
+.pending-section .title { font-weight: 600; margin-top: 0.4rem; }
+
+/* ---- the outline ---- */
+.outline { list-style: none; margin: 0; padding: 0; }
+.content > .outline { margin-top: 0.55rem; }
+.node { margin: 0; }
+.row { display: flex; align-items: baseline; gap: 0.45em; cursor: pointer; padding: 0.08rem 0.3rem 0.08rem 0; margin-left: -0.3rem; padding-left: 0.3rem; border-radius: 2px; }
+.row:hover .title { color: var(--dim); }
+.mark { flex: none; width: 0.9em; font-family: var(--sans); font-size: 0.7em; color: var(--faint); text-align: center; position: relative; top: -0.1em; }
+.title { flex: 0 1 auto; }
+.untitled { color: var(--faint); }
+/* Depth comes in a cycle of three, as gwern prescribes: bold, italic, small caps. */
+.node.open > .row > .title { font-weight: 600; }
+.node.open.d2 > .row > .title, .node.open.d5 > .row > .title { font-weight: 400; font-style: italic; }
+.node.open.d3 > .row > .title, .node.open.d6 > .row > .title { font-weight: 500; font-variant-caps: small-caps; letter-spacing: 0.02em; }
+.node.focused > .row { background: var(--sel); }
+.node.focused > .row .mark { color: var(--fg); }
+.flags { margin-left: auto; padding-left: 1em; flex: none; font-family: var(--sans); font-size: 0.62rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
+.flags.attn { color: var(--attn); }
+.byline .flags { margin-left: 0.8em; padding: 0; }
+
+/* An open node's content hangs from a hairline, like gwern's collapse gutter. */
+.content { margin: 0.15rem 0 0.7rem 0.42em; padding-left: 0.93em; border-left: 1px solid var(--hair); }
+.node.focused > .content { border-left-color: var(--faint); }
+article > .outline > .node { margin-top: 0.12rem; }
+
+/* ---- editing ---- */
+.editor, .title-editor {
+  font: inherit; color: inherit; background: var(--wash); border: 1px solid var(--rule); border-radius: 2px; outline: none; width: 100%;
+}
+.editor { display: block; padding: 0.4rem 0.6rem; resize: none; line-height: 1.5; font-size: 0.95em; text-indent: 0; }
+.title-editor { padding: 0 0.3rem; flex: 1; }
+.editor:focus, .title-editor:focus { border-color: var(--fg); }
+
+/* ---- history view ---- */
+.banner { font-family: var(--sans); font-size: 0.72rem; background: var(--fg); color: var(--bg); padding: 0.35rem 0.7rem; margin: -1rem 0 1.2rem; width: min(100%, var(--col)); }
+article.preview { opacity: 0.92; }
+
+.panel {
+  position: fixed; top: 0; right: 0; bottom: 1.75rem; width: min(440px, 92vw); overflow-y: auto;
+  background: var(--bg); border-left: 3px double var(--rule); padding: 0 0.9rem 2rem; font-family: var(--sans); font-size: 0.74rem; line-height: 1.4; z-index: 5;
+}
+.panel-head { position: sticky; top: 0; background: var(--bg); padding: 0.7rem 0 0.45rem; display: flex; justify-content: space-between; align-items: baseline; gap: 1em; border-bottom: 1px solid var(--hair); font-weight: 600; z-index: 1; }
+.panel-head .keys { font-weight: 400; font-size: 0.62rem; color: var(--faint); text-align: right; }
+.panel h3 { margin: 0.9rem 0 0.25rem; font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
+.verdict { margin-top: 0.6rem; padding: 0.4rem 0.6rem; background: var(--wash); border-left: 2px solid var(--fg); }
+.item { padding: 0.28rem 0.45rem; border-radius: 2px; cursor: pointer; border-left: 2px solid transparent; }
+.item.selected { background: var(--sel); border-left-color: var(--fg); }
+.item.viewing { border-left-color: var(--attn); }
+.item .line { display: flex; gap: 0.6em; align-items: baseline; }
+.item .msg { flex: 1; }
+.item .sub { color: var(--faint); font-size: 0.64rem; }
+.hash { font-family: var(--mono); font-size: 0.62rem; color: var(--faint); flex: none; }
+/* The documents a commit touched. */
+.item .docs { color: var(--dim); font-size: 0.62rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip { margin-left: auto; font-size: 0.58rem; letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid var(--rule); padding: 0 0.35em; border-radius: 2px; color: var(--dim); }
+.conflict.open .chip { color: var(--attn); border-color: var(--attn); }
+.sides { margin-top: 0.4rem; display: grid; gap: 0.35rem; font-family: var(--serif); font-size: 0.74rem; line-height: 1.4; cursor: default; }
+.side { display: block; border-left: 2px solid var(--hair); padding-left: 0.5rem; }
+.side.strong { border-left-color: var(--fg); }
+.side .name { display: block; font-family: var(--sans); font-size: 0.58rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.why { font-style: italic; color: var(--dim); }
+.actions { display: flex; gap: 0.4rem; }
+button { font: inherit; font-family: var(--sans); font-size: 0.66rem; color: var(--fg); background: var(--bg); border: 1px solid var(--rule); border-radius: 2px; padding: 0.1rem 0.5rem; cursor: pointer; }
+button:hover { border-color: var(--fg); }
+
+/* ---- overlays ---- */
+.overlay { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 82%, transparent); display: flex; justify-content: center; align-items: flex-start; padding: 8vh 20px 4vh; z-index: 20; overflow-y: auto; }
+.help, .jump { background: var(--bg); border: 3px double var(--rule); box-shadow: 1px 2px 8px 0 color-mix(in srgb, var(--fg) 14%, transparent); font-family: var(--sans); }
+.help { max-width: 980px; padding: 1.1rem 1.5rem 1.4rem; font-size: 0.72rem; line-height: 1.35; }
+.help h2 { margin: 0 0 0.3rem; font-family: var(--serif); font-variant-caps: small-caps; font-size: 1.3rem; font-weight: 600; }
+.help .lede { margin: 0 0 0.9rem; max-width: 62em; color: var(--dim); font-family: var(--serif); font-size: 0.82rem; }
+.help .cols { columns: 2 380px; column-gap: 2.2rem; }
+.help section { break-inside: avoid; margin-bottom: 0.8rem; }
+.help h3 { margin: 0 0 0.25rem; font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+.help dl { margin: 0; }
+.help dl > div { display: grid; grid-template-columns: 9.6em 1fr; gap: 0.7em; padding: 0.1rem 0; }
+.help dt { white-space: nowrap; }
+.help dd { margin: 0; color: var(--soft); }
+kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; padding: 0 0.3em; margin-right: 0.25em; background: var(--wash); }
+.help code { border: 0; padding: 0; background: none; }
+
+.jump { width: min(560px, 100%); }
+.jump input { width: 100%; font: inherit; font-size: 0.9rem; padding: 0.55rem 0.8rem; border: 0; border-bottom: 1px solid var(--hair); outline: none; background: transparent; color: var(--fg); }
+.jump ul { list-style: none; margin: 0; padding: 0.25rem 0; }
+.jump li { padding: 0.25rem 0.8rem; cursor: pointer; display: flex; gap: 0.8em; align-items: baseline; font-size: 0.8rem; }
+.jump li.selected { background: var(--sel); }
+.jump li .p { color: var(--faint); font-size: 0.66rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jump li .p .in { font-weight: 600; color: var(--dim); }
+.jump li.none { color: var(--faint); cursor: default; }
+
+.popup {
+  position: fixed; width: 440px; max-height: 320px; overflow: auto; z-index: 15;
+  background: var(--bg); border: 3px double var(--rule); box-shadow: 1px 2px 8px 0 color-mix(in srgb, var(--fg) 16%, transparent);
+  padding: 0.6rem 0.85rem 0.7rem; font-size: 0.82rem; line-height: 1.45; pointer-events: none;
+}
+
+/* ---- the command bar and status line ---- */
+.command { position: fixed; left: 0; right: 0; bottom: 1.75rem; display: flex; align-items: baseline; gap: 0.7em; background: var(--bg); border-top: 1px solid var(--fg); padding: 0.4rem 0.9rem; font-family: var(--sans); font-size: 0.8rem; z-index: 12; }
+.command .prompt { color: var(--faint); font-size: 0.7rem; white-space: nowrap; }
+.command .prompt::after { content: " ›"; }
+.command input { flex: 1; font: inherit; border: 0; outline: none; background: transparent; color: var(--fg); }
+
+.status {
+  position: fixed; left: 0; right: 0; bottom: 0; height: 1.75rem; display: flex; align-items: center; gap: 0.9em;
+  background: var(--wash); border-top: 1px solid var(--hair); padding: 0 0.9rem; font-family: var(--sans); font-size: 0.66rem; color: var(--dim); white-space: nowrap; z-index: 10;
+}
+.grain { font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--bg); background: var(--fg); padding: 0 0.5em; border-radius: 2px; }
+.grain.sentence, .grain.word { background: var(--dim); }
+.grain.aux { background: var(--link); }
+.path { color: var(--faint); overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+.message { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
+.right { display: flex; align-items: center; gap: 0.9em; color: var(--faint); }
+.dot { width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--faint); }
+.dot.off { background: transparent; border: 1px solid var(--attn); }
+.spin { width: 0.7em; height: 0.7em; border: 1.5px solid var(--faint); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 720px) {
+  html { font-size: 17px; }
+  .para { text-align: left; }
+  .status .path, .status .q { display: none; }
+}
+
+/* ---- the editor's research run, above the status line (AgentPanel in App.tsx) ---- */
+.agent-panel {
+  position: fixed; left: 0; right: 0; bottom: 1.75rem; max-height: 11rem; overflow: auto; z-index: 11;
+  background: var(--wash); border-top: 1px solid var(--hair); padding: 0.35rem 0.9rem 0.4rem;
+  font-family: var(--sans); font-size: 0.7rem; line-height: 1.5; color: var(--dim);
+}
+.agent-head { color: var(--faint); }
+.agent-label { font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg); margin-right: 0.7em; }
+.agent-steps { margin: 0.15rem 0 0; padding: 0; list-style: none; }
+.agent-steps li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent-steps li::before { content: "· "; color: var(--faint); }
+.agent-steps .agent-more { color: var(--faint); }
+.agent-summary { color: var(--fg); margin-top: 0.2rem; }
+.agent-sources a { color: var(--link); text-decoration: none; }
+.agent-sources a:hover { text-decoration: underline; }
+.agent-host { color: var(--faint); }
+
+/* ---- usage in the status line (src/ui/Usage.tsx) ---- */
+.usage { display: flex; align-items: center; gap: 0.9em; flex: none; white-space: nowrap; color: var(--faint); font-variant-numeric: tabular-nums; }
+.usage > span { cursor: default; }
+.usage-plan { color: var(--dim); }
+.usage-plan.attn { color: var(--attn); font-weight: 600; }
+@media (max-width: 899px) {
+  .usage-session { display: none; }
+}
+/* ---- end usage ---- */
+
+/* ---- panes view (src/ui/Panes.tsx) ----
+ * The path to the focus as a strip of panes, side by side, after notes.andymatuschak.org. Pane i
+ * sticks i spines from the left edge, so later panes slide over earlier ones and leave each a
+ * narrow spine that carries its title. Each pane scrolls on its own; only the strip scrolls sideways.
+ */
+:root {
+  --pane-text: 34rem;
+  --spine: 2.1rem;
+  --pane-pad: 1.8rem;
+  --pane: calc(var(--spine) + var(--pane-text) + var(--pane-pad));
+  --shade: rgb(0 0 0 / 0.2);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --shade: rgb(0 0 0 / 0.6); }
+}
+.view-panes .page {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 1.75rem;
+  max-width: none; margin: 0; padding: 0; display: flex; flex-direction: column;
+}
+.view-panes.with-panel .page { right: min(440px, 92vw); }
+.view-panes .banner { flex: none; width: auto; margin: 0; }
+.strip {
+  flex: 1; min-height: 0; display: flex; overflow-x: auto; overflow-y: hidden;
+  overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: var(--rule) transparent;
+}
+.pane { position: sticky; flex: none; width: var(--pane); width: round(down, var(--pane), 1px); height: 100%; background: var(--bg); border-left: 1px solid var(--hair); }
+.pane:first-child { border-left-color: transparent; }
+.pane[data-over] { border-left-color: var(--rule); box-shadow: -14px 0 20px -12px var(--shade); }
+.pane-scroll {
+  height: 100%; overflow-x: hidden; overflow-y: auto; padding: 1.9rem var(--pane-pad) 30vh var(--spine);
+  scrollbar-width: thin; scrollbar-color: var(--hair) transparent;
+}
+
+/* The spine: a covered pane's title, set vertically in the left gutter. */
+.spine { position: absolute; top: 0; bottom: 0; left: 0; width: var(--spine); z-index: 2; background: var(--bg); opacity: 0; pointer-events: none; cursor: pointer; transition: opacity 0.12s; }
+.pane[data-covered] .spine { opacity: 1; pointer-events: auto; }
+.spine span {
+  display: block; max-height: 100%; padding: 1.95rem 0 1.2rem; writing-mode: vertical-rl; line-height: var(--spine);
+  font-family: var(--sans); font-size: 0.74rem; letter-spacing: 0.03em; color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.spine:hover span { color: var(--fg); }
+@media (prefers-reduced-motion: reduce) {
+  .spine { transition: none; }
+}
+
+/* A pane's head: a section heading, smaller than the page title the first pane keeps. */
+.pane-head { display: flex; align-items: baseline; gap: 0.6em; margin: 0 0 0.85rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--faint); cursor: pointer; }
+.pane-head.focused { border-bottom-color: var(--fg); }
+.pane-head h2 { margin: 0; font-size: 1.32rem; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; }
+.pane-head .title-editor { font-size: 1.32rem; font-weight: 600; }
+
+/* Its child sections, as outline rows. The one whose pane is open to the right is marked. */
+.pane .rows { margin-top: 1.4rem; padding-top: 0.55rem; border-top: 1px solid var(--hair); }
+.pane.root .rows { margin-top: 0; padding-top: 0; border-top: 0; }
+.pane .rows > .node { margin-top: 0.12rem; }
+.node.showing:not(.focused) > .row { background: var(--wash); }
+.node.showing > .row .mark { color: var(--fg); }
+.node.showing > .row::after { content: "→"; flex: none; margin-left: auto; padding-left: 0.8em; font-family: var(--sans); font-size: 0.72em; color: var(--dim); }
+
+/* The first pane keeps the page title, set from the left so it stays readable when the pane is partly covered. */
+.pane.root .top h1, .pane.root .byline, .pane.doc .top h1, .pane.doc .byline { text-align: left; }
+.pane.root .rows, .pane.doc .rows { margin-top: 0; padding-top: 0; border-top: 0; }
+
+/* A pane has no margin: notes are set into its column, as on a narrow screen. */
+.pane .sidenote { float: none; display: block; width: auto; margin: 0.5rem 0 0.7rem 1.75em; padding: 0.4rem 0.8rem; border: 0; border-left: 2px dotted var(--rule); }
+.pane .sidenote.focused { border-left: 2px solid var(--fg); }
+/* ---- end panes view ---- */
+
+/* ---- the top bar and the documents menu (src/ui/Menu.tsx) ----
+ * The bar sits in the page's top margin: the document's title, which opens the menu, and whether
+ * the server has every edit yet. The menu is a panel like history's.
+ */
+.docbar { display: flex; align-items: baseline; gap: 0.9em; width: min(100%, var(--col)); margin: -30px 0 16px; min-width: 0; font-family: var(--sans); font-size: 0.66rem; color: var(--faint); letter-spacing: 0.02em; }
+.doc-title { display: flex; align-items: baseline; gap: 0.35em; min-width: 0; max-width: 75%; padding: 0; border: 0; background: none; font-size: inherit; color: var(--dim); }
+.doc-title .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-title .chev { align-self: center; width: 0; height: 0; border: 0.38em solid transparent; border-top: 0.46em solid var(--faint); border-bottom: 0; margin-left: 0.1em; }
+.doc-title:hover .name { color: var(--fg); text-decoration: underline dotted; text-underline-offset: 0.2em; }
+.save-state { white-space: nowrap; }
+.save-state.offline, .save-state.deleted { color: var(--attn); }
+.view-panes .docbar { flex: none; width: auto; margin: 0; padding: 0.3rem 0.9rem 0.25rem; border-bottom: 1px solid var(--hair); }
+
+.panel .filter, .panel .prompt input {
+  display: block; width: 100%; margin: 0.6rem 0 0.3rem; padding: 0.3rem 0.5rem; font: inherit; font-size: 0.8rem;
+  color: var(--fg); background: var(--bg); border: 1px solid var(--rule); border-radius: 2px; outline: none;
+}
+.panel .filter:focus, .panel .prompt input:focus { border-color: var(--fg); }
+.panel .prompt { display: block; margin-top: 0.5rem; }
+.panel .prompt span { font-size: 0.6rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.panel .prompt input { margin-top: 0.15rem; }
+.doclist { list-style: none; margin: 0.3rem 0 0; padding: 0; }
+.doc { margin-bottom: 0.1rem; }
+.doc .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.doc .when { flex: none; font-size: 0.6rem; color: var(--faint); }
+.doc .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc.current .title::before { content: "● "; font-size: 0.7em; color: var(--dim); }
+.doc .actions { flex-wrap: wrap; margin: 0.3rem 0 0.1rem; }
+.doclist .none { padding: 0.3rem 0.45rem; color: var(--faint); }
+.confirm, .problems { margin: 0.5rem 0; padding: 0.45rem 0.6rem; background: var(--wash); border-left: 2px solid var(--attn); }
+.confirm .actions { margin-top: 0.4rem; }
+.problems ul { margin: 0.3rem 0 0; padding-left: 1.1rem; font-family: var(--mono); font-size: 0.6rem; overflow-wrap: anywhere; }
+.panel-foot { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; margin-top: 0.9rem; padding-top: 0.6rem; border-top: 1px solid var(--hair); font-size: 0.62rem; color: var(--faint); }
+.panel.docs.dropping { outline: 2px dashed var(--fg); outline-offset: -6px; }
+/* ---- end documents ---- */
+
+/* ---- links (src/ui/Links.tsx) ----
+ * After gwern.net's typed links: the linked words keep the text's colour and get a thin solid
+ * underline; a small mark after them says where the link goes (W Wikipedia, § another note in this
+ * library, ↗ the web). A note keeps its dotted underline; a note that also links has both.
+ */
+.lnk { cursor: pointer; text-decoration: underline 1px solid var(--link); text-underline-offset: 0.18em; text-decoration-skip-ink: auto; }
+.lnk:hover, .lnk.on { text-decoration-thickness: 2px; }
+.lnk.on { background: var(--wash); }
+.lmark {
+  display: inline-block; margin: 0 0.06em 0 0.08em; font-family: var(--serif); font-size: 0.6em; line-height: 1; font-weight: 600;
+  vertical-align: 0.55em; color: var(--link); cursor: pointer; user-select: none; -webkit-user-select: none; text-indent: 0; font-style: normal;
+}
+.lmark.l-wiki { font-family: var(--serif); letter-spacing: -0.04em; }
+.lmark.l-node { font-weight: 400; font-size: 0.68em; vertical-align: 0.45em; }
+.lmark.l-url { font-family: var(--sans); font-weight: 400; font-size: 0.66em; vertical-align: 0.5em; }
+.lmark.broken { color: var(--attn); text-decoration: line-through; }
+
+/* A target's card: in a popup, a column inset, a node's own target row. */
+.lcard { font-family: var(--sans); font-size: 0.78rem; line-height: 1.45; color: var(--soft); text-align: left; text-indent: 0; }
+.lcard .lhead { font-size: 0.62rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--faint); }
+.lcard .lhead .lmark { vertical-align: 0.1em; font-size: 0.95em; margin: 0 0.15em 0 0; }
+.lcard .ltitle { font-weight: 600; color: var(--fg); font-size: 0.92rem; margin-top: 0.05rem; }
+.lcard .lsub { color: var(--dim); font-size: 0.72rem; }
+.lcard .lsub.problem, .problem { color: var(--attn); }
+.lcard .lbody { margin-top: 0.3rem; }
+.popup .lcard + .lcard, .popup .body + .lcard { margin-top: 0.5rem; padding-top: 0.45rem; border-top: 1px solid var(--hair); }
+.popup:has(.l-wiki) { background: var(--wiki-bg); border-color: var(--wiki-rule); }
+.wattr { margin: 0.5rem 0 0; font-family: var(--sans); font-size: 0.6rem; line-height: 1.4; color: var(--faint); text-align: left; text-indent: 0; }
+.wattr a { color: inherit; text-decoration: underline 1px dotted; text-underline-offset: 0.15em; }
+.lpreview.l-wiki { background: var(--wiki-bg); border-left-color: var(--wiki-rule); }
+.lpreview .lnext { margin: 0.35rem 0 0; }
+.target-row { margin: 0.9rem 0 0.4rem; padding: 0.45rem 0.7rem; border-left: 2px solid var(--wiki-rule); cursor: pointer; }
+.target-row.l-wiki { background: var(--wiki-bg); }
+.target-row.focused { border-left-color: var(--fg); background: var(--sel); }
+
+/* "Linked from" and "Mentioned in". */
+:is(.backlinks, .related-list) { margin: 1.4rem 0 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--hair); font-family: var(--sans); font-size: 0.74rem; }
+:is(.backlinks, .related-list) h3 { margin: 0 0 0.25rem; font-size: 0.6rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+:is(.backlinks, .related-list) ul { list-style: none; margin: 0; padding: 0; }
+:is(.backlinks, .related-list) li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.6em; padding: 0.12rem 0.35rem; margin-left: -0.35rem; border-radius: 2px; cursor: pointer; }
+:is(.backlinks, .related-list) li.focused { background: var(--sel); }
+:is(.backlinks, .related-list) .bl-title { color: var(--fg); font-weight: 600; }
+:is(.backlinks, .related-list) .bl-doc { color: var(--dim); }
+:is(.backlinks, .related-list) .bl-quote { color: var(--faint); font-style: italic; flex-basis: 100%; }
+
+/* The link picker: the jump box, grouped. */
+.picker-head { padding: 0.5rem 0.8rem 0; font-size: 0.66rem; letter-spacing: 0.04em; color: var(--faint); }
+.picker li.group { cursor: default; padding-top: 0.45rem; font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+.picker li .lmark { vertical-align: 0.15em; font-size: 0.85em; width: 0.9em; text-align: center; margin: 0; }
+.picker li .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+
+/* ---- Wikipedia (src/ui/Wiki.tsx) ----
+ * Its own ground, its own face (the bundled sans), a W at its head, its licence at its foot.
+ */
+.wiki { font-family: var(--sans); color: var(--soft); }
+.wiki-pane .pane-scroll, .wiki-pane .spine { background: var(--wiki-bg); }
+.wiki-pane { border-left-color: var(--wiki-rule); }
+.wiki-pane .spine span { color: var(--dim); }
+.wiki-pane .spine .wmark { font-weight: 600; }
+.wiki-head { margin: 0 0 0.8rem; padding-bottom: 0.35rem; border-bottom: 1px solid var(--wiki-rule); cursor: pointer; }
+.wiki-head.focused { border-bottom-color: var(--fg); }
+.wiki-head.focused h2 { text-decoration: underline 1px solid var(--faint); text-underline-offset: 0.2em; }
+.wiki-brand { font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: 0.4em; }
+.wmark { font-family: var(--serif); font-weight: 600; font-size: 1.05em; letter-spacing: -0.04em; color: var(--link); text-transform: none; }
+.wiki-brand .wmark { display: inline-block; border: 1px solid var(--wiki-rule); border-radius: 2px; padding: 0 0.22em; line-height: 1.25; background: var(--bg); }
+.wiki-head h2 { margin: 0.15rem 0 0; font-family: var(--sans); font-size: 1.28rem; font-weight: 600; line-height: 1.2; color: var(--fg); letter-spacing: -0.005em; }
+.wiki-head .wsub { font-weight: 400; color: var(--dim); }
+.wiki-text { font-size: 0.82rem; line-height: 1.55; }
+.wiki-text p { margin: 0 0 0.65em; }
+.wiki-text ul, .wiki-text ol { margin: 0 0 0.65em; padding-left: 1.3em; }
+.wiki-text dl dd { margin-left: 1.2em; }
+.wiki-text a { color: inherit; text-decoration: underline 1px solid var(--link); text-underline-offset: 0.16em; }
+.wiki-text a[target]::after { content: "↗"; font-size: 0.7em; vertical-align: 0.45em; color: var(--link); margin-left: 0.05em; }
+.wiki-text a.wfocus { background: var(--sel-strong); outline: 1px solid var(--fg); outline-offset: 1px; }
+.wiki-text table { border-collapse: collapse; font-size: 0.92em; margin: 0.4em 0 0.8em; }
+.wiki-text th, .wiki-text td { border: 1px solid var(--wiki-rule); padding: 0.15em 0.4em; vertical-align: top; }
+.wiki-text blockquote { margin: 0.4em 0 0.7em 1em; padding-left: 0.7em; border-left: 2px solid var(--wiki-rule); }
+.wiki-text pre, .wiki-text code { font-family: var(--mono); font-size: 0.9em; }
+.wiki-text math { font-size: 1.05em; }
+.wiki-desc { margin: -0.4rem 0 0.6rem; font-size: 0.74rem; color: var(--dim); font-style: italic; }
+.wiki-summary { margin: 0 0 0.5rem; font-size: 0.82rem; line-height: 1.55; }
+.wiki-more, .wiki-wait, .wiki-back { margin: 0.3rem 0; font-size: 0.66rem; color: var(--faint); letter-spacing: 0.02em; }
+.wiki-problem { margin: 0.4rem 0; padding: 0.4rem 0.6rem; border-left: 2px solid var(--attn); background: var(--bg); font-size: 0.78rem; color: var(--soft); }
+.wrows { list-style: none; margin: 0.9rem 0 0; padding: 0.5rem 0 0; border-top: 1px solid var(--wiki-rule); }
+.wrows.nested { margin: 0.3rem 0 0; border-top: 0; padding-top: 0; }
+.wrow .row { font-size: 0.86rem; }
+.wrow.focused > .row { background: var(--sel); }
+.wrow.focused > .row .mark { color: var(--fg); }
+.wrow.open > .row > .title { font-weight: 600; }
+.wrow.showing:not(.focused) > .row { background: color-mix(in srgb, var(--wiki-rule) 40%, transparent); }
+.wrow.showing > .row::after { content: "→"; flex: none; margin-left: 0.5em; font-size: 0.72em; color: var(--dim); }
+.wrow.showing > .row:not(:has(.wnum))::after { margin-left: auto; }
+.wrow .wnum, .wrow .wdesc { margin-left: auto; padding-left: 1em; font-size: 0.66rem; color: var(--faint); white-space: nowrap; }
+.wrow .wnum { font-variant-numeric: tabular-nums; }
+.wiki .content { border-left-color: var(--wiki-rule); }
+.senses h3 { margin: 0.8rem 0 0; font-size: 0.66rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.senses .wrows { margin-top: 0.3rem; }
+.wiki .backlinks { border-top-color: var(--wiki-rule); }
+.wiki > .wattr { margin-top: 1.2rem; padding-top: 0.5rem; border-top: 1px solid var(--wiki-rule); }
+
+/* An article under a node in its pane: clearly divided from the node's own text above it. */
+.wiki.embedded { margin: 1.6rem calc(-1 * var(--pane-pad)) 0 0; padding: 0.9rem var(--pane-pad) 0.8rem 1rem; background: var(--wiki-bg); border-top: 3px double var(--wiki-rule); }
+.wiki.embedded:has(.wiki-head.focused) { box-shadow: inset 3px 0 0 var(--fg); }
+.pane-from { margin: 0 0 0.25rem; font-family: var(--sans); font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.pane.note-pane .pane-head h2 { font-style: italic; font-weight: 500; }
+
+/* The column's article page. */
+.wiki-page { background: var(--wiki-bg); padding: 1.2rem 1.4rem 1.4rem; border: 1px solid var(--wiki-rule); }
+/* ---- end links and Wikipedia ---- */
+
+/* Suggested links: a faint dashed underline, distinct from a link's solid one and a note's dotted one. */
+.sugg { text-decoration: underline 1px dashed color-mix(in srgb, var(--link) 45%, transparent); text-underline-offset: 0.24em; text-decoration-skip-ink: auto; }
+.sugg.sel { text-decoration-color: var(--link); }
+.lpreview.suggestion { border-left-style: dashed; }
+.lpreview.suggestion .why { display: block; margin-top: 0.3rem; }
+.related-list { border-top-style: dashed; }
+.status .job { color: var(--link); white-space: nowrap; }
+/* The [[ completer under the body editor. */
+.completer { position: relative; }
+.completer ul { position: absolute; z-index: 20; left: 0; top: 0.2rem; min-width: 22rem; max-width: 36rem; margin: 0; padding: 0.25rem 0; list-style: none; background: var(--bg); border: 1px solid var(--hair); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12); font-family: var(--sans); font-size: 0.8rem; }
+.completer li { display: flex; gap: 0.6em; align-items: baseline; padding: 0.2rem 0.6rem; }
+.completer li.group { color: var(--faint); font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; padding-top: 0.35rem; }
+.completer li.selected { background: var(--sel); }
+.completer .t { color: var(--fg); font-weight: 600; }
+.completer .p { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(.backlinks, .related-list) .bl-key { color: var(--link); font-family: var(--mono, monospace); font-size: 0.7rem; min-width: 0.8em; }
