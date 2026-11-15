@@ -1,0 +1,1690 @@
+{
+ "about": "Fresh held-out set for the link scanner: the first 16 sections (40 words or more) of the Antikythera mechanism, the eukaryotic cell (The one merger), the tides and what a proof is, labelled from the text alone before the scanner was ever run on these documents. Every phrase a careful Wikipedia editor would link (MOS:LINK) is listed, exhaustively: specific concepts, technical terms and proper names, at their first mention in each section; no everyday words, no countries or well-known places, the Sun and Moon unlinked, and a document's own central subject (tides, the eukaryotic cell, proof) only in its first section. Any link the scanner makes that is not listed counts as wrong; a link to any of an entry's targets counts as right.",
+ "labels": [
+  {
+   "doc": "antikythera-mechanism",
+   "node": "The Antikythera mechanism",
+   "key": "antikythera",
+   "phrase": "Antikythera",
+   "label": "yes",
+   "targets": [
+    "w:Antikythera"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "The Antikythera mechanism",
+   "key": "sponge diver",
+   "phrase": "sponge divers",
+   "label": "yes",
+   "targets": [
+    "w:Sponge diving"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "The Antikythera mechanism",
+   "key": "phase of the moon",
+   "phrase": "phase of the Moon",
+   "label": "yes",
+   "targets": [
+    "w:Lunar phase"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "The Antikythera mechanism",
+   "key": "eclipse",
+   "phrase": "eclipses",
+   "label": "yes",
+   "targets": [
+    "w:Eclipse",
+    "w:Solar eclipse"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "The Antikythera mechanism",
+   "key": "olympic game",
+   "phrase": "Olympic Games",
+   "label": "yes",
+   "targets": [
+    "w:Ancient Olympic Games",
+    "w:Olympic Games"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "The find",
+   "key": "gear wheel",
+   "phrase": "gear wheels",
+   "label": "yes",
+   "targets": [
+    "w:Gear"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "The find › The wreck",
+   "key": "antikythera",
+   "phrase": "Antikythera",
+   "label": "yes",
+   "targets": [
+    "w:Antikythera",
+    "w:Antikythera wreck"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "The find › The fragments",
+   "key": "valerio stais",
+   "phrase": "Valerios Stais",
+   "label": "yes",
+   "targets": [
+    "w:Valerios Stais"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "The find › Seeing inside",
+   "key": "derek de solla price",
+   "phrase": "Derek de Solla Price",
+   "label": "yes",
+   "targets": [
+    "w:Derek J. de Solla Price"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "The find › Seeing inside",
+   "key": "gamma ray",
+   "phrase": "gamma-ray",
+   "label": "yes",
+   "targets": [
+    "w:Gamma ray"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "The find › Seeing inside",
+   "key": "gamma ray image",
+   "phrase": "gamma-ray images",
+   "label": "yes",
+   "targets": [
+    "w:Gamma ray",
+    "w:Radiography"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "The find › Seeing inside",
+   "key": "michael wright",
+   "phrase": "Michael Wright",
+   "label": "yes",
+   "targets": [
+    "w:Michael Wright (curator)"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "The find › Seeing inside",
+   "key": "science museum",
+   "phrase": "Science Museum",
+   "label": "yes",
+   "targets": [
+    "w:Science Museum, London"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "The find › Seeing inside",
+   "key": "x ray",
+   "phrase": "X-ray",
+   "label": "yes",
+   "targets": [
+    "w:X-ray",
+    "w:Radiography"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "The find › Seeing inside",
+   "key": "x ray scanner",
+   "phrase": "X-ray scanner",
+   "label": "yes",
+   "targets": [
+    "w:CT scan",
+    "w:X-ray computed tomography",
+    "w:Industrial computed tomography"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "What it showed",
+   "key": "zodiac",
+   "phrase": "zodiac",
+   "label": "yes",
+   "targets": [
+    "w:Zodiac"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "What it showed",
+   "key": "planet",
+   "phrase": "planets",
+   "label": "yes",
+   "targets": [
+    "w:Classical planet",
+    "w:Planet"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "What it showed",
+   "key": "five planet",
+   "phrase": "five planets",
+   "label": "yes",
+   "targets": [
+    "w:Classical planet"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "What it showed",
+   "key": "eclipse",
+   "phrase": "eclipses",
+   "label": "yes",
+   "targets": [
+    "w:Eclipse"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "What it showed › The front dial",
+   "key": "zodiac",
+   "phrase": "zodiac",
+   "label": "yes",
+   "targets": [
+    "w:Zodiac"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "What it showed › The front dial",
+   "key": "egyptian calendar",
+   "phrase": "Egyptian calendar",
+   "label": "yes",
+   "targets": [
+    "w:Egyptian calendar"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "What it showed › The front dial",
+   "key": "moon phase",
+   "phrase": "Moon's phase",
+   "label": "yes",
+   "targets": [
+    "w:Lunar phase"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "What it showed › The calendar spiral",
+   "key": "lunar month",
+   "phrase": "lunar month",
+   "label": "yes",
+   "targets": [
+    "w:Lunar month"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "What it showed › The calendar spiral",
+   "key": "metonic cycle",
+   "phrase": "Metonic cycle",
+   "label": "yes",
+   "targets": [
+    "w:Metonic cycle"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "What it showed › The calendar spiral",
+   "key": "corinth",
+   "phrase": "Corinth",
+   "label": "yes",
+   "targets": [
+    "w:Ancient Corinth",
+    "w:Corinth"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "What it showed › The calendar spiral",
+   "key": "olympia",
+   "phrase": "Olympia",
+   "label": "yes",
+   "targets": [
+    "w:Olympia, Greece"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "What it showed › The eclipse spiral",
+   "key": "eclipse",
+   "phrase": "eclipses",
+   "label": "yes",
+   "targets": [
+    "w:Eclipse"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "What it showed › The eclipse spiral",
+   "key": "lunar eclipse",
+   "phrase": "lunar eclipse",
+   "label": "yes",
+   "targets": [
+    "w:Lunar eclipse"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "What it showed › The eclipse spiral",
+   "key": "babylonian",
+   "phrase": "Babylonian",
+   "label": "yes",
+   "targets": [
+    "w:Babylonian astronomy",
+    "w:Babylonia"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "How it worked",
+   "key": "gear train",
+   "phrase": "gear trains",
+   "label": "yes",
+   "targets": [
+    "w:Gear train",
+    "node:Gear trains"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "How it worked › The planets",
+   "key": "planet",
+   "phrase": "planets",
+   "label": "yes",
+   "targets": [
+    "w:Classical planet",
+    "w:Planet"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "How it worked › The planets",
+   "key": "michael wright",
+   "phrase": "Michael Wright",
+   "label": "yes",
+   "targets": [
+    "w:Michael Wright (curator)"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "How it worked › The planets",
+   "key": "university college london",
+   "phrase": "University College London",
+   "label": "yes",
+   "targets": [
+    "w:University College London"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "Who made it",
+   "key": "babylonian",
+   "phrase": "Babylonian",
+   "label": "yes",
+   "targets": [
+    "w:Babylonian astronomy",
+    "w:Babylonia"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "Who made it › Clues in the text",
+   "key": "corinth",
+   "phrase": "Corinth",
+   "label": "yes",
+   "targets": [
+    "w:Ancient Corinth",
+    "w:Corinth"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "Who made it › Clues in the text",
+   "key": "syracuse",
+   "phrase": "Syracuse",
+   "label": "yes",
+   "targets": [
+    "w:Syracuse, Sicily"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "Who made it › Clues in the text",
+   "key": "epirus",
+   "phrase": "Epirus",
+   "label": "yes",
+   "targets": [
+    "w:Epirus (ancient state)",
+    "w:Epirus"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "Who made it › Clues in the text",
+   "key": "rhode",
+   "phrase": "Rhodes",
+   "label": "yes",
+   "targets": [
+    "w:Rhodes"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "Who made it › Candidates",
+   "key": "cicero",
+   "phrase": "Cicero",
+   "label": "yes",
+   "targets": [
+    "w:Cicero"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "Who made it › Candidates",
+   "key": "archimede of syracuse",
+   "phrase": "Archimedes of Syracuse",
+   "label": "yes",
+   "targets": [
+    "w:Archimedes"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "Who made it › Candidates",
+   "key": "archimede",
+   "phrase": "Archimedes",
+   "label": "yes",
+   "targets": [
+    "w:Archimedes"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "Who made it › Candidates",
+   "key": "posidonius",
+   "phrase": "Posidonius",
+   "label": "yes",
+   "targets": [
+    "w:Posidonius"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "Who made it › Candidates",
+   "key": "rhode",
+   "phrase": "Rhodes",
+   "label": "yes",
+   "targets": [
+    "w:Rhodes"
+   ]
+  },
+  {
+   "doc": "antikythera-mechanism",
+   "node": "Who made it › Candidates",
+   "key": "hipparchus",
+   "phrase": "Hipparchus",
+   "label": "yes",
+   "targets": [
+    "w:Hipparchus"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The one merger",
+   "key": "single cell",
+   "phrase": "single cells",
+   "label": "yes",
+   "targets": [
+    "w:Unicellular organism"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The one merger",
+   "key": "amoeba",
+   "phrase": "amoeba",
+   "label": "yes",
+   "targets": [
+    "w:Amoeba"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The one merger",
+   "key": "complex cell",
+   "phrase": "complex cell",
+   "label": "yes",
+   "targets": [
+    "w:Eukaryote"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Two kinds of cell › Simple cells",
+   "key": "bacterium",
+   "phrase": "bacterium",
+   "label": "yes",
+   "targets": [
+    "w:Bacteria"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Two kinds of cell › Simple cells",
+   "key": "dna",
+   "phrase": "DNA",
+   "label": "yes",
+   "targets": [
+    "w:DNA"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Two kinds of cell › Simple cells",
+   "key": "archaea",
+   "phrase": "archaea",
+   "label": "yes",
+   "targets": [
+    "w:Archaea"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Two kinds of cell › Complex cells",
+   "key": "nucleus",
+   "phrase": "nucleus",
+   "label": "yes",
+   "targets": [
+    "w:Cell nucleus",
+    "node:The nucleus"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Two kinds of cell › Complex cells",
+   "key": "dna",
+   "phrase": "DNA",
+   "label": "yes",
+   "targets": [
+    "w:DNA"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Two kinds of cell › Complex cells",
+   "key": "protein filament",
+   "phrase": "protein filaments",
+   "label": "yes",
+   "targets": [
+    "w:Cytoskeleton",
+    "w:Protein filament"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Two kinds of cell › Complex cells",
+   "key": "internal membrane",
+   "phrase": "internal membranes",
+   "label": "yes",
+   "targets": [
+    "w:Endomembrane system"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Two kinds of cell › Complex cells",
+   "key": "mitochondria",
+   "phrase": "mitochondria",
+   "label": "yes",
+   "targets": [
+    "w:Mitochondrion"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Two kinds of cell › Complex cells",
+   "key": "genome",
+   "phrase": "genome",
+   "label": "yes",
+   "targets": [
+    "w:Genome"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Two kinds of cell › Complex cells",
+   "key": "bacterium",
+   "phrase": "bacterium",
+   "label": "yes",
+   "targets": [
+    "w:Bacteria"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Two kinds of cell › Shared peculiarities",
+   "key": "nucleus",
+   "phrase": "nucleus",
+   "label": "yes",
+   "targets": [
+    "w:Cell nucleus",
+    "node:The nucleus"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Two kinds of cell › Shared peculiarities",
+   "key": "sex",
+   "phrase": "sex",
+   "label": "yes",
+   "targets": [
+    "w:Sexual reproduction"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Two kinds of cell › Shared peculiarities",
+   "key": "linear chromosome",
+   "phrase": "linear chromosomes",
+   "label": "yes",
+   "targets": [
+    "w:Chromosome"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Two kinds of cell › Shared peculiarities",
+   "key": "skeleton protein",
+   "phrase": "skeleton proteins",
+   "label": "yes",
+   "targets": [
+    "w:Cytoskeleton"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The merger › Mitochondria were bacteria",
+   "key": "mitochondria",
+   "phrase": "Mitochondria",
+   "label": "yes",
+   "targets": [
+    "w:Mitochondrion"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The merger › Mitochondria were bacteria",
+   "key": "dna",
+   "phrase": "DNA",
+   "label": "yes",
+   "targets": [
+    "w:Mitochondrial DNA",
+    "w:DNA"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The merger › Mitochondria were bacteria",
+   "key": "bacterial chromosome",
+   "phrase": "bacterial chromosome",
+   "label": "yes",
+   "targets": [
+    "w:Circular chromosome",
+    "w:Nucleoid"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The merger › Mitochondria were bacteria",
+   "key": "ribosome",
+   "phrase": "ribosomes",
+   "label": "yes",
+   "targets": [
+    "w:Ribosome"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The merger › Mitochondria were bacteria",
+   "key": "antibiotic",
+   "phrase": "antibiotics",
+   "label": "yes",
+   "targets": [
+    "w:Antibiotic"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The merger › Margulis",
+   "key": "lynn margulis",
+   "phrase": "Lynn Margulis",
+   "label": "yes",
+   "targets": [
+    "w:Lynn Margulis"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The merger › Margulis",
+   "key": "sequencing",
+   "phrase": "Sequencing",
+   "label": "yes",
+   "targets": [
+    "w:DNA sequencing"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The merger › Margulis",
+   "key": "mitochondrial gene",
+   "phrase": "mitochondrial genes",
+   "label": "yes",
+   "targets": [
+    "w:Mitochondrial DNA"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The merger › The host",
+   "key": "archaea",
+   "phrase": "archaea",
+   "label": "yes",
+   "targets": [
+    "w:Archaea"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The merger › The host",
+   "key": "dna",
+   "phrase": "DNA",
+   "label": "yes",
+   "targets": [
+    "w:DNA"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The merger › The host",
+   "key": "vent field",
+   "phrase": "vent field",
+   "label": "yes",
+   "targets": [
+    "w:Hydrothermal vent"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The merger › The host",
+   "key": "arctic ocean",
+   "phrase": "Arctic Ocean",
+   "label": "yes",
+   "targets": [
+    "w:Arctic Ocean"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The merger › The host",
+   "key": "asgard archaea",
+   "phrase": "Asgard archaea",
+   "label": "yes",
+   "targets": [
+    "w:Asgard (archaea)"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The merger › The host",
+   "key": "internal skeleton",
+   "phrase": "internal skeleton",
+   "label": "yes",
+   "targets": [
+    "w:Cytoskeleton"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "The merger › The host",
+   "key": "bacterium",
+   "phrase": "bacterium",
+   "label": "yes",
+   "targets": [
+    "w:Bacteria"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Why it mattered: energy",
+   "key": "mitochondria",
+   "phrase": "mitochondria",
+   "label": "yes",
+   "targets": [
+    "w:Mitochondrion"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Why it mattered: energy",
+   "key": "nick lane",
+   "phrase": "Nick Lane",
+   "label": "yes",
+   "targets": [
+    "w:Nick Lane"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Why it mattered: energy",
+   "key": "william martin",
+   "phrase": "William Martin",
+   "label": "yes",
+   "targets": [
+    "w:William F. Martin"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Why it mattered: energy",
+   "key": "bacteria",
+   "phrase": "bacteria",
+   "label": "yes",
+   "targets": [
+    "w:Bacteria"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Why it mattered: energy",
+   "key": "genome",
+   "phrase": "genomes",
+   "label": "yes",
+   "targets": [
+    "w:Genome"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Why it mattered: energy › Power at the membrane",
+   "key": "energy currency",
+   "phrase": "energy currency",
+   "label": "yes",
+   "targets": [
+    "w:Adenosine triphosphate"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Why it mattered: energy › Power at the membrane",
+   "key": "membrane",
+   "phrase": "membrane",
+   "label": "yes",
+   "targets": [
+    "w:Cell membrane",
+    "w:Biological membrane"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Why it mattered: energy › Power at the membrane",
+   "key": "proton",
+   "phrase": "protons",
+   "label": "yes",
+   "targets": [
+    "w:Proton"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Why it mattered: energy › Power at the membrane",
+   "key": "turbine like protein",
+   "phrase": "turbine-like protein",
+   "label": "yes",
+   "targets": [
+    "w:ATP synthase"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Why it mattered: energy › Power at the membrane",
+   "key": "bacteria",
+   "phrase": "bacteria",
+   "label": "yes",
+   "targets": [
+    "w:Bacteria"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Why it mattered: energy › Genes on site",
+   "key": "mitochondria",
+   "phrase": "Mitochondria",
+   "label": "yes",
+   "targets": [
+    "w:Mitochondrion"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Why it mattered: energy › Genes on site",
+   "key": "genome",
+   "phrase": "genome",
+   "label": "yes",
+   "targets": [
+    "w:Genome"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Why it mattered: energy › How strong the argument is",
+   "key": "bacterium",
+   "phrase": "bacterium",
+   "label": "yes",
+   "targets": [
+    "w:Bacteria"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Why it mattered: energy › How strong the argument is",
+   "key": "genome",
+   "phrase": "genomes",
+   "label": "yes",
+   "targets": [
+    "w:Genome"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "How the rest followed › The nucleus",
+   "key": "host genome",
+   "phrase": "host genome",
+   "label": "yes",
+   "targets": [
+    "w:Genome"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "How the rest followed › The nucleus",
+   "key": "self splicing parasitic sequence",
+   "phrase": "self-splicing parasitic sequences",
+   "label": "yes",
+   "targets": [
+    "w:Group II intron",
+    "w:Intron"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "How the rest followed › The nucleus",
+   "key": "translated",
+   "phrase": "translated",
+   "label": "yes",
+   "targets": [
+    "w:Translation (biology)"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "How the rest followed › The nucleus",
+   "key": "nuclear membrane",
+   "phrase": "nuclear membrane",
+   "label": "yes",
+   "targets": [
+    "w:Nuclear envelope"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "How the rest followed › Sex and death",
+   "key": "sex",
+   "phrase": "sex",
+   "label": "yes",
+   "targets": [
+    "w:Sexual reproduction"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "How the rest followed › Sex and death",
+   "key": "genome",
+   "phrase": "genomes",
+   "label": "yes",
+   "targets": [
+    "w:Genome"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "How the rest followed › Sex and death",
+   "key": "mitochondria",
+   "phrase": "Mitochondria",
+   "label": "yes",
+   "targets": [
+    "w:Mitochondrion"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "How the rest followed › Sex and death",
+   "key": "programmed cell death",
+   "phrase": "programmed cell death",
+   "label": "yes",
+   "targets": [
+    "w:Programmed cell death",
+    "w:Apoptosis"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "How the rest followed › Two genomes in step",
+   "key": "nuclear gene",
+   "phrase": "nuclear genes",
+   "label": "yes",
+   "targets": [
+    "w:Nuclear DNA",
+    "w:Nuclear gene"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "How the rest followed › Two genomes in step",
+   "key": "mitochondria",
+   "phrase": "mitochondria",
+   "label": "yes",
+   "targets": [
+    "w:Mitochondrion"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "How the rest followed › Two genomes in step",
+   "key": "genome",
+   "phrase": "genomes",
+   "label": "yes",
+   "targets": [
+    "w:Genome"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Once or often › Other mergers",
+   "key": "chloroplast",
+   "phrase": "Chloroplasts",
+   "label": "yes",
+   "targets": [
+    "w:Chloroplast"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Once or often › Other mergers",
+   "key": "photosynthesis",
+   "phrase": "photosynthesis",
+   "label": "yes",
+   "targets": [
+    "w:Photosynthesis"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Once or often › Other mergers",
+   "key": "cyanobacteria",
+   "phrase": "cyanobacteria",
+   "label": "yes",
+   "targets": [
+    "w:Cyanobacteria"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Once or often › Other mergers",
+   "key": "algae",
+   "phrase": "algae",
+   "label": "yes",
+   "targets": [
+    "w:Algae"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Once or often › Other mergers",
+   "key": "amoeba",
+   "phrase": "amoeba",
+   "label": "yes",
+   "targets": [
+    "w:Amoeba"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Once or often › Other mergers",
+   "key": "paulinella",
+   "phrase": "Paulinella",
+   "label": "yes",
+   "targets": [
+    "w:Paulinella"
+   ]
+  },
+  {
+   "doc": "the-eukaryotic-cell",
+   "node": "Once or often › Why only once",
+   "key": "fossil record",
+   "phrase": "fossil record",
+   "label": "yes",
+   "targets": [
+    "w:Fossil"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "The tides",
+   "key": "tide",
+   "phrase": "tides",
+   "label": "yes",
+   "targets": [
+    "w:Tide"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "The tides",
+   "key": "ocean basin",
+   "phrase": "ocean basins",
+   "label": "yes",
+   "targets": [
+    "w:Oceanic basin"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "The force › Why the Moon beats the Sun",
+   "key": "tidal force",
+   "phrase": "tidal force",
+   "label": "yes",
+   "targets": [
+    "w:Tidal force"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "The force › How small it is",
+   "key": "tidal force",
+   "phrase": "tidal force",
+   "label": "yes",
+   "targets": [
+    "w:Tidal force"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "Springs and neaps › The fortnightly cycle",
+   "key": "full moon",
+   "phrase": "full moon",
+   "label": "yes",
+   "targets": [
+    "w:Full moon"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "Springs and neaps › The fortnightly cycle",
+   "key": "spring tide",
+   "phrase": "spring tides",
+   "label": "yes",
+   "targets": [
+    "w:Tide",
+    "w:Spring tide"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "Springs and neaps › The fortnightly cycle",
+   "key": "neap tide",
+   "phrase": "neap tides",
+   "label": "yes",
+   "targets": [
+    "w:Tide",
+    "w:Neap tide"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "Springs and neaps › Other rhythms",
+   "key": "moon orbit",
+   "phrase": "Moon's orbit",
+   "label": "yes",
+   "targets": [
+    "w:Orbit of the Moon"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "Springs and neaps › Other rhythms",
+   "key": "ellipse",
+   "phrase": "ellipse",
+   "label": "yes",
+   "targets": [
+    "w:Ellipse"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "Springs and neaps › Other rhythms",
+   "key": "lunar day",
+   "phrase": "lunar day",
+   "label": "yes",
+   "targets": [
+    "w:Lunar day"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "Springs and neaps › Predicting by harmonics",
+   "key": "william thomson",
+   "phrase": "William Thomson",
+   "label": "yes",
+   "targets": [
+    "w:Lord Kelvin"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "What the ocean actually does › Amphidromes",
+   "key": "earth rotation",
+   "phrase": "Earth's rotation",
+   "label": "yes",
+   "targets": [
+    "w:Earth's rotation"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "What the ocean actually does › Resonance",
+   "key": "shelf sea",
+   "phrase": "shelf sea",
+   "label": "yes",
+   "targets": [
+    "w:Shelf sea",
+    "w:Continental shelf"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "What the ocean actually does › Resonance",
+   "key": "bay of fundy",
+   "phrase": "Bay of Fundy",
+   "label": "yes",
+   "targets": [
+    "w:Bay of Fundy"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "What the ocean actually does › Resonance",
+   "key": "mediterranean",
+   "phrase": "Mediterranean",
+   "label": "yes",
+   "targets": [
+    "w:Mediterranean Sea"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "The brake › The receding Moon",
+   "key": "apollo",
+   "phrase": "Apollo",
+   "label": "yes",
+   "targets": [
+    "w:Apollo program"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "The brake › The receding Moon",
+   "key": "laser ranging",
+   "phrase": "laser ranging",
+   "label": "yes",
+   "targets": [
+    "w:Lunar Laser Ranging experiments",
+    "w:Lunar laser ranging"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "The brake › The receding Moon",
+   "key": "soviet lander",
+   "phrase": "Soviet landers",
+   "label": "yes",
+   "targets": [
+    "w:Lunokhod programme"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "Tides elsewhere › Locking",
+   "key": "pluto",
+   "phrase": "Pluto",
+   "label": "yes",
+   "targets": [
+    "w:Pluto"
+   ]
+  },
+  {
+   "doc": "tides",
+   "node": "Tides elsewhere › Locking",
+   "key": "charon",
+   "phrase": "Charon",
+   "label": "yes",
+   "targets": [
+    "w:Charon (moon)"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "What a proof is",
+   "key": "proof",
+   "phrase": "proof",
+   "label": "yes",
+   "targets": [
+    "w:Mathematical proof"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Two ideas of proof",
+   "key": "formal proof",
+   "phrase": "formal proof",
+   "label": "yes",
+   "targets": [
+    "w:Formal proof"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Two ideas of proof › The formal ideal",
+   "key": "formal proof",
+   "phrase": "formal proof",
+   "label": "yes",
+   "targets": [
+    "w:Formal proof"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Two ideas of proof › The formal ideal",
+   "key": "euclid",
+   "phrase": "Euclid",
+   "label": "yes",
+   "targets": [
+    "w:Euclid"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Two ideas of proof › The formal ideal",
+   "key": "frege",
+   "phrase": "Frege",
+   "label": "yes",
+   "targets": [
+    "w:Gottlob Frege"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Two ideas of proof › The formal ideal",
+   "key": "peano",
+   "phrase": "Peano",
+   "label": "yes",
+   "targets": [
+    "w:Giuseppe Peano"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Two ideas of proof › The formal ideal",
+   "key": "russell",
+   "phrase": "Russell",
+   "label": "yes",
+   "targets": [
+    "w:Bertrand Russell"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Two ideas of proof › The formal ideal",
+   "key": "hilbert",
+   "phrase": "Hilbert",
+   "label": "yes",
+   "targets": [
+    "w:David Hilbert"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "When proofs got too big › The four colour theorem",
+   "key": "kenneth appel",
+   "phrase": "Kenneth Appel",
+   "label": "yes",
+   "targets": [
+    "w:Kenneth Appel"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "When proofs got too big › The four colour theorem",
+   "key": "wolfgang haken",
+   "phrase": "Wolfgang Haken",
+   "label": "yes",
+   "targets": [
+    "w:Wolfgang Haken"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "When proofs got too big › The enormous theorem",
+   "key": "classification of the finite simple group",
+   "phrase": "classification of the finite simple groups",
+   "label": "yes",
+   "targets": [
+    "w:Classification of finite simple groups"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "When proofs got too big › The enormous theorem",
+   "key": "finite simple group",
+   "phrase": "finite simple groups",
+   "label": "yes",
+   "targets": [
+    "w:Classification of finite simple groups",
+    "w:Simple group"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "When proofs got too big › Kepler's conjecture",
+   "key": "kepler",
+   "phrase": "Kepler",
+   "label": "yes",
+   "targets": [
+    "w:Johannes Kepler"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "When proofs got too big › Kepler's conjecture",
+   "key": "thoma hale",
+   "phrase": "Thomas Hales",
+   "label": "yes",
+   "targets": [
+    "w:Thomas Callister Hales"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Proof assistants",
+   "key": "formal proof",
+   "phrase": "formal proofs",
+   "label": "yes",
+   "targets": [
+    "w:Formal proof"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Proof assistants › How they work",
+   "key": "formal language",
+   "phrase": "formal language",
+   "label": "yes",
+   "targets": [
+    "w:Formal language"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Proof assistants › Proofs as programs",
+   "key": "proposition",
+   "phrase": "proposition",
+   "label": "yes",
+   "targets": [
+    "w:Proposition"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Proof assistants › Proofs as programs",
+   "key": "type",
+   "phrase": "type",
+   "label": "yes",
+   "targets": [
+    "w:Type theory",
+    "w:Data type"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Proof assistants › Proofs as programs",
+   "key": "type checking",
+   "phrase": "type-checking",
+   "label": "yes",
+   "targets": [
+    "w:Type system"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Proof assistants › Milestones",
+   "key": "george gonthier",
+   "phrase": "Georges Gonthier",
+   "label": "yes",
+   "targets": [
+    "w:Georges Gonthier"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Proof assistants › Milestones",
+   "key": "four colour theorem",
+   "phrase": "four colour theorem",
+   "label": "yes",
+   "targets": [
+    "w:Four color theorem",
+    "node:The four colour theorem"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Proof assistants › Milestones",
+   "key": "hale",
+   "phrase": "Hales",
+   "label": "yes",
+   "targets": [
+    "w:Thomas Callister Hales"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Proof assistants › Milestones",
+   "key": "flyspeck",
+   "phrase": "Flyspeck",
+   "label": "yes",
+   "targets": [
+    "w:Kepler conjecture",
+    "w:Flyspeck project"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Proof assistants › Milestones",
+   "key": "kepler",
+   "phrase": "Kepler",
+   "label": "yes",
+   "targets": [
+    "w:Kepler conjecture",
+    "node:Kepler's conjecture"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Proof assistants › Milestones",
+   "key": "odd order theorem",
+   "phrase": "odd order theorem",
+   "label": "yes",
+   "targets": [
+    "w:Feit–Thompson theorem"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Proof assistants › Milestones",
+   "key": "group theory",
+   "phrase": "group theory",
+   "label": "yes",
+   "targets": [
+    "w:Group theory"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Mathematics meets the machine › A library",
+   "key": "lean",
+   "phrase": "Lean",
+   "label": "yes",
+   "targets": [
+    "w:Lean (proof assistant)"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Mathematics meets the machine › A library",
+   "key": "mathlib",
+   "phrase": "mathlib",
+   "label": "yes",
+   "targets": [
+    "w:Lean (proof assistant)",
+    "w:Mathlib"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Mathematics meets the machine › A library",
+   "key": "axiom",
+   "phrase": "axioms",
+   "label": "yes",
+   "targets": [
+    "w:Axiom"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Mathematics meets the machine › The liquid tensor experiment",
+   "key": "field medallist",
+   "phrase": "Fields medallist",
+   "label": "yes",
+   "targets": [
+    "w:Fields Medal"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Mathematics meets the machine › The liquid tensor experiment",
+   "key": "peter scholze",
+   "phrase": "Peter Scholze",
+   "label": "yes",
+   "targets": [
+    "w:Peter Scholze"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Mathematics meets the machine › The liquid tensor experiment",
+   "key": "johan commelin",
+   "phrase": "Johan Commelin",
+   "label": "yes",
+   "targets": [
+    "w:Johan Commelin"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Mathematics meets the machine › Collaboration at scale",
+   "key": "terence tao",
+   "phrase": "Terence Tao",
+   "label": "yes",
+   "targets": [
+    "w:Terence Tao"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Mathematics meets the machine › Collaboration at scale",
+   "key": "combinatoric",
+   "phrase": "combinatorics",
+   "label": "yes",
+   "targets": [
+    "w:Combinatorics"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "Mathematics meets the machine › Collaboration at scale",
+   "key": "lemma",
+   "phrase": "lemmas",
+   "label": "yes",
+   "targets": [
+    "w:Lemma (mathematics)"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "What changes",
+   "key": "language model",
+   "phrase": "Language models",
+   "label": "yes",
+   "targets": [
+    "w:Language model",
+    "w:Large language model"
+   ]
+  },
+  {
+   "doc": "what-a-proof-is",
+   "node": "What changes",
+   "key": "formal proof",
+   "phrase": "formal proofs",
+   "label": "yes",
+   "targets": [
+    "w:Formal proof"
+   ]
+  }
+ ]
+}

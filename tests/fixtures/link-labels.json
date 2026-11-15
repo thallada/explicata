@@ -1,0 +1,3854 @@
+{
+ "about": "Hand labels for evaluating the link scanner (scripts/linkEval.ts) on the starter library: every phrase that resolved to a target in the sampled sections of octopus-minds, fixed-points, origin-of-the-elements and invention-of-writing (tuning set, first 16 sections of 40+ words each) and tuning-and-temperament (held out, first 12), plus a few clear misses marked added. 'yes' means a careful Wikipedia editor would link the phrase in that sentence (MOS:LINK: specific concepts, technical terms, names; not everyday words, partial phrases, wrong senses, or a document's central subject after its first mention), and target is the right article or library section, which may differ from the scanner's.",
+ "labels": [
+  {
+   "doc": "octopus-minds",
+   "node": "Octopus minds",
+   "key": "common ancestor",
+   "phrase": "common ancestor",
+   "label": "yes",
+   "target": "node:The common ancestor",
+   "note": "the subsection is about this very ancestor"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Octopus minds",
+   "key": "neuron",
+   "phrase": "neurons",
+   "label": "yes",
+   "target": "w:Neuron"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Octopus minds",
+   "key": "mammal",
+   "phrase": "mammal",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Octopus minds",
+   "key": "ancestor",
+   "phrase": "ancestor",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Octopus minds",
+   "key": "octopus",
+   "phrase": "octopus",
+   "label": "yes",
+   "target": "w:Octopus",
+   "note": "first section: the document's subject linked once"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › The common ancestor",
+   "key": "resemblance",
+   "phrase": "resemblance",
+   "label": "no",
+   "note": "unrelated section in another document"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › The common ancestor",
+   "key": "mollusc",
+   "phrase": "molluscs",
+   "label": "yes",
+   "target": "w:Mollusca"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › The common ancestor",
+   "key": "vertebrate",
+   "phrase": "vertebrates",
+   "label": "yes",
+   "target": "w:Vertebrate"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › The common ancestor",
+   "key": "sophistication",
+   "phrase": "sophistication",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › The common ancestor",
+   "key": "centralised",
+   "phrase": "centralised",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › The common ancestor",
+   "key": "octopus",
+   "phrase": "octopus",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Losing the shell",
+   "key": "cephalopod",
+   "phrase": "cephalopods",
+   "label": "yes",
+   "target": "w:Cephalopod"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Losing the shell",
+   "key": "nautilus",
+   "phrase": "nautilus",
+   "label": "yes",
+   "target": "w:Nautilus"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Losing the shell",
+   "key": "nakedness",
+   "phrase": "nakedness",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Losing the shell",
+   "key": "unprotected",
+   "phrase": "unprotected",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Losing the shell",
+   "key": "edible",
+   "phrase": "edible",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Losing the shell",
+   "key": "survive",
+   "phrase": "survives",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Losing the shell",
+   "key": "squid",
+   "phrase": "squid",
+   "label": "yes",
+   "target": "w:Squid"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Losing the shell",
+   "key": "octopus",
+   "phrase": "octopuses",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Losing the shell",
+   "key": "perception",
+   "phrase": "perception",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Losing the shell",
+   "key": "wit",
+   "phrase": "wit",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Losing the shell",
+   "key": "crevice",
+   "phrase": "crevices",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Losing the shell",
+   "key": "concealment",
+   "phrase": "concealment",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Live fast",
+   "key": "parental",
+   "phrase": "parental",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Live fast",
+   "key": "mammal",
+   "phrase": "mammals",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Live fast",
+   "key": "learn",
+   "phrase": "learns",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A separate experiment › Live fast",
+   "key": "octopus",
+   "phrase": "octopuses",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds",
+   "key": "neuron",
+   "phrase": "neurons",
+   "label": "yes",
+   "target": "w:Neuron"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds",
+   "key": "centred",
+   "phrase": "centred",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds",
+   "key": "octopus",
+   "phrase": "octopus",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds",
+   "key": "comparable",
+   "phrase": "comparable",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › Counting neurons",
+   "key": "neuron",
+   "phrase": "neurons",
+   "label": "yes",
+   "target": "w:Neuron"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › Counting neurons",
+   "key": "optic",
+   "phrase": "optic",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › Counting neurons",
+   "key": "nerve cord",
+   "phrase": "nerve cords",
+   "label": "no",
+   "note": "only a set-index page fits"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › Counting neurons",
+   "key": "nerve cell",
+   "phrase": "nerve cells",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › Counting neurons",
+   "key": "optic lobe",
+   "phrase": "optic lobes",
+   "label": "no",
+   "note": "no article on cephalopod optic lobes that I can vouch for"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › Counting neurons",
+   "key": "cord",
+   "phrase": "cords",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › Arms that decide",
+   "key": "joint",
+   "phrase": "joints",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › Arms that decide",
+   "key": "grasp",
+   "phrase": "grasp",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › Arms that decide",
+   "key": "workable",
+   "phrase": "workable",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › What the brain knows",
+   "key": "split shift",
+   "phrase": "split shifts",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › What the brain knows",
+   "key": "guide",
+   "phrase": "guides",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › What the brain knows",
+   "key": "octopus",
+   "phrase": "octopus",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › What the brain knows",
+   "key": "maze",
+   "phrase": "maze",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › What the brain knows",
+   "key": "shift",
+   "phrase": "shifts",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › Tasting by touch",
+   "key": "cephalopod",
+   "phrase": "cephalopods",
+   "label": "yes",
+   "target": "w:Cephalopod"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › Tasting by touch",
+   "key": "chemical receptor",
+   "phrase": "chemical receptors",
+   "label": "yes",
+   "target": "w:Chemoreceptor"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › Tasting by touch",
+   "key": "receptor",
+   "phrase": "receptors",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "A body with many minds › Tasting by touch",
+   "key": "crevice",
+   "phrase": "crevice",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin",
+   "key": "octopus",
+   "phrase": "Octopuses",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin",
+   "key": "cuttlefish",
+   "phrase": "cuttlefish",
+   "label": "yes",
+   "target": "w:Cuttlefish"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin",
+   "key": "colour blind",
+   "phrase": "colour-blind",
+   "label": "yes",
+   "target": "w:Color blindness"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin",
+   "key": "fraction",
+   "phrase": "fraction",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin",
+   "key": "squid",
+   "phrase": "squid",
+   "label": "yes",
+   "target": "w:Squid"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Chromatophores",
+   "key": "sac",
+   "phrase": "sacs",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Chromatophores",
+   "key": "pigment",
+   "phrase": "pigment",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Chromatophores",
+   "key": "ringed",
+   "phrase": "ringed",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Chromatophores",
+   "key": "iridescent",
+   "phrase": "iridescent",
+   "label": "yes",
+   "target": "w:Iridescence"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Chromatophores",
+   "key": "bump",
+   "phrase": "bumps",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Chromatophores",
+   "key": "sheen",
+   "phrase": "sheens",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Camouflage",
+   "key": "cuttlefish",
+   "phrase": "cuttlefish",
+   "label": "yes",
+   "target": "w:Cuttlefish"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Camouflage",
+   "key": "mottled",
+   "phrase": "mottled",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Camouflage",
+   "key": "visual system",
+   "phrase": "visual systems",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Camouflage",
+   "key": "pattern",
+   "phrase": "patterns",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Camouflage",
+   "key": "patterned",
+   "phrase": "patterned",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Colour-blind artists",
+   "key": "camouflage",
+   "phrase": "camouflage",
+   "label": "yes",
+   "target": "node:Camouflage",
+   "note": "sibling section on cephalopod camouflage"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Colour-blind artists",
+   "key": "cephalopod",
+   "phrase": "Cephalopod",
+   "label": "no",
+   "note": "covered by the longer \"Cephalopod eyes\""
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Colour-blind artists",
+   "key": "behavioural",
+   "phrase": "behavioural",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Colour-blind artists",
+   "key": "brightness",
+   "phrase": "brightness",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Colour-blind artists",
+   "key": "cephalopod eye",
+   "phrase": "Cephalopod eyes",
+   "label": "yes",
+   "target": "w:Cephalopod eye"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Colour-blind artists",
+   "key": "optical",
+   "phrase": "optical",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Colour-blind artists",
+   "key": "explanation",
+   "phrase": "explanations",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Colour-blind artists",
+   "key": "pupil",
+   "phrase": "pupils",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Colour-blind artists",
+   "key": "colour",
+   "phrase": "colours",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Colour-blind artists",
+   "key": "receptor",
+   "phrase": "receptor",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do",
+   "key": "octopus",
+   "phrase": "Octopuses",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do",
+   "key": "anecdote",
+   "phrase": "anecdotes",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do",
+   "key": "aquarium",
+   "phrase": "aquariums",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do › Problems and tools",
+   "key": "definition",
+   "phrase": "definition",
+   "label": "no",
+   "note": "unrelated section"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do › Problems and tools",
+   "key": "indonesia",
+   "phrase": "Indonesia",
+   "label": "no",
+   "note": "major country"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do › Problems and tools",
+   "key": "octopus",
+   "phrase": "Octopuses",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do › Problems and tools",
+   "key": "maz",
+   "phrase": "mazes",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do › Problems and tools",
+   "key": "veined",
+   "phrase": "veined",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do › Problems and tools",
+   "key": "veined octopus",
+   "phrase": "veined octopuses",
+   "label": "yes",
+   "target": "w:Amphioctopus marginatus"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do › Problems and tools",
+   "key": "halve",
+   "phrase": "halves",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do › Problems and tools",
+   "key": "jar",
+   "phrase": "jars",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do › Problems and tools",
+   "key": "coconut shell",
+   "phrase": "coconut shells",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do › Problems and tools",
+   "key": "tool use",
+   "phrase": "tool use",
+   "label": "yes",
+   "target": "w:Tool use by non-human animals"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do › Problems and tools",
+   "key": "coconut",
+   "phrase": "coconut",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do › Play and individuals",
+   "key": "inlet",
+   "phrase": "inlet",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "What they do › Play and individuals",
+   "key": "octopus",
+   "phrase": "octopuses",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Fixed points",
+   "key": "recursion",
+   "phrase": "recursion",
+   "label": "yes",
+   "target": "w:Recursion"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Fixed points",
+   "key": "iterating",
+   "phrase": "iterating",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Fixed points",
+   "key": "arithmetic",
+   "phrase": "arithmetic",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Fixed points",
+   "key": "web page",
+   "phrase": "web page",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Fixed points",
+   "key": "equation",
+   "phrase": "equation",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "The idea itself",
+   "key": "theorem",
+   "phrase": "theorems",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "The idea itself",
+   "key": "fixed point theorem",
+   "phrase": "fixed-point theorems",
+   "label": "yes",
+   "target": "w:Fixed-point theorem"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "The idea itself",
+   "key": "map",
+   "phrase": "maps",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "The idea itself",
+   "key": "fixed point",
+   "phrase": "fixed-point",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "The idea itself › Three questions",
+   "key": "halving",
+   "phrase": "halving",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "The idea itself › Three questions",
+   "key": "uniqueness",
+   "phrase": "uniqueness",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "The idea itself › Three questions",
+   "key": "reachability",
+   "phrase": "reachability",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "The idea itself › Three questions",
+   "key": "theorem",
+   "phrase": "theorem",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "The idea itself › Three questions",
+   "key": "halve",
+   "phrase": "halves",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "The idea itself › Three questions",
+   "key": "separate property",
+   "phrase": "separate properties",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "The idea itself › Three questions",
+   "key": "squaring",
+   "phrase": "squaring",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "The idea itself › Why they matter",
+   "key": "definition",
+   "phrase": "definition",
+   "label": "no",
+   "note": "that section is about PageRank, not this definition"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "The idea itself › Why they matter",
+   "key": "self referential",
+   "phrase": "self-referential",
+   "label": "yes",
+   "target": "w:Self-reference"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "The idea itself › Why they matter",
+   "key": "self reference",
+   "phrase": "self-reference",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "The idea itself › Why they matter",
+   "key": "equation",
+   "phrase": "equation",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names",
+   "key": "recursion",
+   "phrase": "Recursion",
+   "label": "yes",
+   "target": "w:Recursion"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names",
+   "key": "combinator",
+   "phrase": "combinator",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names",
+   "key": "self reference",
+   "phrase": "self-reference",
+   "label": "yes",
+   "target": "w:Self-reference"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names",
+   "key": "lambda calculus",
+   "phrase": "lambda calculus",
+   "label": "yes",
+   "target": "w:Lambda calculus"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names",
+   "key": "fixed point combinator",
+   "phrase": "fixed-point combinator",
+   "label": "yes",
+   "target": "w:Fixed-point combinator"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names",
+   "key": "y combinator",
+   "phrase": "Y combinator",
+   "label": "no",
+   "note": "same article as fixed-point combinator, already linked here"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names",
+   "key": "fixed point",
+   "phrase": "fixed-point",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › How Y works",
+   "key": "recursive",
+   "phrase": "recursive",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › How Y works",
+   "key": "factorial",
+   "phrase": "Factorial",
+   "label": "yes",
+   "target": "w:Factorial"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › How Y works",
+   "key": "recursive function",
+   "phrase": "recursive function",
+   "label": "yes",
+   "target": "w:Recursion (computer science)"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › What it buys",
+   "key": "turing",
+   "phrase": "Turing",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › What it buys",
+   "key": "recursion",
+   "phrase": "recursion",
+   "label": "yes",
+   "target": "w:Recursion"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › What it buys",
+   "key": "lambda",
+   "phrase": "lambda",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › What it buys",
+   "key": "first class function",
+   "phrase": "first-class functions",
+   "label": "yes",
+   "target": "w:First-class function"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › What it buys",
+   "key": "lambda calculus",
+   "phrase": "lambda calculus",
+   "label": "yes",
+   "target": "w:Lambda calculus"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › What it buys",
+   "key": "turing machine",
+   "phrase": "Turing machine",
+   "label": "yes",
+   "target": "w:Turing machine"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › What it buys",
+   "key": "compute",
+   "phrase": "computes",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › What it buys",
+   "key": "calculus",
+   "phrase": "calculus",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › What it buys",
+   "key": "consistency",
+   "phrase": "consistency",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › What it buys",
+   "key": "type system",
+   "phrase": "type systems",
+   "label": "yes",
+   "target": "w:Type system"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › What it buys",
+   "key": "designer",
+   "phrase": "designers",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › What it buys",
+   "key": "consistent",
+   "phrase": "consistent",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Recursion without names › What it buys",
+   "key": "first class",
+   "phrase": "first-class",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves",
+   "key": "diagonal lemma",
+   "phrase": "diagonal lemma",
+   "label": "yes",
+   "target": "node:The diagonal lemma",
+   "note": "its own subsection; Wikipedia also has Diagonal lemma"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves",
+   "key": "godel",
+   "phrase": "Gödel",
+   "label": "yes",
+   "target": "w:Kurt Gödel"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves",
+   "key": "theorem",
+   "phrase": "theorem",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves",
+   "key": "diagonal",
+   "phrase": "diagonal",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves",
+   "key": "incompleteness theorem",
+   "phrase": "incompleteness theorem",
+   "label": "yes",
+   "target": "w:Gödel's incompleteness theorems"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves",
+   "key": "arithmetic",
+   "phrase": "arithmetic",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves",
+   "key": "sentence",
+   "phrase": "sentences",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves",
+   "key": "incompleteness",
+   "phrase": "incompleteness",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves",
+   "key": "lemma",
+   "phrase": "lemma",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › The diagonal lemma",
+   "key": "describe",
+   "phrase": "describes",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › The diagonal lemma",
+   "key": "sentence",
+   "phrase": "sentences",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › The diagonal lemma",
+   "key": "lemma",
+   "phrase": "lemma",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › The diagonal lemma",
+   "key": "provable",
+   "phrase": "provable",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › From the lemma to incompleteness",
+   "key": "unprovable",
+   "phrase": "unprovable",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › From the lemma to incompleteness",
+   "key": "arithmetic",
+   "phrase": "arithmetic",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › From the lemma to incompleteness",
+   "key": "consistent system",
+   "phrase": "consistent system",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › From the lemma to incompleteness",
+   "key": "consistent",
+   "phrase": "consistent",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › Quines",
+   "key": "kleene",
+   "phrase": "Kleene",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › Quines",
+   "key": "recursion",
+   "phrase": "recursion",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › Quines",
+   "key": "theorem",
+   "phrase": "theorem",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › Quines",
+   "key": "compiler",
+   "phrase": "compilers",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › Quines",
+   "key": "self hosting compiler",
+   "phrase": "self-hosting compilers",
+   "label": "yes",
+   "target": "w:Self-hosting (compilers)"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › Quines",
+   "key": "virus",
+   "phrase": "Viruses",
+   "label": "yes",
+   "target": "w:Computer virus",
+   "note": "programs, not biology"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › Quines",
+   "key": "licence",
+   "phrase": "licence",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › Quines",
+   "key": "recursion theorem",
+   "phrase": "recursion theorem",
+   "label": "yes",
+   "target": "w:Kleene's recursion theorem"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › Quines",
+   "key": "self hosting",
+   "phrase": "self-hosting",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer",
+   "key": "banach",
+   "phrase": "Banach",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer",
+   "key": "theorem",
+   "phrase": "theorem",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer",
+   "key": "computing",
+   "phrase": "computing",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer",
+   "key": "iterate",
+   "phrase": "iterate",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer",
+   "key": "fixed point theorem",
+   "phrase": "fixed-point theorem",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer",
+   "key": "numerical computing",
+   "phrase": "numerical computing",
+   "label": "yes",
+   "target": "w:Numerical analysis"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer",
+   "key": "banach fixed point theorem",
+   "phrase": "Banach fixed-point theorem",
+   "label": "yes",
+   "target": "w:Banach fixed-point theorem"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer",
+   "key": "converge",
+   "phrase": "converges",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer",
+   "key": "fixed point",
+   "phrase": "fixed-point",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › The contraction principle",
+   "key": "iteration",
+   "phrase": "iteration",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › The contraction principle",
+   "key": "uniqueness",
+   "phrase": "uniqueness",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › The contraction principle",
+   "key": "error bound",
+   "phrase": "error bound",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › The contraction principle",
+   "key": "hypothesis",
+   "phrase": "hypothesis",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › The contraction principle",
+   "key": "algorithm",
+   "phrase": "algorithm",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › The contraction principle",
+   "key": "converge",
+   "phrase": "converges",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › The contraction principle",
+   "key": "shrink",
+   "phrase": "shrinks",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › Where it is used",
+   "key": "lindelof",
+   "phrase": "Lindelöf",
+   "label": "yes",
+   "target": "w:Ernst Leonard Lindelöf"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › Where it is used",
+   "key": "iteration",
+   "phrase": "iteration",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › Where it is used",
+   "key": "integral",
+   "phrase": "integral",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › Where it is used",
+   "key": "reinforcement",
+   "phrase": "reinforcement",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › Where it is used",
+   "key": "fixed point iteration",
+   "phrase": "fixed-point iteration",
+   "label": "yes",
+   "target": "w:Fixed-point iteration"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › Where it is used",
+   "key": "differential equation",
+   "phrase": "differential equation",
+   "label": "yes",
+   "target": "w:Differential equation"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › Where it is used",
+   "key": "integral operator",
+   "phrase": "integral operator",
+   "label": "yes",
+   "target": "w:Integral operator"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › Where it is used",
+   "key": "value iteration",
+   "phrase": "Value iteration",
+   "label": "yes",
+   "target": "w:Markov decision process",
+   "note": "value iteration is treated in that article"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › Where it is used",
+   "key": "reinforcement learning",
+   "phrase": "reinforcement learning",
+   "label": "yes",
+   "target": "w:Reinforcement learning"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › Where it is used",
+   "key": "equation",
+   "phrase": "equation",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › Where it is used",
+   "key": "bellman",
+   "phrase": "Bellman",
+   "label": "yes",
+   "target": "w:Bellman equation",
+   "note": "\"Bellman update\""
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › Where it is used",
+   "key": "picard",
+   "phrase": "Picard",
+   "label": "yes",
+   "target": "w:Émile Picard",
+   "note": "the mathematician, not the Picard group"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Points that cannot move",
+   "key": "brouwer",
+   "phrase": "Brouwer",
+   "label": "yes",
+   "target": "w:Brouwer fixed-point theorem",
+   "note": "\"Brouwer's theorem\""
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Points that cannot move",
+   "key": "theorem",
+   "phrase": "theorem",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Points that cannot move",
+   "key": "topological",
+   "phrase": "topological",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Points that cannot move",
+   "key": "generalisation",
+   "phrase": "generalisations",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Points that cannot move",
+   "key": "continuous map",
+   "phrase": "continuous map",
+   "label": "yes",
+   "target": "w:Continuous function"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Points that cannot move",
+   "key": "existence proof",
+   "phrase": "existence proofs",
+   "label": "yes",
+   "target": "w:Existence theorem",
+   "note": "existence proofs are not constructive proofs"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Points that cannot move",
+   "key": "economic",
+   "phrase": "economics",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Points that cannot move",
+   "key": "game theory",
+   "phrase": "game theory",
+   "label": "yes",
+   "target": "w:Game theory"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Points that cannot move",
+   "key": "contraction",
+   "phrase": "contraction",
+   "label": "yes",
+   "target": "w:Contraction mapping",
+   "note": "wrong sense in the trace"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Points that cannot move › Brouwer's theorem",
+   "key": "crumple",
+   "phrase": "Crumple",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Points that cannot move › Brouwer's theorem",
+   "key": "depict",
+   "phrase": "depicts",
+   "label": "no"
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Points that cannot move › Brouwer's theorem",
+   "key": "contradiction",
+   "phrase": "contradiction",
+   "label": "yes",
+   "target": "w:Proof by contradiction"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Where the elements come from",
+   "key": "astrophysical",
+   "phrase": "astrophysical",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Where the elements come from",
+   "key": "periodic table",
+   "phrase": "periodic table",
+   "label": "yes",
+   "target": "w:Periodic table"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Where the elements come from",
+   "key": "white dwarf",
+   "phrase": "white dwarfs",
+   "label": "yes",
+   "target": "w:White dwarf"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Where the elements come from",
+   "key": "neutron star",
+   "phrase": "neutron stars",
+   "label": "yes",
+   "target": "w:Neutron star"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Where the elements come from",
+   "key": "neutron",
+   "phrase": "neutron",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Where the elements come from",
+   "key": "detonation",
+   "phrase": "detonation",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Where the elements come from",
+   "key": "helium",
+   "phrase": "helium",
+   "label": "yes",
+   "target": "w:Helium",
+   "note": "first mention in the document"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Where the elements come from",
+   "key": "collision",
+   "phrase": "collision",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Where the elements come from",
+   "key": "atom",
+   "phrase": "atom",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Where the elements come from",
+   "key": "periodic",
+   "phrase": "periodic",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Where the elements come from",
+   "key": "dwarf",
+   "phrase": "dwarfs",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes",
+   "key": "big bang",
+   "phrase": "Big Bang",
+   "label": "yes",
+   "target": "w:Big Bang"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes",
+   "key": "lithium",
+   "phrase": "lithium",
+   "label": "yes",
+   "target": "w:Lithium"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes",
+   "key": "cooled",
+   "phrase": "cooled",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes",
+   "key": "helium",
+   "phrase": "helium",
+   "label": "no",
+   "note": "the document's central element after its first mention"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes",
+   "key": "hydrogen",
+   "phrase": "hydrogen",
+   "label": "yes",
+   "target": "w:Hydrogen",
+   "note": "first section that is about it"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes",
+   "key": "bang",
+   "phrase": "Bang",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes",
+   "key": "big",
+   "phrase": "Big",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › Why it stopped at helium",
+   "key": "proton",
+   "phrase": "proton",
+   "label": "yes",
+   "target": "w:Proton"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › Why it stopped at helium",
+   "key": "helium 4",
+   "phrase": "Helium-4",
+   "label": "yes",
+   "target": "w:Helium-4"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › Why it stopped at helium",
+   "key": "helium nuclei",
+   "phrase": "helium nuclei",
+   "label": "yes",
+   "target": "w:Alpha particle",
+   "note": "helium nuclei are alpha particles"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › Why it stopped at helium",
+   "key": "neutron",
+   "phrase": "neutron",
+   "label": "yes",
+   "target": "w:Neutron"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › Why it stopped at helium",
+   "key": "helium",
+   "phrase": "helium",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › Why it stopped at helium",
+   "key": "density",
+   "phrase": "density",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › Why it stopped at helium",
+   "key": "expanding universe",
+   "phrase": "expanding universe",
+   "label": "yes",
+   "target": "w:Expansion of the universe"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › Why it stopped at helium",
+   "key": "nuclei",
+   "phrase": "nuclei",
+   "label": "yes",
+   "target": "w:Atomic nucleus"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › How we know",
+   "key": "deuterium",
+   "phrase": "deuterium",
+   "label": "yes",
+   "target": "w:Deuterium"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › How we know",
+   "key": "quasar",
+   "phrase": "quasars",
+   "label": "yes",
+   "target": "w:Quasar"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › How we know",
+   "key": "matter density",
+   "phrase": "matter density",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › How we know",
+   "key": "helium",
+   "phrase": "helium",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › How we know",
+   "key": "density",
+   "phrase": "density",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › How we know",
+   "key": "microwave background",
+   "phrase": "microwave background",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › How we know",
+   "key": "cosmic microwave background",
+   "phrase": "cosmic microwave background",
+   "label": "yes",
+   "target": "w:Cosmic microwave background"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › How we know",
+   "key": "ratio",
+   "phrase": "ratio",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › How we know",
+   "key": "gas cloud",
+   "phrase": "gas clouds",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › How we know",
+   "key": "ordinary matter",
+   "phrase": "ordinary matter",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › How we know",
+   "key": "microwave",
+   "phrase": "microwave",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes › How we know",
+   "key": "amount",
+   "phrase": "amounts",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars",
+   "key": "sun",
+   "phrase": "Sun",
+   "label": "no",
+   "note": "well-known; not linked in prose"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars",
+   "key": "helium",
+   "phrase": "helium",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars",
+   "key": "nitrogen",
+   "phrase": "nitrogen",
+   "label": "yes",
+   "target": "w:Nitrogen"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars",
+   "key": "hydrogen",
+   "phrase": "hydrogen",
+   "label": "no",
+   "note": "central element after first mention"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars",
+   "key": "contract",
+   "phrase": "contracts",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › Hydrogen burning",
+   "key": "nucleus",
+   "phrase": "nucleus",
+   "label": "no",
+   "note": "cell nucleus section: wrong sense"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › Hydrogen burning",
+   "key": "sun",
+   "phrase": "Sun",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › Hydrogen burning",
+   "key": "proton",
+   "phrase": "protons",
+   "label": "yes",
+   "target": "w:Proton"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › Hydrogen burning",
+   "key": "helium nucleus",
+   "phrase": "helium nucleus",
+   "label": "yes",
+   "target": "w:Alpha particle"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › Hydrogen burning",
+   "key": "helium",
+   "phrase": "helium",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › Hydrogen burning",
+   "key": "collision",
+   "phrase": "collision",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › Hydrogen burning",
+   "key": "last",
+   "phrase": "lasts",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › Hydrogen burning",
+   "key": "slowness",
+   "phrase": "slowness",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › Hydrogen burning",
+   "key": "collide",
+   "phrase": "collide",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › The triple-alpha process",
+   "key": "hoyle",
+   "phrase": "Hoyle",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › The triple-alpha process",
+   "key": "caltech",
+   "phrase": "Caltech",
+   "label": "yes",
+   "target": "w:California Institute of Technology"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › The triple-alpha process",
+   "key": "fred hoyle",
+   "phrase": "Fred Hoyle",
+   "label": "yes",
+   "target": "w:Fred Hoyle"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › The triple-alpha process",
+   "key": "beryllium 8",
+   "phrase": "beryllium-8",
+   "label": "yes",
+   "target": "w:Beryllium-8"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › The triple-alpha process",
+   "key": "carbon 12",
+   "phrase": "carbon-12",
+   "label": "yes",
+   "target": "w:Carbon-12"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › The triple-alpha process",
+   "key": "beryllium",
+   "phrase": "beryllium",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › The triple-alpha process",
+   "key": "helium nuclei",
+   "phrase": "helium nuclei",
+   "label": "yes",
+   "target": "w:Alpha particle"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › The triple-alpha process",
+   "key": "helium burning",
+   "phrase": "Helium burning",
+   "label": "yes",
+   "target": "w:Triple-alpha process"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › The triple-alpha process",
+   "key": "helium",
+   "phrase": "Helium",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › The triple-alpha process",
+   "key": "unstable",
+   "phrase": "unstable",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › The triple-alpha process",
+   "key": "fusing",
+   "phrase": "fusing",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › The triple-alpha process",
+   "key": "nuclei",
+   "phrase": "nuclei",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › How the material gets out",
+   "key": "sun like",
+   "phrase": "Sun-like",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › How the material gets out",
+   "key": "dredged",
+   "phrase": "dredged",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › How the material gets out",
+   "key": "sun like star",
+   "phrase": "Sun-like stars",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › How the material gets out",
+   "key": "red giant",
+   "phrase": "red giants",
+   "label": "yes",
+   "target": "w:Red giant"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › How the material gets out",
+   "key": "white dwarf",
+   "phrase": "white dwarf",
+   "label": "yes",
+   "target": "w:White dwarf"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › How the material gets out",
+   "key": "drift away",
+   "phrase": "drift away",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › How the material gets out",
+   "key": "enriched",
+   "phrase": "enriched",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › How the material gets out",
+   "key": "fus",
+   "phrase": "fuses",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars",
+   "key": "silicon",
+   "phrase": "silicon",
+   "label": "yes",
+   "target": "w:Silicon"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars",
+   "key": "neon",
+   "phrase": "neon",
+   "label": "yes",
+   "target": "w:Neon"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars",
+   "key": "solar mass",
+   "phrase": "solar masses",
+   "label": "yes",
+   "target": "w:Solar mass"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars",
+   "key": "hotter",
+   "phrase": "hotter",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › The onion",
+   "key": "silicon",
+   "phrase": "silicon",
+   "label": "yes",
+   "target": "w:Silicon"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › The onion",
+   "key": "helium",
+   "phrase": "helium",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › The onion",
+   "key": "iron core",
+   "phrase": "iron core",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › The onion",
+   "key": "massive star",
+   "phrase": "massive star",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › The onion",
+   "key": "hydrogen",
+   "phrase": "hydrogen",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › The onion",
+   "key": "last",
+   "phrase": "lasts",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › The onion",
+   "key": "layered",
+   "phrase": "layered",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Why iron is the end",
+   "key": "neutron star",
+   "phrase": "neutron star",
+   "label": "yes",
+   "target": "w:Neutron star"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Why iron is the end",
+   "key": "neutron",
+   "phrase": "neutron",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Why iron is the end",
+   "key": "solar mass",
+   "phrase": "solar masses",
+   "label": "yes",
+   "target": "w:Solar mass"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Why iron is the end",
+   "key": "iron core",
+   "phrase": "iron core",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Why iron is the end",
+   "key": "nickel",
+   "phrase": "nickel",
+   "label": "yes",
+   "target": "w:Nickel"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Why iron is the end",
+   "key": "nuclei",
+   "phrase": "Nuclei",
+   "label": "yes",
+   "target": "w:Atomic nucleus"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Why iron is the end",
+   "key": "fusing",
+   "phrase": "Fusing",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Core collapse",
+   "key": "magnesium",
+   "phrase": "magnesium",
+   "label": "yes",
+   "target": "w:Magnesium"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Core collapse",
+   "key": "sulphur",
+   "phrase": "sulphur",
+   "label": "yes",
+   "target": "w:Sulfur"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Core collapse",
+   "key": "interstellar space",
+   "phrase": "interstellar space",
+   "label": "yes",
+   "target": "w:Outer space",
+   "note": "Outer space, interstellar section"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Core collapse",
+   "key": "nuclear density",
+   "phrase": "nuclear density",
+   "label": "yes",
+   "target": "w:Nuclear density"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Core collapse",
+   "key": "silicon",
+   "phrase": "silicon",
+   "label": "yes",
+   "target": "w:Silicon"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Core collapse",
+   "key": "density",
+   "phrase": "density",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Core collapse",
+   "key": "neon",
+   "phrase": "neon",
+   "label": "yes",
+   "target": "w:Neon"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Core collapse",
+   "key": "interstellar",
+   "phrase": "interstellar",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs",
+   "key": "type ia",
+   "phrase": "Type Ia",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs",
+   "key": "supernovae",
+   "phrase": "supernovae",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs",
+   "key": "type ia supernovae",
+   "phrase": "Type Ia supernovae",
+   "label": "yes",
+   "target": "w:Type Ia supernova"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs",
+   "key": "white dwarf",
+   "phrase": "white dwarf",
+   "label": "yes",
+   "target": "w:White dwarf"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs",
+   "key": "companion star",
+   "phrase": "companion star",
+   "label": "yes",
+   "target": "w:Binary star"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs",
+   "key": "explosion",
+   "phrase": "explosions",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs",
+   "key": "ia",
+   "phrase": "Ia",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs",
+   "key": "type",
+   "phrase": "Type",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › The explosion",
+   "key": "nickel 56",
+   "phrase": "nickel-56",
+   "label": "yes",
+   "target": "w:Isotopes of nickel",
+   "note": "nickel-56 redirects there"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › The explosion",
+   "key": "electron",
+   "phrase": "electrons",
+   "label": "yes",
+   "target": "w:Electron"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › The explosion",
+   "key": "white dwarf",
+   "phrase": "white dwarf",
+   "label": "yes",
+   "target": "w:White dwarf"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › The explosion",
+   "key": "solar mass",
+   "phrase": "solar mass",
+   "label": "yes",
+   "target": "w:Solar mass"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › The explosion",
+   "key": "radioactive",
+   "phrase": "radioactive",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › Reading the light",
+   "key": "cobalt",
+   "phrase": "cobalt",
+   "label": "yes",
+   "target": "w:Cobalt"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › Reading the light",
+   "key": "half live",
+   "phrase": "half-lives",
+   "label": "yes",
+   "target": "w:Half-life"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › Reading the light",
+   "key": "seventy seven",
+   "phrase": "seventy-seven",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › Reading the light",
+   "key": "brightness",
+   "phrase": "brightness",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › Reading the light",
+   "key": "faintness",
+   "phrase": "faintness",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › Reading the light",
+   "key": "supernova",
+   "phrase": "supernova",
+   "label": "yes",
+   "target": "w:Supernova"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › Reading the light",
+   "key": "distance marker",
+   "phrase": "distance markers",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › Reading the light",
+   "key": "distance",
+   "phrase": "distances",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › Reading the light",
+   "key": "clock",
+   "phrase": "clocks",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › Reading the light",
+   "key": "direct evidence",
+   "phrase": "direct evidence",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › Reading the light",
+   "key": "nickel",
+   "phrase": "nickel",
+   "label": "yes",
+   "target": "w:Nickel"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › Reading the light",
+   "key": "explosion",
+   "phrase": "explosions",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Beyond iron",
+   "key": "merger",
+   "phrase": "merger",
+   "label": "no",
+   "note": "endosymbiosis section: wrong sense"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Beyond iron",
+   "key": "slow neutron",
+   "phrase": "slow neutron",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Beyond iron",
+   "key": "neutron capture",
+   "phrase": "neutron capture",
+   "label": "yes",
+   "target": "w:Neutron capture"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Beyond iron",
+   "key": "neutron star",
+   "phrase": "neutron stars",
+   "label": "yes",
+   "target": "w:Neutron star"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Beyond iron",
+   "key": "neutron",
+   "phrase": "neutron",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Beyond iron",
+   "key": "trillion",
+   "phrase": "trillion",
+   "label": "no"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Beyond iron",
+   "key": "giant star",
+   "phrase": "giant stars",
+   "label": "yes",
+   "target": "w:Giant star"
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Beyond iron",
+   "key": "observation",
+   "phrase": "observation",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The invention of writing",
+   "key": "mesoamerica",
+   "phrase": "Mesoamerica",
+   "label": "yes",
+   "target": "node:Mesoamerica",
+   "note": "the section on writing in Mesoamerica"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The invention of writing",
+   "key": "mesopotamia",
+   "phrase": "Mesopotamia",
+   "label": "yes",
+   "target": "w:Mesopotamia"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The invention of writing",
+   "key": "egypt",
+   "phrase": "Egypt",
+   "label": "no",
+   "note": "major country (and the trace means modern Egypt)"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The invention of writing",
+   "key": "china",
+   "phrase": "China",
+   "label": "no",
+   "note": "major country"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The invention of writing",
+   "key": "pun",
+   "phrase": "pun",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The invention of writing",
+   "key": "handful",
+   "phrase": "handful",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "What counts as writing",
+   "key": "road sign",
+   "phrase": "road signs",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "What counts as writing",
+   "key": "gist",
+   "phrase": "gist",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "What counts as writing › Signs before writing",
+   "key": "dashboard",
+   "phrase": "dashboards",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "What counts as writing › Signs before writing",
+   "key": "airport",
+   "phrase": "airports",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "What counts as writing › Signs before writing",
+   "key": "stroke",
+   "phrase": "strokes",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "What counts as writing › Recording the words",
+   "key": "grammar",
+   "phrase": "grammar",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "What counts as writing › Recording the words",
+   "key": "writing system",
+   "phrase": "writing system",
+   "label": "yes",
+   "target": "w:Writing system"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "What counts as writing › Recording the words",
+   "key": "chinese",
+   "phrase": "Chinese",
+   "label": "yes",
+   "target": "w:Written Chinese"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets",
+   "key": "tablet",
+   "phrase": "tablets",
+   "label": "yes",
+   "target": "node:The tablet",
+   "note": "the section on the first tablets"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets",
+   "key": "iraq",
+   "phrase": "Iraq",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets",
+   "key": "envelope",
+   "phrase": "envelopes",
+   "label": "yes",
+   "target": "w:Bulla (seal)",
+   "note": "clay envelopes are bullae, not stationery"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets",
+   "key": "southern iraq",
+   "phrase": "southern Iraq",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets",
+   "key": "unnecessary",
+   "phrase": "unnecessary",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › Counters and envelopes",
+   "key": "bce",
+   "phrase": "BCE",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › Counters and envelopes",
+   "key": "near east",
+   "phrase": "Near East",
+   "label": "yes",
+   "target": "w:Near East"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › Counters and envelopes",
+   "key": "east",
+   "phrase": "East",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › Counters and envelopes",
+   "key": "cone",
+   "phrase": "cones",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › Counters and envelopes",
+   "key": "fourth millennium",
+   "phrase": "fourth millennium",
+   "label": "yes",
+   "target": "w:4th millennium BC",
+   "note": "wrong article in the trace"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › Counters and envelopes",
+   "key": "jar",
+   "phrase": "jars",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › Counters and envelopes",
+   "key": "millennium",
+   "phrase": "millennium",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › Counters and envelopes",
+   "key": "sphere",
+   "phrase": "spheres",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › Counters and envelopes",
+   "key": "village",
+   "phrase": "villages",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › Counters and envelopes",
+   "key": "grain",
+   "phrase": "grain",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › Counters and envelopes",
+   "key": "near",
+   "phrase": "Near",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › Counters and envelopes",
+   "key": "sealing",
+   "phrase": "sealing",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › The tablet",
+   "key": "bce",
+   "phrase": "BCE",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › The tablet",
+   "key": "uruk",
+   "phrase": "Uruk",
+   "label": "yes",
+   "target": "w:Uruk"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › The tablet",
+   "key": "stylus",
+   "phrase": "stylus",
+   "label": "yes",
+   "target": "w:Stylus"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › The tablet",
+   "key": "largest city",
+   "phrase": "largest city",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › The tablet",
+   "key": "redundant",
+   "phrase": "redundant",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › What the first tablets say",
+   "key": "tablet",
+   "phrase": "tablets",
+   "label": "yes",
+   "target": "node:The tablet"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › What the first tablets say",
+   "key": "uruk",
+   "phrase": "Uruk",
+   "label": "yes",
+   "target": "w:Uruk"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › What the first tablets say",
+   "key": "bookkeeping",
+   "phrase": "bookkeeping",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "Mesopotamia: from tokens to tablets › What the first tablets say",
+   "key": "ration",
+   "phrase": "rations",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The rebus",
+   "key": "verb",
+   "phrase": "verb",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The rebus",
+   "key": "bookkeeping",
+   "phrase": "bookkeeping",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The rebus › Sound from pictures",
+   "key": "scribe",
+   "phrase": "scribe",
+   "label": "yes",
+   "target": "w:Scribe"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The rebus › Sound from pictures",
+   "key": "personal name",
+   "phrase": "personal names",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The rebus › Sound from pictures",
+   "key": "sumerian",
+   "phrase": "Sumerian",
+   "label": "yes",
+   "target": "w:Sumerian language"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The rebus › Cuneiform grows up",
+   "key": "bce",
+   "phrase": "BCE",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The rebus › Cuneiform grows up",
+   "key": "scribe",
+   "phrase": "scribes",
+   "label": "yes",
+   "target": "w:Scribe"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The rebus › Cuneiform grows up",
+   "key": "unrelated",
+   "phrase": "unrelated",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The rebus › Cuneiform grows up",
+   "key": "sentence",
+   "phrase": "sentences",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The rebus › Cuneiform grows up",
+   "key": "sumerian",
+   "phrase": "Sumerian",
+   "label": "yes",
+   "target": "w:Sumerian language"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The rebus › Cuneiform grows up",
+   "key": "akkadian",
+   "phrase": "Akkadian",
+   "label": "yes",
+   "target": "w:Akkadian language"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions",
+   "key": "mesoamerica",
+   "phrase": "Mesoamerica",
+   "label": "yes",
+   "target": "node:Mesoamerica"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions",
+   "key": "rebus",
+   "phrase": "rebus",
+   "label": "yes",
+   "target": "node:The rebus"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions",
+   "key": "tablet",
+   "phrase": "tablets",
+   "label": "yes",
+   "target": "node:The tablet"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions",
+   "key": "mesopotamian",
+   "phrase": "Mesopotamian",
+   "label": "yes",
+   "target": "w:Mesopotamia"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions",
+   "key": "egypt",
+   "phrase": "Egypt",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions",
+   "key": "china",
+   "phrase": "China",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Egypt",
+   "key": "rebus",
+   "phrase": "rebus",
+   "label": "yes",
+   "target": "node:The rebus"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Egypt",
+   "key": "tablet",
+   "phrase": "tablets",
+   "label": "yes",
+   "target": "node:The tablet"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Egypt",
+   "key": "bce",
+   "phrase": "BCE",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Egypt",
+   "key": "uruk",
+   "phrase": "Uruk",
+   "label": "yes",
+   "target": "w:Uruk"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Egypt",
+   "key": "mesopotamia",
+   "phrase": "Mesopotamia",
+   "label": "yes",
+   "target": "w:Mesopotamia"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Egypt",
+   "key": "cuneiform",
+   "phrase": "cuneiform",
+   "label": "yes",
+   "target": "w:Cuneiform"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Egypt",
+   "key": "ivory",
+   "phrase": "ivory",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Egypt",
+   "key": "label",
+   "phrase": "labels",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Egypt",
+   "key": "abydo",
+   "phrase": "Abydos",
+   "label": "yes",
+   "target": "w:Abydos, Egypt"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › China",
+   "key": "bce",
+   "phrase": "BCE",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › China",
+   "key": "shang",
+   "phrase": "Shang",
+   "label": "yes",
+   "target": "w:Shang dynasty"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › China",
+   "key": "divination",
+   "phrase": "divination",
+   "label": "yes",
+   "target": "w:Divination"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › China",
+   "key": "shoulder blade",
+   "phrase": "shoulder blades",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › China",
+   "key": "turtle shell",
+   "phrase": "turtle shells",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › China",
+   "key": "chinese writing",
+   "phrase": "Chinese writing",
+   "label": "yes",
+   "target": "w:Written Chinese"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › China",
+   "key": "bamboo",
+   "phrase": "bamboo",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › China",
+   "key": "ox",
+   "phrase": "ox",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › China",
+   "key": "blade",
+   "phrase": "blades",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › China",
+   "key": "chinese",
+   "phrase": "Chinese",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Mesoamerica",
+   "key": "knorozov",
+   "phrase": "Knorozov",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Mesoamerica",
+   "key": "yuri knorozov",
+   "phrase": "Yuri Knorozov",
+   "label": "yes",
+   "target": "w:Yuri Knorozov"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Mesoamerica",
+   "key": "guatemala",
+   "phrase": "Guatemala",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Mesoamerica",
+   "key": "old world",
+   "phrase": "Old World",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Mesoamerica",
+   "key": "mexico",
+   "phrase": "Mexico",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Mesoamerica",
+   "key": "world",
+   "phrase": "World",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Mesoamerica",
+   "key": "syllable",
+   "phrase": "syllable",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Mesoamerica",
+   "key": "cuneiform",
+   "phrase": "cuneiform",
+   "label": "yes",
+   "target": "w:Cuneiform"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Mesoamerica",
+   "key": "twentieth century",
+   "phrase": "twentieth century",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Mesoamerica",
+   "key": "maya script",
+   "phrase": "Maya script",
+   "label": "yes",
+   "target": "w:Maya script"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Mesoamerica",
+   "key": "yuri",
+   "phrase": "Yuri",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The other inventions › Mesoamerica",
+   "key": "egyptian",
+   "phrase": "Egyptian",
+   "label": "yes",
+   "target": "w:Egyptian hieroglyphs",
+   "note": "the script, not the language"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The alphabet",
+   "key": "bce",
+   "phrase": "BCE",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The alphabet",
+   "key": "arabic",
+   "phrase": "Arabic",
+   "label": "yes",
+   "target": "w:Arabic alphabet",
+   "note": "the script, not the language"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The alphabet",
+   "key": "india",
+   "phrase": "India",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The alphabet",
+   "key": "semitic language",
+   "phrase": "Semitic language",
+   "label": "yes",
+   "target": "w:Semitic languages"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The alphabet",
+   "key": "adaptation",
+   "phrase": "adaptation",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The alphabet",
+   "key": "egyptian writing",
+   "phrase": "Egyptian writing",
+   "label": "yes",
+   "target": "w:Egyptian hieroglyphs"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The alphabet",
+   "key": "invention",
+   "phrase": "invention",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The alphabet",
+   "key": "semitic",
+   "phrase": "Semitic",
+   "label": "no"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The alphabet",
+   "key": "egyptian",
+   "phrase": "Egyptian",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tuning and temperament",
+   "key": "usable",
+   "phrase": "usable",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tuning and temperament",
+   "key": "arithmetic",
+   "phrase": "arithmetic",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tuning and temperament",
+   "key": "tuning system",
+   "phrase": "tuning system",
+   "label": "yes",
+   "target": "w:Musical tuning"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tuning and temperament",
+   "key": "frequency ratio",
+   "phrase": "frequency ratios",
+   "label": "yes",
+   "target": "w:Interval ratio"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tuning and temperament",
+   "key": "ratio",
+   "phrase": "ratios",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tuning and temperament",
+   "key": "frequency",
+   "phrase": "frequency",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tuning and temperament",
+   "key": "craft",
+   "phrase": "craft",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tuning and temperament",
+   "key": "western",
+   "phrase": "Western",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tuning and temperament",
+   "key": "western music",
+   "phrase": "Western music",
+   "label": "no",
+   "note": "no clean target"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth",
+   "key": "overtone",
+   "phrase": "overtones",
+   "label": "yes",
+   "target": "node:Overtones",
+   "note": "its own subsection"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth",
+   "key": "frequency",
+   "phrase": "frequencies",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth",
+   "key": "ratio",
+   "phrase": "ratio",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Overtones",
+   "key": "halve",
+   "phrase": "halves",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Overtones",
+   "key": "plucked string",
+   "phrase": "plucked string",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Overtones",
+   "key": "plucked",
+   "phrase": "plucked",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Overtones",
+   "key": "frequency",
+   "phrase": "frequencies",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Overtones",
+   "key": "vibrate",
+   "phrase": "vibrates",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Simple ratios",
+   "key": "overtone",
+   "phrase": "overtone",
+   "label": "yes",
+   "target": "node:Overtones"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Simple ratios",
+   "key": "octave",
+   "phrase": "octave",
+   "label": "yes",
+   "target": "w:Octave"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Simple ratios",
+   "key": "ratio",
+   "phrase": "ratio",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Simple ratios",
+   "key": "interval",
+   "phrase": "intervals",
+   "label": "yes",
+   "target": "w:Interval (music)"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Beats",
+   "key": "overtone",
+   "phrase": "overtones",
+   "label": "yes",
+   "target": "node:Overtones"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Beats",
+   "key": "coincide",
+   "phrase": "coincide",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Beats",
+   "key": "frequency",
+   "phrase": "frequencies",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Beats",
+   "key": "tuner",
+   "phrase": "Tuners",
+   "label": "no",
+   "note": "piano tuners are people, not the device"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Beats",
+   "key": "tempered",
+   "phrase": "tempered",
+   "label": "yes",
+   "target": "w:Musical temperament"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma",
+   "key": "pythagorean",
+   "phrase": "Pythagorean",
+   "label": "no",
+   "note": "covered by \"Pythagorean comma\""
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma",
+   "key": "octave",
+   "phrase": "octaves",
+   "label": "yes",
+   "target": "w:Octave"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma",
+   "key": "semitone",
+   "phrase": "semitone",
+   "label": "yes",
+   "target": "w:Semitone"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma",
+   "key": "coincide",
+   "phrase": "coincide",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma",
+   "key": "pythagorean comma",
+   "phrase": "Pythagorean comma",
+   "label": "yes",
+   "target": "w:Pythagorean comma"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma",
+   "key": "overshoot",
+   "phrase": "overshoot",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma",
+   "key": "mismatch",
+   "phrase": "mismatch",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma › Twelve fifths against seven octaves",
+   "key": "octave",
+   "phrase": "octaves",
+   "label": "yes",
+   "target": "w:Octave"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma › Twelve fifths against seven octaves",
+   "key": "multiply",
+   "phrase": "multiply",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma › Twelve fifths against seven octaves",
+   "key": "ratio",
+   "phrase": "ratio",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma › Twelve fifths against seven octaves",
+   "key": "frequency",
+   "phrase": "frequency",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma › Thirds against fifths",
+   "key": "octave",
+   "phrase": "octaves",
+   "label": "yes",
+   "target": "w:Octave"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma › Thirds against fifths",
+   "key": "syntonic comma",
+   "phrase": "syntonic comma",
+   "label": "yes",
+   "target": "w:Syntonic comma"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma › Thirds against fifths",
+   "key": "ratio",
+   "phrase": "ratio",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma › No way out",
+   "key": "octave",
+   "phrase": "octaves",
+   "label": "yes",
+   "target": "w:Octave"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma › No way out",
+   "key": "singer",
+   "phrase": "Singers",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Pythagorean",
+   "key": "comma",
+   "phrase": "comma",
+   "label": "yes",
+   "target": "node:The comma",
+   "note": "the section on both commas"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Pythagorean",
+   "key": "semitone",
+   "phrase": "semitone",
+   "label": "yes",
+   "target": "w:Semitone"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Pythagorean",
+   "key": "medieval music",
+   "phrase": "Medieval music",
+   "label": "yes",
+   "target": "w:Medieval music"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Pythagorean",
+   "key": "medieval",
+   "phrase": "Medieval",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Pythagorean",
+   "key": "twelfth",
+   "phrase": "twelfth",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Pythagorean",
+   "key": "dissonance",
+   "phrase": "dissonance",
+   "label": "yes",
+   "target": "w:Consonance and dissonance"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Meantone",
+   "key": "comma",
+   "phrase": "comma",
+   "label": "no",
+   "note": "covered by \"syntonic comma\""
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Meantone",
+   "key": "renaissance",
+   "phrase": "Renaissance",
+   "label": "yes",
+   "target": "w:Renaissance"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Meantone",
+   "key": "syntonic",
+   "phrase": "syntonic",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Meantone",
+   "key": "syntonic comma",
+   "phrase": "syntonic comma",
+   "label": "yes",
+   "target": "w:Syntonic comma"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Meantone",
+   "key": "collect",
+   "phrase": "collects",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Meantone",
+   "key": "sweeter",
+   "phrase": "sweeter",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Meantone",
+   "key": "wolf fifth",
+   "phrase": "wolf fifth",
+   "label": "yes",
+   "target": "w:Wolf interval"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Meantone",
+   "key": "major third",
+   "phrase": "major thirds",
+   "label": "yes",
+   "target": "w:Major third"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Meantone",
+   "key": "harmony",
+   "phrase": "harmony",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Tunings that choose › Meantone",
+   "key": "tuner",
+   "phrase": "tuners",
+   "label": "no",
+   "note": "wrong sense"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Spreading it out › Well temperament",
+   "key": "werckmeister",
+   "phrase": "Werckmeister",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Spreading it out › Well temperament",
+   "key": "andrea werckmeister",
+   "phrase": "Andreas Werckmeister",
+   "label": "yes",
+   "target": "w:Andreas Werckmeister"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Spreading it out › Well temperament",
+   "key": "andrea",
+   "phrase": "Andreas",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Spreading it out › Well temperament",
+   "key": "seventeenth century",
+   "phrase": "seventeenth century",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Spreading it out › Well temperament",
+   "key": "composer",
+   "phrase": "composers",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Spreading it out › Well temperament",
+   "key": "seventeenth",
+   "phrase": "seventeenth",
+   "label": "no"
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Spreading it out › Well temperament",
+   "key": "tuner",
+   "phrase": "tuners",
+   "label": "no"
+  },
+  {
+   "doc": "octopus-minds",
+   "node": "Skin › Colour-blind artists",
+   "key": "light receptor",
+   "phrase": "light receptor",
+   "label": "yes",
+   "target": "w:Photoreceptor cell",
+   "added": true
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › Quines",
+   "key": "quine",
+   "phrase": "quine",
+   "label": "yes",
+   "target": "w:Quine (computing)",
+   "added": true
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Sentences about themselves › Quines",
+   "key": "ken thompson",
+   "phrase": "Ken Thompson",
+   "label": "yes",
+   "target": "w:Ken Thompson",
+   "added": true
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer › Where it is used",
+   "key": "newton method",
+   "phrase": "Newton's method",
+   "label": "yes",
+   "target": "w:Newton's method",
+   "added": true
+  },
+  {
+   "doc": "fixed-points",
+   "node": "Iterating to an answer",
+   "key": "contraction",
+   "phrase": "contraction",
+   "label": "yes",
+   "target": "w:Contraction mapping",
+   "added": true
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "The first three minutes",
+   "key": "fusion",
+   "phrase": "fusion",
+   "label": "yes",
+   "target": "w:Nuclear fusion",
+   "added": true
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars",
+   "key": "carbon",
+   "phrase": "carbon",
+   "label": "yes",
+   "target": "w:Carbon",
+   "added": true
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars",
+   "key": "oxygen",
+   "phrase": "oxygen",
+   "label": "yes",
+   "target": "w:Oxygen",
+   "added": true
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › Hydrogen burning",
+   "key": "weak force",
+   "phrase": "weak force",
+   "label": "yes",
+   "target": "w:Weak interaction",
+   "added": true
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Fusion in ordinary stars › The triple-alpha process",
+   "key": "excited state",
+   "phrase": "excited state",
+   "label": "yes",
+   "target": "w:Excited state",
+   "added": true
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › The onion",
+   "key": "silicon burning",
+   "phrase": "silicon burning",
+   "label": "yes",
+   "target": "w:Silicon-burning process",
+   "added": true
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Massive stars › Core collapse",
+   "key": "neutrino",
+   "phrase": "neutrinos",
+   "label": "yes",
+   "target": "w:Neutrino",
+   "added": true
+  },
+  {
+   "doc": "origin-of-the-elements",
+   "node": "Exploding white dwarfs › Reading the light",
+   "key": "expansion of the universe",
+   "phrase": "expansion of the universe",
+   "label": "yes",
+   "target": "w:Accelerating expansion of the universe",
+   "added": true,
+   "note": "extractor cannot produce a phrase with \"of the\" in it"
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "What counts as writing › Signs before writing",
+   "key": "kushim",
+   "phrase": "Kushim",
+   "label": "yes",
+   "target": "w:Kushim (Uruk period)",
+   "added": true
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The rebus › Cuneiform grows up",
+   "key": "hittite",
+   "phrase": "Hittite",
+   "label": "yes",
+   "target": "w:Hittite language",
+   "added": true
+  },
+  {
+   "doc": "invention-of-writing",
+   "node": "The alphabet",
+   "key": "greek",
+   "phrase": "Greek",
+   "label": "yes",
+   "target": "w:Greek alphabet",
+   "added": true
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Overtones",
+   "key": "pitch",
+   "phrase": "pitch",
+   "label": "yes",
+   "target": "w:Pitch (music)",
+   "added": true
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Simple ratios",
+   "key": "fifth",
+   "phrase": "fifth",
+   "label": "yes",
+   "target": "w:Perfect fifth",
+   "added": true
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "Why some intervals sound smooth › Simple ratios",
+   "key": "major third",
+   "phrase": "major third",
+   "label": "yes",
+   "target": "w:Major third",
+   "added": true
+  },
+  {
+   "doc": "tuning-and-temperament",
+   "node": "The comma › Thirds against fifths",
+   "key": "major third",
+   "phrase": "major third",
+   "label": "yes",
+   "target": "w:Major third",
+   "added": true
+  }
+ ]
+}
