@@ -1,7 +1,7 @@
 /** The panes view's forest of forks (src/ui/forks.ts): each operation, and any sequence of them leaving a well-formed forest with one focused branch and one active pane. */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { all, besideInColumn, close, find, focus, focused, load, open, path, pin, plain, prune, restore, save, valid, withBranch, type Forest, type Tree } from "../src/ui/forks";
+import { all, besideInColumn, close, columns, find, focus, focused, load, open, path, pin, plain, prune, reorder, restore, save, valid, withBranch, type Forest, type Tree } from "../src/ui/forks";
 
 type F = Forest<string>;
 type T = Tree<string>;
@@ -121,6 +121,30 @@ describe("forks", () => {
     expect(focus(g, idOf(f, "b1"))).toBe(g);
   });
 
+  it("a column's panes can be put in an order by hand, across forks; new panes come after; a replaced pane keeps its place; the order is stored", () => {
+    let f: F = plain(["a", "b", "b1"]);
+    f = open(f, 1, "b2", true, same);
+    f = open(f, 0, "c", true, same);
+    f = open(f, 1, "c1", false, same);
+    const col2 = (g: F) => columns(g).get(2)!.map((x) => x.node.ref);
+    expect(col2(f)).toEqual(["b1", "b2", "c1"]);
+    f = reorder(f, idOf(f, "c1"), idOf(f, "b1"));
+    expect(col2(f)).toEqual(["c1", "b1", "b2"]);
+    expect(besideInColumn(f, idOf(f, "b1"), -1)).toBe(idOf(f, "c1"));
+    f = reorder(f, idOf(f, "c1"), null);
+    expect(col2(f)).toEqual(["b1", "b2", "c1"]);
+    f = reorder(f, idOf(f, "b2"), idOf(f, "b1"));
+    expect(col2(f)).toEqual(["b2", "b1", "c1"]);
+    // A new pane in that column goes to the bottom; a pane opened in place of another takes its place.
+    f = open(focus(f, idOf(f, "c")), 1, "c2", true, same);
+    expect(col2(f)).toEqual(["b2", "b1", "c1", "c2"]);
+    f = open(focus(f, idOf(f, "b1")), 1, "bx", false, same);
+    expect(col2(f)).toEqual(["b2", "bx", "c1", "c2"]);
+    const isStr = (r: unknown): r is string => typeof r === "string";
+    const back = restore<string, unknown>(JSON.parse(JSON.stringify({ forest: f.trees.map((t) => save(t, (r) => r)), at: f.at })), isStr);
+    expect(col2(back)).toEqual(["b2", "bx", "c1", "c2"]);
+  });
+
   it("drops a deleted node's pane wherever it is, with what is right of it but pinned panes", () => {
     let f: F = plain(["a", "b", "c"]);
     f = open(f, 0, "x", true, same);
@@ -169,9 +193,9 @@ describe("forks", () => {
     expect(restore<string, unknown>({ forest: [{ ref: "o", col: 2 }, { ref: "a" }], at: 7 }, isStr).trees.map((t) => t.ref)).toEqual(["a", "o"]);
   });
 
-  it("any sequence of open, fork, close, pin, unpin and focus leaves a valid forest with exactly one active pane, and closing removes no pinned pane but the one closed", () => {
+  it("any sequence of open, fork, close, pin, unpin, focus and reorder leaves a valid forest with exactly one active pane, and closing removes no pinned pane but the one closed", () => {
     const refs = ["a", "b", "c", "d", "e"];
-    const op = fc.record({ kind: fc.integer({ min: 0, max: 8 }), i: fc.nat(40), r: fc.integer({ min: 0, max: refs.length - 1 }), d: fc.boolean() });
+    const op = fc.record({ kind: fc.integer({ min: 0, max: 9 }), i: fc.nat(40), r: fc.integer({ min: 0, max: refs.length - 1 }), d: fc.boolean() });
     fc.assert(
       fc.property(fc.array(op, { maxLength: 60 }), (ops) => {
         let f: F = plain(["root"]);
@@ -215,6 +239,14 @@ describe("forks", () => {
               f = withBranch(f, ["root", ...refs.slice(0, o.i % 4)], same);
               active = f.trees[0].id;
               break;
+            case 9: {
+              const col = [...columns(f).values()].find((c) => c.some((x) => x.node.id === any.id))!;
+              const before = col[o.r % col.length].node.id;
+              const was = all(f).length;
+              f = reorder(f, any.id, o.d ? before : null);
+              if (all(f).length !== was) return false;
+              break;
+            }
           }
           if (!valid(f, same)) return false;
           // One branch, from the focused tree's root to a pane with nothing right of it, each step a picked child.

@@ -26,6 +26,8 @@ export interface Tree<R, S = unknown> {
   pinned?: boolean;
   /** On the root of an orphan: the column it stays in. */
   col?: number;
+  /** Its place in its column, once the panes there have been put in an order by hand (dragged); unranked panes follow, in tree order. */
+  rank?: number;
 }
 
 /** The trees, the first starting at the top node; `at` is the one the focused branch is in. */
@@ -116,6 +118,37 @@ export function all<R, S>(f: Forest<R, S>): Placed<R, S>[] {
   return out;
 }
 
+/**
+ * The panes of each column, top to bottom: in the order the reader has put them in (by rank), then
+ * those never placed by hand, in tree order (tree by tree, depth first, earlier forks first).
+ */
+export function columns<R, S>(f: Forest<R, S>): Map<number, Placed<R, S>[]> {
+  const out = new Map<number, Placed<R, S>[]>();
+  for (const x of all(f)) {
+    const c = out.get(x.col);
+    if (c) c.push(x);
+    else out.set(x.col, [x]);
+  }
+  for (const c of out.values()) {
+    const at = new Map(c.map((x, i) => [x, i]));
+    c.sort((a, b) => (a.node.rank ?? Infinity) - (b.node.rank ?? Infinity) || at.get(a)! - at.get(b)!);
+  }
+  return out;
+}
+
+/** Move a pane within its column, to just above another pane there (or to the bottom): the column's order is then set by hand. */
+export function reorder<R, S>(f: Forest<R, S>, id: number, before: number | null): Forest<R, S> {
+  const me = all(f).find((x) => x.node.id === id);
+  if (!me || id === before) return f;
+  const col = columns(f).get(me.col)!.map((x) => x.node.id);
+  const rest = col.filter((x) => x !== id);
+  const at = before === null ? rest.length : rest.indexOf(before);
+  if (at < 0) return f;
+  rest.splice(at, 0, id);
+  if (rest.every((x, i) => x === col[i]) && col.every((x) => (all(f).find((y) => y.node.id === x)!.node.rank ?? -1) >= 0)) return f;
+  return rest.reduce((g, x, i) => updateIn(g, x, (n) => (n.rank === i ? n : { ...n, rank: i })), f);
+}
+
 /** Change the node with this id, copying the path to it. */
 export function update<R, S>(t: Tree<R, S>, id: number, f: (n: Tree<R, S>) => Tree<R, S>): Tree<R, S> {
   if (t.id === id) return f(t);
@@ -198,7 +231,8 @@ export function open<R, S>(f: Forest<R, S>, i: number, ref: R, fork: boolean, sa
     if (fork || n.kids[n.pick].pinned) return { ...n, kids: [...n.kids, leaf(ref)], pick: n.kids.length };
     orphans.push(...survivors(n.kids[n.pick], colOf(t) + i + 1, true));
     const kids = n.kids.slice();
-    kids[n.pick] = leaf(ref);
+    // In its place, in its column too.
+    kids[n.pick] = n.kids[n.pick].rank === undefined ? leaf(ref) : { ...leaf<R, S>(ref), rank: n.kids[n.pick].rank };
     return { ...n, kids };
   });
   return replace(f, f.at, next, orphans);
@@ -239,11 +273,11 @@ export const pin = <R, S>(f: Forest<R, S>, id: number, on: boolean): Forest<R, S
 
 /** The pane above (−1) or below (+1) this one in its column, or null at the top or bottom. */
 export function besideInColumn<R, S>(f: Forest<R, S>, id: number, delta: number): number | null {
-  const placed = all(f);
-  const me = placed.find((x) => x.node.id === id);
-  if (!me) return null;
-  const col = placed.filter((x) => x.col === me.col);
-  return col[col.indexOf(me) + delta]?.node.id ?? null;
+  for (const col of columns(f).values()) {
+    const i = col.findIndex((x) => x.node.id === id);
+    if (i >= 0) return col[i + delta]?.node.id ?? null;
+  }
+  return null;
 }
 
 /** Drop every pane whose ref fails `keep` (with everything right of it but pinned panes, which stay as orphans). Unchanged forests are returned as they are. */
@@ -328,6 +362,7 @@ export interface Saved<R> {
   pick?: number;
   pin?: 1;
   col?: number;
+  rank?: number;
 }
 
 export function save<R, S, O>(t: Tree<R, S>, ref: (r: R) => O): Saved<O> {
@@ -336,6 +371,7 @@ export function save<R, S, O>(t: Tree<R, S>, ref: (r: R) => O): Saved<O> {
   if (t.pick) out.pick = t.pick;
   if (t.pinned) out.pin = 1;
   if (t.col) out.col = t.col;
+  if (t.rank !== undefined) out.rank = t.rank;
   return out;
 }
 
@@ -348,6 +384,7 @@ export function load<R, S>(o: unknown, ok: (r: unknown) => r is R): Tree<R, S> |
   const t: Tree<R, S> = { ref: s.ref as R, kids, pick, id: ++ids };
   if (s.pin) t.pinned = true;
   if (typeof s.col === "number" && s.col >= 1) t.col = Math.floor(s.col);
+  if (typeof s.rank === "number" && Number.isFinite(s.rank)) t.rank = s.rank;
   return t;
 }
 
