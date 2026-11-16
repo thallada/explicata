@@ -15,7 +15,9 @@ export const HELP: [string, [string, string][]][] = [
       ["/", "jump to a section by name, in any document"],
       ["z", "hoist: make this node the whole page (again, or h or Esc at its top, to step out)"],
       ["v", "view: one column ↔ panes side by side (in panes, j k move among siblings)"],
-      ["q", "in panes: close the panes right of the focus (with none, the focused one); moving left never closes anything"],
+      ["q", "in panes: close the panes right of the one being read, every fork among them; with none, close that one, or in a fork the whole fork. Moving left never closes anything"],
+      ["Shift+Enter", "in panes: open a fork: what Enter opens goes in a new row beside the pane to the right instead of replacing it (Shift-, Ctrl- or Cmd-click, or a middle click, does the same). With nothing open to the right it is a plain Enter; on something already open as a fork, it focuses that fork"],
+      ["[ ]", "in panes: the fork above / below (back where you were in it, or its pane nearest your column)"],
     ],
   ],
   [
@@ -342,10 +344,12 @@ export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
     store.aux = { kind: "wiki", host: store.panes ? `p${store.paneAt}` : "col", row: { t: "head" } };
   }
   // An Enter after a Tab that is waiting for its article to arrive waits with it.
-  if (store.aux && store.holdKey(k)) return done();
+  if (store.aux && store.holdKey(k, e.shiftKey)) return done();
+  // Shift+Enter opens a fork: whatever Enter opens, it opens beside what is there.
+  const fork = k === "Enter" && e.shiftKey;
   // Words selected in an article's text take the same keys as words of a node.
   if (store.aux && !store.inArticleText) {
-    if (auxKey(k, e.shiftKey) || commonKey(k, hooks)) return done();
+    if (store.withFork(fork, () => auxKey(k, e.shiftKey)) || commonKey(k, hooks)) return done();
     const why = store.aux.kind === "wiki" ? store.articleRefuses(k, false) : null;
     if (why) (store.say(why), done());
     return;
@@ -388,9 +392,11 @@ export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
       break;
     case "Enter":
     case " ":
-      if (selecting) store.enterOrExpand();
-      else if (store.snap.nodes[store.focus.node]?.kind === "note" && store.targetOf(store.focus.node)) store.followOwn();
-      else store.toggle();
+      store.withFork(fork, () => {
+        if (selecting) store.enterOrExpand();
+        else if (store.snap.nodes[store.focus.node]?.kind === "note" && store.targetOf(store.focus.node)) store.followOwn();
+        else store.toggle();
+      });
       break;
     case "w":
       store.openPicker();
@@ -491,6 +497,10 @@ function commonKey(k: string, hooks: KeyHooks): boolean {
       return true;
     case "q":
       if (store.panes) store.closePane();
+      return true;
+    case "[":
+    case "]":
+      store.focusFork(k === "[" ? -1 : 1);
       return true;
     case "v":
       store.cycleView();

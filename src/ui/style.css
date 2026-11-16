@@ -347,7 +347,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
   overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: var(--rule) transparent;
 }
 .pane { position: sticky; flex: none; width: var(--pane); width: round(down, var(--pane), 1px); height: 100%; background: var(--bg); border-left: 1px solid var(--hair); }
-.pane:first-child { border-left-color: transparent; }
+.strip > .pane:first-child { border-left-color: transparent; }
 .pane[data-over] { border-left-color: var(--rule); box-shadow: -14px 0 20px -12px var(--shade); }
 .pane-scroll {
   height: 100%; overflow-x: hidden; overflow-y: auto; padding: 1.9rem var(--pane-pad) 30vh var(--spine);
@@ -380,6 +380,37 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .node.showing:not(.focused) > .row { background: var(--wash); }
 .node.showing > .row .mark { color: var(--fg); }
 .node.showing > .row::after { content: "→"; flex: none; margin-left: auto; padding-left: 0.8em; font-family: var(--sans); font-size: 0.72em; color: var(--dim); }
+
+/*
+ * Forks (src/ui/forks.ts): right of a pane with several children, one row per fork, top to bottom
+ * in the order they were opened, divided by a line; a row holds its fork's panes and perhaps a
+ * stack of rows of its own. Rows share the strip's height down to --row-min each (a stack needs a
+ * row's worth per fork at its far right, --leaves); past that the strip scrolls down, and a pane
+ * with forks stays at the top while its rows go by. Sideways the strip scrolls as one, so a fork's
+ * pane is always in the column next to the pane it came from.
+ */
+.strip.forked { overflow-y: auto; overscroll-behavior-y: contain; }
+.forks { flex: none; display: flex; flex-direction: column; min-height: calc(var(--row-min) * var(--leaves)); }
+.fork { flex: 1 1 0; display: flex; min-height: calc(var(--row-min) * var(--leaves)); }
+.fork + .fork { border-top: 1px solid var(--rule); }
+/* The line is drawn on the row's panes too: a pane slid sideways over the row's edge would cover it. */
+.fork + .fork .pane { border-top: 1px solid var(--rule); }
+/* The focused fork: its first pane's left edge in the text's colour. */
+.fork.on > .pane:first-child { border-left-color: var(--fg); }
+.strip.forked .pane { height: auto; max-height: var(--strip-h); top: 0; }
+/* A row's height is only known after the rows are laid out, so a pane's own scroller is fitted to the pane rather than sized by percent. */
+.strip.forked .pane-scroll { position: absolute; inset: 0; height: auto; padding-bottom: min(30vh, calc(var(--row-min) / 2)); }
+/* What each fork was opened from, in the pane it came from: the focused fork's row, words or link marked as before, the others lightly. */
+.node.forked > .row::after, .wrow.forked > .row::after { content: "→"; flex: none; margin-left: auto; padding-left: 0.8em; font-family: var(--sans); font-size: 0.72em; color: var(--faint); }
+.wrow.forked > .row:has(.wnum)::after { margin-left: 0.5em; }
+.node.forked > .row .mark { color: var(--dim); }
+:is(.lnk, .anchor, .wiki-text a).forked { background-color: color-mix(in srgb, var(--link) 12%, transparent); }
+:is(.lnk, .anchor, .wiki-text a).forked.picked { background-color: color-mix(in srgb, var(--link) 30%, transparent); }
+:is(.backlinks, .related-list) li.forked { box-shadow: inset 2px 0 0 var(--rule); }
+:is(.backlinks, .related-list) li.forked.picked { box-shadow: inset 2px 0 0 var(--fg); }
+/* Where there is no room for rows only the focused branch is drawn; a pane that starts a fork says so. */
+.fork-note { margin: -1.1rem 0 0.9rem; font-family: var(--sans); font-size: 0.62rem; letter-spacing: 0.03em; color: var(--dim); }
+.fork-note kbd { font-size: 0.95em; }
 
 /* The first pane keeps the page title, set from the left so it stays readable when the pane is partly covered. */
 .pane.root .top h1, .pane.root .byline, .pane.doc .top h1, .pane.doc .byline { text-align: left; }

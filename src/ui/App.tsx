@@ -3,6 +3,7 @@ import { ancestors, ancestorsInDoc, docOf, label, sections, staleness, type Conf
 import { verifyHistory, type Commit } from "../core/repo";
 import { clip, plain, sentences } from "../core/text";
 import { hostOf } from "../core/ref";
+import { nodeRef } from "../core/links";
 import { HELP, handleKey } from "./keys";
 import { DocBar, DocsPanel } from "./Menu";
 import { LinkCard, LinkPicker, NodeBacklinks, NodeRelated, TargetRow } from "./Links";
@@ -506,22 +507,23 @@ export function App() {
   if (!store.ready) return <div class="loading">Loading…</div>;
 
   const panes = store.panes;
-  const onClick = (e: MouseEvent) => {
+  // Shift-, Ctrl- or Cmd-click (and a middle click) opens a fork: beside what is open, not instead of it.
+  const onClick = (e: MouseEvent) => store.withFork(e.shiftKey || e.ctrlKey || e.metaKey || e.button === 1, () => click(e));
+  const click = (e: MouseEvent) => {
     if (store.mode === "edit") return;
     const target = e.target as HTMLElement;
     const paneEl = target.closest<HTMLElement>("[data-pane-index]");
     const paneIndex = paneEl ? Number(paneEl.dataset.paneIndex) : store.paneAt;
+    // A pane in another fork: that fork becomes the focused branch first, then the click does what it would there.
+    const tid = paneEl ? Number(paneEl.dataset.tid) : undefined;
+    if (tid !== undefined && store.branchNodes[paneIndex]?.id !== tid) store.enterFork(tid);
     // A covered pane's spine brings that pane back by focusing it.
     const spine = target.closest<HTMLElement>("[data-spine]");
-    if (spine) {
-      const i = Number(spine.dataset.spine);
-      const p = store.trail[i];
-      store.paneAt = i;
-      if (p?.kind === "node") return store.setFocus({ node: p.id, grain: "node" });
-      return store.setFocus(store.focus, { kind: "wiki", host: `p${i}`, row: { t: "head" } });
-    }
+    if (spine) return store.land(Number(spine.dataset.spine));
     // Article text: a link to another article opens it next; a link out leaves in a new tab (the HTML says so); nothing else navigates.
-    const host = target.closest<HTMLElement>("[data-host]")?.dataset.host;
+    const named = target.closest<HTMLElement>("[data-host]")?.dataset.host;
+    // An article pane off the branch is named by its place in the tree; on the branch, by its column.
+    const host = named?.startsWith("f") ? `p${paneIndex}` : named;
     const a = target.closest<HTMLAnchorElement>("a");
     if (a && host) {
       if (a.dataset.wiki) {
@@ -547,6 +549,11 @@ export function App() {
     if (linking) {
       store.paneAt = paneIndex;
       return store.openLinking(linking.dataset.linking as NodeId);
+    }
+    const related = target.closest<HTMLElement>("[data-related]");
+    if (related) {
+      store.paneAt = paneIndex;
+      return store.follow(nodeRef(store.snap, related.dataset.related as NodeId));
     }
     const targetRow = target.closest<HTMLElement>("[data-target]");
     if (targetRow) {
@@ -578,7 +585,7 @@ export function App() {
       return;
     }
     // A drag selection inside one body becomes the focus range.
-    if (selection && !selection.isCollapsed) {
+    if (selection && !selection.isCollapsed && !store.forking) {
       const a = locate(selection.anchorNode, selection.anchorOffset);
       const b = locate(selection.focusNode, selection.focusOffset);
       if (a && b && a.id === b.id && a.at !== b.at) {
@@ -618,10 +625,9 @@ export function App() {
       if (panes && id !== store.top) {
         // In panes a click shows the row's pane: focus it and open it next. On the focused row whose pane is showing, it closes that pane.
         const next = store.trail[paneIndex + 1];
-        if (store.focus.node === id && store.focus.grain === "node" && next?.kind === "node" && next.id === id) {
-          store.trail = store.trail.slice(0, paneIndex + 1);
-          store.saveView();
-          return store.emit();
+        if (!store.forking && store.focus.node === id && store.focus.grain === "node" && next?.kind === "node" && next.id === id) {
+          store.closeRow(paneIndex, id);
+          return;
         }
         store.paneAt = paneIndex;
         store.go(id);
@@ -658,7 +664,13 @@ export function App() {
 
   return (
     <div class={`app mode-${store.mode}${store.mode === "history" || store.mode === "docs" ? " with-panel" : ""}${panes ? " view-panes" : ""}`} onMouseOver={onOver}>
-      <main class="page" onClick={onClick}>
+      <main
+        class="page"
+        onClick={onClick}
+        onAuxClick={(e) => e.button === 1 && (e.preventDefault(), onClick(e))}
+        // A Shift-click would extend the text selection, and a middle press scrolls or pastes: neither, when they open a fork.
+        onMouseDown={(e) => (e.shiftKey || e.button === 1) && !(e.target as HTMLElement).closest("input, textarea") && e.preventDefault()}
+      >
         <DocBar />
         {store.preview && (
           <div class="banner">

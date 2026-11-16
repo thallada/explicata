@@ -3,8 +3,8 @@
  * icons: W for Wikipedia, § for another note in this library, ↗ for the web), the card a popup or
  * an inset shows, a node's own target, the "Linked from" list, and the link picker.
  */
-import { Fragment } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { Fragment, createContext } from "preact";
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { ownerSection, resolveNode } from "../core/links";
 import { docOf, isLink, label, type NodeId } from "../core/model";
 import { describeTarget, hostOf, parseTarget, validateRef, wikiTitle, type Ref } from "../core/ref";
@@ -139,11 +139,29 @@ export function TargetRow({ id }: { id: NodeId }) {
   );
 }
 
+
+/** The pane (its id in the tree of forks) that what is drawn inside it belongs to; none in the column. */
+export const PaneCtx = createContext<number | undefined>(undefined);
+
+/**
+ * In a pane with forks, what marks the words, rows and links its forks were opened from: each open
+ * child is "forked", the focused one "forked picked". By the keys a pane's child goes by (refKey).
+ */
+export function useForkMark(): ((...keys: (string | undefined)[]) => string) | null {
+  const marks = store.forkMarks(useContext(PaneCtx));
+  if (!marks) return null;
+  return (...keys) => {
+    for (const k of keys) if (k && marks.has(k)) return marks.get(k) ? "forked picked" : "forked";
+    return "";
+  };
+}
+
 /**
  * "Linked from": the nodes that link here, each as its section's title and its document. Collapsed
  * to nothing when there are none. The same list, for an article, is "Mentioned in".
  */
 export function Backlinks({ ids, title, focusedAt }: { ids: NodeId[]; title: string; focusedAt: (i: number) => boolean }) {
+  const forkMark = useForkMark();
   if (!ids.length) return null;
   const s = store.snap;
   return (
@@ -155,7 +173,7 @@ export function Backlinks({ ids, title, focusedAt }: { ids: NodeId[]; title: str
           const d = docOf(s, id);
           const n = s.nodes[id];
           return (
-            <li key={id} class={focusedAt(i) ? "focused" : ""} data-linking={id}>
+            <li key={id} class={[focusedAt(i) && "focused", forkMark?.(`n:${sec}`)].filter(Boolean).join(" ")} data-linking={id}>
               <span class="bl-title">{label(s, sec)}</span>
               <span class="bl-doc">{d && d !== sec ? s.nodes[d].title : "document"}</span>
               {n.kind === "note" && <span class="bl-quote">“{clip(n.anchors[0]?.text ?? "", 60)}”</span>}
@@ -185,13 +203,14 @@ export function SuggestionCard({ sg }: { sg: Sugg }) {
  */
 export function NodeRelated({ id }: { id: NodeId }) {
   const rows = store.relatedShown(id) ? store.relatedOf(id) : [];
+  const forkMark = useForkMark();
   if (!rows.length) return null;
   return (
     <section class="related-list">
       <h3>Related</h3>
       <ul>
         {rows.map((r, i) => (
-          <li key={r.node} data-related={r.node}>
+          <li key={r.node} class={forkMark?.(`n:${r.node}`) || undefined} data-related={r.node}>
             <span class="bl-key">{i + 1}</span>
             <span class="bl-title">{r.title}</span>
             <span class="bl-doc">{r.doc}</span>

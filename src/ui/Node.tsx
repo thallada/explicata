@@ -6,7 +6,7 @@ import type { Ref } from "../core/ref";
 import { clip, overlaps, paragraphs, plain, type Form, type Range } from "../core/text";
 import { streamView } from "../core/marks";
 import { ownerSection } from "../core/links";
-import { ChoiceRows, LinkMark, LinkPreview, NodeBacklinks, NodeRelated, SuggestionCard, TargetRow, articleChoice, sectionChoice, useWikiSuggest, type Choice } from "./Links";
+import { ChoiceRows, LinkMark, useForkMark, LinkPreview, NodeBacklinks, NodeRelated, SuggestionCard, TargetRow, articleChoice, sectionChoice, useWikiSuggest, type Choice } from "./Links";
 import { store, type Pending } from "./store";
 
 // ---- inline text ----
@@ -47,6 +47,7 @@ const MARK = /\*([^*\n]+)\*|`([^`\n]+)`/g;
 function Para(props: { id: NodeId; range: Range; notes: VNote[]; inline: boolean; inNote: boolean; first: boolean }) {
   const { id, range, notes, inline } = props;
   const snap = store.snap;
+  const forkMark = useForkMark();
   const body = snap.nodes[id].body;
   const [ps, pe] = range;
   const cuts = new Set<number>([ps, pe]);
@@ -104,6 +105,7 @@ function Para(props: { id: NodeId; range: Range; notes: VNote[]; inline: boolean
         note?.open && "on",
         note?.pending && "writing",
         link?.link && !note && `lnk l-${link.ref!.kind}${link.open ? " on" : ""}`,
+        forkMark && (note ?? link)?.id && forkMark(`n:${(note ?? link)!.id}`, link?.ref && store.targetKey(link.ref)),
         sel && sel[0] <= a && sel[1] >= b && `sel ${f.grain}`,
         within(srcRanges, a, b) && "src",
         sugg && `sugg${sugg.tier === "auto" ? " sure" : ""}`,

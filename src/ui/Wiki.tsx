@@ -10,11 +10,12 @@
  * text ends with its attribution.
  */
 import { h, type ComponentChildren } from "preact";
+import { useContext } from "preact/hooks";
 import type { NodeId } from "../core/model";
 import { wikiKey } from "../core/ref";
 import { clip, type Range } from "../core/text";
 import type { Block } from "./articleText";
-import { Attribution, Backlinks } from "./Links";
+import { Attribution, Backlinks, PaneCtx, useForkMark } from "./Links";
 import { NodeBody, NoteView, type VNote } from "./Node";
 import { sameAux, store, type WRow } from "./store";
 import { article, articleText, known, revisionUrl, sectionsUnder, sensesOf, summary, type Article } from "./wiki";
@@ -26,6 +27,8 @@ interface Ctx {
   sel: { grain: string; range: Range } | null;
   /** The focused link's words, when the selection is exactly a link. */
   link: Range | null;
+  /** In a pane with forks: the mark for a link whose article is open as one of them. */
+  fork: ((...keys: string[]) => string) | null;
 }
 
 /**
@@ -48,10 +51,11 @@ function ArticleTextView({ host, row, sec, html, article, lang }: { host: string
     if (p.sec === sec) notes.push({ key: id, id, form: n.form ?? "note", ranges: [p.range], open: store.open.has(id), lens: n.lens });
   }
   const key = wikiKey(lang, article.title);
+  const fork = useForkMark();
   for (const p of store.pending.values()) if (p.art?.key === key && p.art.sec === sec && p.range) notes.push({ key: p.key, form: p.form ?? "note", ranges: [p.range], open: true, pending: p, lens: p.lens });
   return (
     <div class="wiki-text" data-wtext={row.t === "sec" ? row.id : "head"}>
-      <Blocks bs={at.blocks} c={{ text: at.text, notes, sel, link }} />
+      <Blocks bs={at.blocks} c={{ text: at.text, notes, sel, link, fork }} />
     </div>
   );
 }
@@ -95,7 +99,11 @@ function APara({ b, c }: { b: Para; c: Ctx }) {
           {c.text.slice(x, y)}
         </span>
       );
-      for (const m of [...run.marks].reverse()) el = h(m.tag, { key: x, ...Object.fromEntries(m.attrs), class: m.tag === "a" && c.link && meets(c.link, x, y, false) ? "wfocus" : undefined }, el);
+      for (const m of [...run.marks].reverse()) {
+        const attrs = Object.fromEntries(m.attrs);
+        const cls = m.tag === "a" ? [c.link && meets(c.link, x, y, false) && "wfocus", c.fork && attrs["data-wiki"] && c.fork(`w:${attrs["data-wiki"]}`)].filter(Boolean).join(" ") : "";
+        el = h(m.tag, { key: x, ...attrs, class: cls || undefined }, el);
+      }
       out.push(el);
     }
     for (const n of notes) {
@@ -162,6 +170,7 @@ function Problem({ message }: { message: string }) {
 
 /** One article view. `host` says which (see Aux in store.ts); a pane passes its index. */
 export function WikiView({ host }: { host: string }) {
+  const tid = useContext(PaneCtx);
   const h = store.wikiHost(host);
   if (!h) return null;
   const a = store.aux;
@@ -204,11 +213,8 @@ export function WikiView({ host }: { host: string }) {
   }
   const v = art.value;
   const sec = h.sec ? v.sections.find((x) => x.id === h.sec) : undefined;
-  const showing = (id: number) => {
-    const i = host.startsWith("p") ? +host.slice(1) : store.paneAt;
-    const next = store.trail[i + 1];
-    return !!store.panes && next?.kind === "wiki" && next.title === h.title && next.sec === id;
-  };
+  // A section open as a pane to the right is marked: the picked child "showing", another fork "forked".
+  const showing = (id: number) => (store.panes ? store.kidMark(tid, (r) => r.kind === "wiki" && r.title === h.title && r.sec === id) : undefined);
   return (
     <section class={`wiki${embedded ? " embedded" : ""}`} data-host={host}>
       <Head title={v.title} sub={sec?.heading} focused={at({ t: "head" })} />
@@ -223,7 +229,7 @@ export function WikiView({ host }: { host: string }) {
   );
 }
 
-function Rows(props: { article: Article; host: string; lang: string; parent: number; nested: boolean; at: (r: WRow) => boolean; showing: (id: number) => boolean }) {
+function Rows(props: { article: Article; host: string; lang: string; parent: number; nested: boolean; at: (r: WRow) => boolean; showing: (id: number) => "showing" | "forked" | undefined }) {
   const { article: v, host, lang, parent, nested, at, showing } = props;
   const kids = sectionsUnder(v, parent);
   if (!kids.length) return null;
@@ -234,7 +240,7 @@ function Rows(props: { article: Article; host: string; lang: string; parent: num
         const open = nested && store.colOpen.has(x.id);
         const leaf = !sectionsUnder(v, x.id).length;
         return (
-          <li key={x.id} class={`wrow${at(row) ? " focused" : ""}${open ? " open" : ""}${showing(x.id) ? " showing" : ""}`}>
+          <li key={x.id} class={`wrow${at(row) ? " focused" : ""}${open ? " open" : ""}${showing(x.id) ? ` ${showing(x.id)}` : ""}`}>
             <div class="row" data-wrow={x.id}>
               <span class="mark">{open ? "▾" : leaf && !x.html ? "·" : "▸"}</span>
               <span class="title">{x.heading}</span>
