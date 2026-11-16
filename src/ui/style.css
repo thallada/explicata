@@ -222,6 +222,19 @@ article.preview { opacity: 0.92; }
 .item .line { display: flex; gap: 0.6em; align-items: baseline; }
 .item .msg { flex: 1; }
 .item .sub { color: var(--faint); font-size: 0.64rem; }
+/* The links list (S): quiet toggles, then a row per link found or made. */
+.lfilters { padding: 0.45rem 0 0.35rem; font-size: 0.66rem; color: var(--faint); border-bottom: 1px solid var(--hair); margin-bottom: 0.3rem; }
+.lfilter { font: inherit; background: none; border: 0; padding: 0; cursor: pointer; color: var(--fg); }
+.lfilter kbd { font-family: var(--mono); font-size: 0.58rem; color: var(--faint); margin-right: 0.15em; }
+.lfilter .n { color: var(--dim); font-variant-numeric: tabular-nums; }
+.lfilter.off { color: var(--faint); text-decoration: line-through; text-decoration-color: var(--rule); }
+.lrow .lq { font-family: var(--serif); }
+.lrow .lt { color: var(--dim); }
+.lrow .lmark { font-size: 0.56rem; vertical-align: super; margin-left: 0.15em; color: var(--faint); }
+.lrow.rejected .lq, .lrow.rejected .lt { color: var(--faint); }
+.lrow .sub { overflow-wrap: anywhere; }
+.lrow .lwhere { color: var(--dim); }
+.lempty { color: var(--faint); margin: 0.8rem 0.45rem; }
 .hash { font-family: var(--mono); font-size: 0.62rem; color: var(--faint); flex: none; }
 /* The documents a commit touched. */
 .item .docs { color: var(--dim); font-size: 0.62rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

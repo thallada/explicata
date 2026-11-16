@@ -38,9 +38,9 @@ export const HELP: [string, [string, string][]][] = [
       ["w", "on a selection: link it (library, Wikipedia or an address); on a link: retarget it; on a node: give the node a target"],
       ["L", "on a node: open its own target"],
       ["W", "open the focused article on wikipedia.org, in a new tab"],
-      ["D", "on a link: remove it (u undoes)"],
+      ["D", "on a link: remove it, and decline its words in that node so it is not made again (u undoes). Also in the right-click menu: Remove the link"],
       ["y n", "on a suggested link (a faint dashed underline; Tab reaches it): link it / decline it (a declined phrase is not suggested again in that node)"],
-      ["S", "review the suggested links of this document one by one: y link · n decline · s skip · Y link all the rest · Esc stop"],
+      ["S", "the links list of this document: every link found or made, with who decided and the reviewer's reason. 1 2 3 show or hide linked · rejected · pending (rejected is hidden at first); j k move (the words are selected in the text); y links (also a rejected one: you overrule); n declines, or on a link removes it for good; Y links all the pending shown; Enter goes to the words; Esc closes"],
       ["1–5", "the node's Related list (sections of other documents close in meaning, numbered under its text): with words selected, link them to that one; on the node, go there"],
       ["l h j k", "in an article: sections are rows, as in a node; l opens one, h goes back"],
       ["i e d y x c :", "in an article: select words of its text as in a node, and write a note on them; the note belongs to the article and shows wherever it is opened (one whose words are gone from a newer revision is listed as detached)"],
@@ -133,11 +133,11 @@ export const HELP: [string, [string, string][]][] = [
       ["/import", "open a .md file as a new document"],
       ["/recover", "save edits this browser made before the library existed, and never sent, as .md files"],
       ["/link target", "link the selection (or the node): w:Title, /document/Section, an address, or a Wikipedia title"],
-      ["/unlink", "remove the link on the selection, or the node's own target"],
-      ["/autolink suggest|on|off", "after an edit: suggest what was found (suggest, the default), also link the surest at once (on, u undoes), or look for nothing (off)"],
-      ["/linkdoc", "look for links in the whole document, in the background; progress in the status line"],
+      ["/unlink", "remove the link on the selection (for good: its words are declined; a note that also links keeps its text), or the node's own target"],
+      ["/autolink review|suggest|on|off", "after an edit: the model reviews what was found and links what it approves (review, the default with a model; u undoes, S lists every decision), suggest everything for you to decide (suggest; what review does without a model, or when the model fails or its limit is reached), link the scanner's sure ones unreviewed (on), or look for nothing (off)"],
+      ["/linkdoc", "look for links in the whole document, in the background (reviewed, in review mode); progress and the reviewer's model calls in the status line"],
       ["/linkall", "look for links in the whole library, in the background"],
-      ["/linkcancel", "stop looking (what was found is kept)"],
+      ["/linkcancel", "stop looking (what was found and reviewed is kept, and what was approved is linked)"],
       ["/research question", "the editor searches the web, reads a few pages and writes what it finds into the focused node, each claim linked to its page (within the server's limits, by default 5 searches and 5 pages read per request; Esc stops)"],
       ["", "an ordinary request to the editor may use the web too when it says so: \"look up…\", \"find sources for…\", \"search the web…\", \"cite sources\", \"fact-check\""],
     ],
@@ -311,27 +311,38 @@ export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
   if (store.mode === "review") {
     switch (k) {
       case "y":
-        store.acceptSuggestion();
+        store.reviewAccept();
         break;
       case "n":
-        store.rejectSuggestion();
+      case "D":
+        store.reviewReject();
         break;
       case "s":
       case "j":
+      case "ArrowDown":
       case "Tab":
       case " ":
         store.reviewStep(e.shiftKey ? -1 : 1);
         break;
       case "k":
+      case "ArrowUp":
         store.reviewStep(-1);
+        break;
+      case "1":
+      case "2":
+      case "3":
+        store.reviewFilter((["linked", "rejected", "pending"] as const)[+k - 1]);
         break;
       case "Y":
         store.reviewAcceptAll();
         break;
+      case "Enter":
+        store.reviewGo();
+        break;
       case "Escape":
       case "q":
       case "S":
-        store.endReview("Review stopped.");
+        store.endReview();
         break;
       case "u":
         store.undoLast();

@@ -10,8 +10,9 @@ import { docOf, isLink, label, type NodeId } from "../core/model";
 import { describeTarget, hostOf, parseTarget, validateRef, wikiTitle, type Ref } from "../core/ref";
 import { clip, plain } from "../core/text";
 import { kidClass, sameAux, store, type Aux } from "./store";
-import type { Sugg } from "./linker";
+import type { LinkRow, Status, Sugg } from "./linker";
 import { Hints } from "./Mouse";
+import { press } from "./press";
 import { suggest, summary, wikiConfig, type Attribution as Attr, type Suggestion } from "./wiki";
 
 const MARK: Record<Ref["kind"], string> = { wiki: "W", node: "§", url: "↗" };
@@ -195,10 +196,10 @@ export function SuggestionCard({ sg }: { sg: Sugg }) {
   return (
     <span class={`inset lpreview suggestion l-${sg.target.kind}`} data-suggestion={sg.id}>
       <span class="meta">
-        <Hints hint={[`suggested link${sg.tier === "auto" ? " (sure)" : ""}`, ["y", "links"], ["n", "declines"], store.review ? ["s", "skips"] : ["S", "reviews them all"]]} />
+        <Hints hint={[`suggested link${sg.tier === "auto" ? " (sure)" : ""}`, ["y", "links"], ["n", "declines"], store.review ? ["j", "next"] : ["S", "lists them all"]]} />
       </span>
       <LinkCard r={sg.target} compact />
-      <span class="meta why">{sg.why}</span>
+      <span class="meta why">{sg.review ? `reviewer: ${sg.review.link ? "yes" : "no"}, ${sg.review.reason}` : sg.why}</span>
     </span>
   );
 }
@@ -371,5 +372,83 @@ export function LinkPicker() {
         </ul>
       </div>
     </div>
+  );
+}
+
+// ---- the links list (S) ----
+
+const FILTERS: [key: string, status: Status, label: string][] = [
+  ["1", "linked", "linked"],
+  ["2", "rejected", "rejected"],
+  ["3", "pending", "pending"],
+];
+
+/** Who decided a row, and why, in a line. */
+function verdictLine(r: LinkRow): string {
+  const why = r.reason ? `: ${r.reason}` : "";
+  const said = r.verdict === null || !r.reason ? "" : ` · the reviewer said ${r.verdict ? "yes" : "no"}${why}`;
+  if (r.status === "linked") return r.by === "reviewer" ? `linked by the reviewer${why}` : r.by ? `linked by ${r.by}${said}` : `linked${said}`;
+  if (r.status === "rejected") {
+    if (r.by === "reviewer") return `rejected by the reviewer${why}`;
+    return `${r.by ? `declined by ${r.by}` : "declined"}${said}${r.target ? "" : " · its target was not kept"}`;
+  }
+  if (r.verdict === true) return `approved by the reviewer but not linked (undone?)${why}`;
+  return `not reviewed${r.sugg ? ` · the scanner was ${r.sugg.tier === "auto" ? "sure" : "unsure"}` : ""}`;
+}
+
+/**
+ * The links list (S): every link found or made in the current document, as it stands, with who
+ * decided and the reviewer's reason. Quiet toggles filter it by status; the selected row's words
+ * are selected in the text, and every key it takes is a button in its head.
+ */
+export function LinksPanel() {
+  const r = store.review;
+  const ref = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    ref.current?.querySelector(".lrow.selected")?.scrollIntoView({ block: "nearest" });
+  });
+  if (!r) return null;
+  const all = store.reviewAll();
+  const rows = all.filter((x) => r.show[x.status]);
+  const sel = store.reviewRow();
+  const s = store.snap;
+  const doc = store.currentDoc;
+  const count = (st: Status) => all.filter((x) => x.status === st).length;
+  return (
+    <aside class="panel links" ref={ref} data-links-panel>
+      <div class="panel-head">
+        <span>Links{doc ? ` · ${clip(s.nodes[doc]?.title ?? "", 30)}` : ""}</span>
+        <span class="keys">
+          <Hints hint={["j k", ...(sel?.status !== "linked" ? [["y", "link"] as [string, string]] : []), ...(sel?.status !== "rejected" ? [["n", sel?.status === "linked" ? "remove" : "decline"] as [string, string]] : []), ["Y", "link all"], ["Enter", "go"], ["Escape", "close"]]} />
+        </span>
+      </div>
+      <div class="lfilters">
+        {FILTERS.map(([k, st, name], i) => (
+          <Fragment key={st}>
+            {i > 0 && <span class="hsep"> · </span>}
+            <button type="button" class={`lfilter ${r.show[st] ? "on" : "off"}`} data-filter={st} title={`${k}: ${r.show[st] ? "hide" : "show"} what is ${name}`} onMouseDown={(e) => e.preventDefault()} onClick={(e) => (e.stopPropagation(), press(k))}>
+              <kbd>{k}</kbd> {name} <span class="n">{count(st)}</span>
+            </button>
+          </Fragment>
+        ))}
+      </div>
+      {!rows.length && <p class="lempty">{all.length ? "Nothing shown: 1 2 3 show more." : "Nothing linked or found here yet. :/linkdoc looks for links in this document."}</p>}
+      {rows.map((x) => (
+        <div key={x.key} class={`item lrow ${x.status}${x.key === sel?.key ? " selected" : ""}`} data-row={x.status} onClick={() => store.reviewSelect(x.key)}>
+          <div class="line">
+            <span class="lq">“{clip(x.quote, 48)}”</span>
+            {x.target && (
+              <span class="lt">
+                → {clip(x.title, 48)}
+                <span class={`lmark l-${x.target.kind}`}>{MARK[x.target.kind]}</span>
+              </span>
+            )}
+          </div>
+          <div class="sub">
+            <span class="lwhere">{clip(label(s, x.node), 36)}</span> · {verdictLine(x)}
+          </div>
+        </div>
+      ))}
+    </aside>
   );
 }

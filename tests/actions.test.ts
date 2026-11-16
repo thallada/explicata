@@ -83,6 +83,13 @@ describe("actions", () => {
     expect(labels(link).slice(1, 8)).toEqual(["Copy", "--", "Open the link beside", "Open it in place", "Open on wikipedia.org", "Retarget…", "Remove the link"]);
     expect(find(link, "Open it in place")).toMatchObject({ key: "Enter", shift: true, keyText: "⇧⏎" });
     expect(labels(link)).not.toContain("Link to…");
+    // Removing a link is D, and says it is for good; a library link the same; a note that also links can lose only its target.
+    expect(find(link, "Remove the link")).toMatchObject({ key: "D", sub: "and do not link these words again here" });
+    expect(find(selectionEntries(sel({ link: "node" }), act), "Remove the link")).toMatchObject({ key: "D" });
+    const both = selectionEntries(sel({ link: "wiki", note: true }), act);
+    expect(find(both, "Delete the note")).toMatchObject({ key: "D" });
+    find(both, "Remove the link, keep the note").run();
+    expect(calls).toContain("command /unlink");
     // In an article: no linking by hand, no Related.
     const art = selectionEntries(sel({ article: true, related: [{ title: "Nodes" }] }), act);
     expect(labels(art)).not.toContain("Link to…");
@@ -138,7 +145,8 @@ describe("actions", () => {
     expect(colors.options.map((o) => `${o.label}${o.on ? "*" : ""}`)).toEqual(["line*", "top", "edge", "off"]);
     colors.options[3].run();
     expect(calls.at(-1)).toBe("command /colors off");
-    expect(labels(topEntries(top({ doc: false }), act))).not.toContain("Review suggested links");
+    expect(labels(topEntries(top({ doc: false }), act))).not.toContain("Links found: review and reverse");
+    expect(labels(topEntries(top(), act))).toContain("Links found: review and reverse");
   });
 
   it("tidy leaves no separator at an end or next to another", () => {

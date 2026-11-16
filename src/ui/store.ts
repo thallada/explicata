@@ -9,7 +9,7 @@
  */
 import { UndoManager } from "loro-crdt";
 import {
-  Doc, OpError, SYSTEM_ORIGIN, ancestors, descendants, docOf, documents, freeSlug, isLibraryRoot, isStale, label, notesOf, sections,
+  Doc, OpError, SYSTEM_ORIGIN, ancestors, descendants, docOf, documents, freeSlug, isLibraryRoot, isLink, isStale, label, notesOf, sections,
   staleness, type NodeId, type Op, type Snap,
 } from "../core/model";
 import { FormatError, serializeDoc } from "../core/format";
@@ -35,7 +35,7 @@ import { idbGet, idbKeys, idbSet } from "./idb";
 import { remoteLLM } from "./remote";
 import { Session } from "./session";
 import { refreshAfterCalls } from "./usage";
-import { Linker, type AutoMode, type JobState, type Sugg } from "./linker";
+import { Linker, type AutoMode, type JobState, type LinkRow, type Status, type Sugg } from "./linker";
 import { all, besideInColumn, close as closeIn, columns as columnsOf, reorder, focus as focusIn, focused, open as openIn, path, pin as pinIn, prune, restore as restoreForest, rooted, save as saveTree, updateIn, withBranch, type Forest, type Placed, type Tree } from "./forks";
 import { stripMarks, type Mark } from "../core/marks";
 import { SEED_SLUG } from "../core/seed";
@@ -184,6 +184,17 @@ const lsSet = (k: string, v: unknown) => {
   }
 };
 
+/**
+ * The settings this browser stored. `review` is now the default for links found after an edit; a
+ * browser that stored the old default, `suggest`, without choosing it (every setting is stored
+ * together) moves to it. A mode chosen with /autolink since is kept.
+ */
+function storedSettings(): Partial<Store["settings"]> {
+  const s = lsGet<Partial<Store["settings"]>>("ie:settings", {});
+  if (s.autolink === "suggest" && !lsGet("ie:autolink-chosen", false)) delete s.autolink;
+  return s;
+}
+
 /** Article text an aux focus is in (Store.auxSpot). */
 export interface Spot {
   at: ArticleText;
@@ -234,18 +245,22 @@ class Store {
   branchFrom: Commit | null = null;
   /** A note being previewed on hover, and where to draw it. */
   popup: { note: NodeId; x: number; top: number; bottom: number } | null = null;
-  settings: { auto: boolean; speculate: boolean; view: View; autolink: AutoMode; curves: boolean; colors: Colors } = { auto: true, speculate: false, view: "auto", autolink: "suggest", curves: true, colors: "line", ...lsGet("ie:settings", {}) };
+  settings: { auto: boolean; speculate: boolean; view: View; autolink: AutoMode; curves: boolean; colors: Colors } = { auto: true, speculate: false, view: "auto", autolink: "review", curves: true, colors: "line", ...storedSettings() };
   /** Link discovery: scans after writes, suggestions, Related, the background job. */
   links = new Linker({
     doc: () => this.doc,
     user: () => this.user,
     mode: () => this.settings.autolink,
+    generating: () => this.generating,
     say: (t) => this.say(t),
     emit: (...ids) => this.emit(...ids),
     rendered: (id) => this.rendered(id),
   });
-  /** Review mode (S): the suggestions being stepped through, and which one is on screen. */
-  review: { items: Sugg[]; i: number } | null = null;
+  /**
+   * The links list (S): every link found or made in the current document, as it stands, under
+   * filters by status; the selected row's words are focused in the text.
+   */
+  review: { ids: NodeId[]; show: Record<Status, boolean>; key: string | null } | null = null;
 
   /** Whether the window is wide enough for `auto` to mean panes. Kept current by the page. */
   wide = typeof window !== "undefined" && window.innerWidth >= PANES_MIN_WIDTH;
@@ -1867,9 +1882,10 @@ class Store {
       return this.say("Note deleted. u to undo.");
     }
     if (this.focus.grain !== "node") {
-      // On a selection, D removes the note anchored there.
+      // On a selection, D removes the note anchored there; a link goes for good (its words are declined).
       const note = this.noteAt(this.focus.range);
       if (!note) return this.say("No note on this selection to delete. Esc to the node first to delete the node.");
+      if (isLink(s.nodes[note])) return this.removeLink(note);
       this.apply([{ op: "delete", id: note }], `Delete note on “${clip(label(s, note), 40)}”`);
       this.open.delete(note);
       return this.say("Note deleted. u to undo.");
@@ -2747,7 +2763,7 @@ class Store {
     this.applyTarget(spot, ref);
   }
 
-  /** /unlink: a link on the selection goes; a note there, or the node itself, loses its target and keeps its text. */
+  /** /unlink: a link on the selection goes (for good: its words are declined); a note there, or the node itself, loses its target and keeps its text. */
   unlink() {
     if (!this.writable()) return;
     const spot = this.linkSpot();
@@ -2755,10 +2771,9 @@ class Store {
     const id = spot?.range ? spot.existing : spot?.node;
     const n = id ? s.nodes[id] : undefined;
     if (!id || !n?.ref) return this.say("Nothing here links anywhere.");
-    if (n.kind === "note" && !n.body.trim()) {
-      this.apply([{ op: "delete", id }], `Unlink “${clip(label(s, id), 40)}”`);
-      this.open.delete(id);
-    } else this.apply([{ op: "update", id, ref: null }], `Remove the target of “${clip(label(s, id), 40)}”`);
+    // A link on words (or a note that also links) goes for good: its words are declined in the node.
+    if (n.kind === "note") return this.removeLink(id);
+    this.apply([{ op: "update", id, ref: null }], `Remove the target of “${clip(label(s, id), 40)}”`);
     this.say("Unlinked. u to undo.");
   }
 
@@ -2866,7 +2881,7 @@ class Store {
     this.emit();
   }
 
-  // ---- link suggestions ----
+  // ---- link suggestions, and the links list ----
 
   /** The suggestion the focus is on (its words exactly), if any. */
   focusedSuggestion(): Sugg | undefined {
@@ -2875,13 +2890,12 @@ class Store {
     return this.links.at(f.node, f.range, this.snap);
   }
 
-  /** y on a suggestion: link it. In review, on to the next. */
+  /** y on a suggestion: link it. */
   acceptSuggestion(sg = this.focusedSuggestion()) {
     if (!sg || !this.writable()) return;
     this.agentUndo = null;
     const made = this.links.accept([sg]);
     this.say(made ? `Linked “${clip(sg.quote, 40)}” to ${clip(describeTarget(sg.target), 50)} · u undoes` : "Those words could not be linked any more.");
-    if (this.review) this.reviewStep(0);
   }
 
   /** n on a suggestion: decline it, remembered in the node (and so on every replica). */
@@ -2890,52 +2904,156 @@ class Store {
     this.agentUndo = null;
     this.links.reject([sg]);
     this.say(`Declined “${clip(sg.quote, 40)}”: it will not be suggested here again · u undoes`);
-    if (this.review) this.reviewStep(0);
   }
 
-  /** S: step through the pending suggestions of the current document (or, on the library, of the focused node). */
+  /** D on a link (or /unlink): remove it, and decline its words in the node so it is not made again. */
+  removeLink(note: NodeId) {
+    if (!this.writable()) return;
+    this.agentUndo = null;
+    const s = this.snap;
+    const quote = s.nodes[note]?.parent ? s.nodes[s.nodes[note].parent!].body.slice(s.nodes[note].anchors[0]?.start ?? 0, s.nodes[note].anchors[0]?.end ?? 0) : "";
+    const deleted = isLink(s.nodes[note]);
+    if (!this.links.removeLink(note)) return this.say("Nothing here links anywhere.");
+    if (deleted) this.open.delete(note);
+    this.say(`Removed the link on “${clip(quote, 40)}”; it will not be made again here · u undoes`);
+  }
+
+  /** S: the links list of the current document (or, on the library, of the focused node). It opens at once; what the server has is fetched fresh behind it. */
   startReview() {
     if (!this.writable()) return;
     const s = this.snap;
     const d = this.currentDoc;
     const ids = d ? [d, ...descendants(s, d)] : [this.focus.node];
-    const items = this.links.under(ids, s);
-    if (!items.length) return this.say(d ? "No link suggestions are waiting in this document. :/linkdoc looks for some." : "No link suggestions here.");
-    this.review = { items, i: 0 };
+    const review = { ids, show: { linked: true, pending: true, rejected: false } as Record<Status, boolean>, key: null as string | null };
+    this.review = review;
     this.mode = "review";
+    // The first row waiting for a decision, else the first shown.
+    const first = () => {
+      if (this.review !== review || review.key) return;
+      const rows = this.reviewRows();
+      review.key = (rows.find((r) => r.status === "pending") ?? rows[0])?.key ?? null;
+      if (review.key) this.reviewShow();
+    };
+    first();
+    this.emit();
+    if (d) void this.links.loadDoc(d, true).then(() => (first(), this.emit()));
+  }
+
+  /** Every row of the links list, whatever the filters. */
+  reviewAll(): LinkRow[] {
+    const r = this.review;
+    return r ? this.links.rows(r.ids, this.snap) : [];
+  }
+
+  /** The rows the filters show. */
+  reviewRows(): LinkRow[] {
+    const r = this.review;
+    return r ? this.reviewAll().filter((x) => r.show[x.status]) : [];
+  }
+
+  /** The selected row, if it is still shown. */
+  reviewRow(): LinkRow | undefined {
+    const r = this.review;
+    return r ? this.reviewRows().find((x) => x.key === r.key) : undefined;
+  }
+
+  /** Select a row (a click on it). */
+  reviewSelect(key: string) {
+    if (!this.review) return;
+    this.review.key = key;
     this.reviewShow();
   }
 
-  /** Move through the review: 0 stays on the same place (after the one there was taken), ±1 skips. */
+  /** j k s Tab: move through the shown rows. */
   reviewStep(delta: number) {
     const r = this.review;
     if (!r) return;
-    const s = this.snap;
-    // What is still pending, in order; the cursor keeps its place in the list.
-    const live = r.items.map((x) => this.links.forNode(x.node, s).find((y) => y.id === x.id)).filter((x): x is Sugg => !!x);
-    const current = r.items[r.i];
-    const at = live.findIndex((x) => x.id === current?.id);
-    r.items = live;
-    r.i = at >= 0 ? at + delta : r.i;
-    if (!live.length || r.i >= live.length) return this.endReview(live.length ? "End of the suggestions." : "No suggestions left.");
-    r.i = Math.max(0, r.i);
+    const rows = this.reviewRows();
+    if (!rows.length) return this.reviewShow();
+    const at = rows.findIndex((x) => x.key === r.key);
+    r.key = rows[Math.max(0, Math.min(rows.length - 1, at < 0 ? 0 : at + delta))].key;
     this.reviewShow();
   }
 
-  private reviewShow() {
-    const r = this.review!;
-    const sg = r.items[r.i];
-    this.go(sg.node, "word", sg.range);
-    this.status = `review ${r.i + 1}/${r.items.length}: “${clip(sg.quote, 40)}” → ${clip(sg.title, 50)} · y link · n decline · s skip · Y link all · Esc stop`;
-    this.emit();
+  /** 1 2 3: show or hide the linked, the turned down, the waiting. */
+  reviewFilter(status: Status) {
+    const r = this.review;
+    if (!r) return;
+    const keep = this.reviewRow();
+    r.show = { ...r.show, [status]: !r.show[status] };
+    const rows = this.reviewRows();
+    r.key = (keep && r.show[keep.status] ? keep : rows[0])?.key ?? null;
+    this.reviewShow();
   }
 
-  /** Y in review: link every suggestion still in the review, as one commit. */
-  reviewAcceptAll() {
+  /** After a row was decided: it may have left the filter; keep the place in the list. */
+  private reviewAfter(before: LinkRow[], key: string | null) {
     const r = this.review;
-    if (!r || !this.writable()) return;
-    const made = this.links.accept(r.items.slice(r.i));
-    this.endReview(`Linked ${made} phrase${made === 1 ? "" : "s"} · u undoes`);
+    if (!r) return;
+    const rows = this.reviewRows();
+    if (!rows.some((x) => x.key === key)) {
+      const at = before.findIndex((x) => x.key === key);
+      const next = before.slice(at + 1).find((x) => rows.some((y) => y.key === x.key)) ?? rows[rows.length - 1];
+      r.key = next?.key ?? null;
+    }
+    this.reviewShow(false);
+  }
+
+  /** y in the list: link the selected row (waiting, or turned down: a person overrules). */
+  reviewAccept() {
+    const row = this.reviewRow();
+    if (!row || !this.writable()) return;
+    if (row.status === "linked") return this.say("That is linked already. n removes it.");
+    if (!row.sugg) return this.say(`No target was kept for “${clip(row.quote, 40)}”, declined before targets were kept: Enter goes to it, and w links it by hand.`);
+    const before = this.reviewRows();
+    this.agentUndo = null;
+    const made = this.links.accept([row.sugg], row.status === "rejected");
+    this.say(made ? `Linked “${clip(row.quote, 40)}” to ${clip(row.title, 50)}${row.status === "rejected" ? `, over the ${row.by === "reviewer" ? "reviewer's" : "earlier"} no` : ""} · u undoes` : "Those words could not be linked any more.");
+    this.reviewAfter(before, row.key);
+  }
+
+  /** n (or D) in the list: decline the selected row if it waits; remove its link, for good, if it is linked. */
+  reviewReject() {
+    const row = this.reviewRow();
+    if (!row || !this.writable()) return;
+    if (row.status === "rejected") return this.say("That is rejected already. y links it.");
+    const before = this.reviewRows();
+    this.agentUndo = null;
+    if (row.status === "linked" && row.note) this.removeLink(row.note);
+    else if (row.sugg) {
+      this.links.reject([row.sugg]);
+      this.say(`Declined “${clip(row.quote, 40)}”: it will not be suggested here again · u undoes`);
+    }
+    this.reviewAfter(before, row.key);
+  }
+
+  /** Y in the list: link every waiting row it shows, as one commit. */
+  reviewAcceptAll() {
+    if (!this.review || !this.writable()) return;
+    const list = this.reviewRows().flatMap((x) => (x.status === "pending" && x.sugg ? [x.sugg] : []));
+    if (!list.length) return this.say("Nothing shown is waiting to be linked.");
+    const before = this.reviewRows();
+    const key = this.review.key;
+    const made = this.links.accept(list);
+    this.say(`Linked ${made} phrase${made === 1 ? "" : "s"} · u undoes`);
+    this.reviewAfter(before, key);
+  }
+
+  /** Enter in the list: put it away and stay at the selected row's words. */
+  reviewGo() {
+    const row = this.reviewRow();
+    this.endReview();
+    if (row && !row.range) this.go(row.node, "node");
+  }
+
+  /** Focus the selected row's words in the text, and say where the list is. */
+  private reviewShow(clear = true) {
+    const row = this.reviewRow();
+    if (row?.range && this.snap.nodes[row.node]) this.go(row.node, "word", row.range);
+    else if (row && this.snap.nodes[row.node]) this.go(row.node, "node");
+    // Moving clears what was said; after a decision, what was said stays.
+    if (clear) this.status = "";
+    this.emit();
   }
 
   endReview(message = "") {
@@ -2962,10 +3080,16 @@ class Store {
   }
 
   setAutolink(arg: string) {
-    if (!["on", "suggest", "off"].includes(arg)) return this.say(`/autolink on|suggest|off (now ${this.settings.autolink}): on links the sure ones at once, suggest leaves all to you, off looks for nothing`);
+    if (!["review", "on", "suggest", "off"].includes(arg)) return this.say(`/autolink review|suggest|on|off (now ${this.settings.autolink}): review has the model judge what is found and links what it approves, suggest leaves all to you, on links the scanner's sure ones unreviewed, off looks for nothing`);
     this.settings = { ...this.settings, autolink: arg as AutoMode };
     lsSet("ie:settings", this.settings);
-    this.say(arg === "on" ? "autolink on: sure links are made at once (u undoes); the rest are suggested" : arg === "suggest" ? "autolink suggest: links are only suggested; y takes one, S reviews them" : "autolink off: nothing is scanned automatically");
+    lsSet("ie:autolink-chosen", true);
+    this.say(
+      arg === "review" ? `autolink review: the model judges what is found and links what it approves (u undoes); S lists every decision${this.generating ? "" : " · no model on this server, so for now links are only suggested"}`
+        : arg === "on" ? "autolink on: the scanner's sure links are made at once, unreviewed (u undoes); the rest are suggested"
+        : arg === "suggest" ? "autolink suggest: links are only suggested; y takes one, S lists them"
+        : "autolink off: nothing is scanned automatically",
+    );
   }
 
   /** /colors: where each fork's colour shows in the panes view. */
@@ -2986,20 +3110,30 @@ class Store {
 
   async cancelLinkJob() {
     const ok = await this.links.cancelJob();
-    this.say(ok ? "Stopped looking for links. What was found so far is kept: S reviews it." : "No link search is running.");
+    this.say(ok ? "Stopped looking for links. What was found and reviewed so far is kept: S lists it." : "No link search is running.");
   }
 
-  /** The status line's account of a job. */
-  jobText(j: JobState): string {
+  /** The status line's account of a job; `made`, once it is over, the links the reviewer approved that this page made. */
+  jobText(j: JobState, made?: number): string {
     const eta = j.etaSec ? ` · about ${j.etaSec < 90 ? `${j.etaSec} s` : `${Math.round(j.etaSec / 60)} min`} left` : "";
     const slow = j.slow && j.state === "running" ? " · Wikipedia is asked once every 6.5 s without a contact: start the server with IE_WIKI_CONTACT (an email, https:// URL or User:Name) for about 6× faster" : "";
-    if (j.state === "running") return `looking for links in ${clip(j.title, 40)}: ${j.done}/${j.total}${eta} · :/linkcancel stops${slow}`;
-    if (j.state === "done") return `Looked for links in ${clip(j.title, 40)}: ${j.auto} sure, ${j.suggest} to review · S reviews them`;
-    if (j.state === "cancelled") return `Stopped looking for links in ${clip(j.title, 40)} at ${j.done}/${j.total}.`;
+    const r = j.review;
+    const fell = r?.fallback ? ` · ${this.links.fallbackText(r.fallback)}: ${r.left} left for you` : "";
+    if (j.state === "running") {
+      const rev = r ? ` · reviewer ${r.calls}/${r.max} calls, ${r.approved} approved, ${r.rejected} rejected` : "";
+      return `looking for links in ${clip(j.title, 40)}: ${j.done}/${j.total}${eta}${rev}${fell} · :/linkcancel stops${slow}`;
+    }
+    const verdicts = r ? `${made ?? r.approved} linked by the reviewer, ${r.rejected} rejected${r.left ? `, ${r.left} to review` : ""} · ${r.calls} model call${r.calls === 1 ? "" : "s"}${r.fallback ? ` · ${this.links.fallbackText(r.fallback)}` : ""}${made ? " · u undoes" : ""}` : "";
+    if (j.state === "done") return `Looked for links in ${clip(j.title, 40)}: ${r ? verdicts : `${j.auto} sure, ${j.suggest} to review`} · S lists them`;
+    if (j.state === "cancelled") return `Stopped looking for links in ${clip(j.title, 40)} at ${j.done}/${j.total}${r ? `: ${verdicts}` : "."}`;
     return `Looking for links failed: ${j.message ?? "unknown error"}`;
   }
 
-  /** A job's progress, from the server's notices. When it ends, what it found is fetched; with autolink on, the sure ones are applied (u undoes). */
+  /**
+   * A job's progress, from the server's notices. When it ends (or is stopped), what it found is
+   * fetched; in review mode the links the reviewer approved are made, as one commit by "reviewer";
+   * with autolink on, the sure ones, by "linker" (u undoes either).
+   */
   jobUpdate(j: JobState) {
     const before = this.links.job;
     this.links.job = j;
@@ -3010,12 +3144,15 @@ class Store {
     if (before?.id === j.id && before.state !== "running") return;
     void (async () => {
       const docs = j.doc ? [j.doc] : documents(this.doc.snap());
-      const found = (await Promise.all(docs.map((d) => this.links.loadDoc(d, true)))).flat();
-      if (j.state === "done" && this.settings.autolink === "on") {
-        const sure = found.filter((x) => x.tier === "auto");
+      const claim = !!j.review && this.links.effective() === "review";
+      const got = await Promise.all(docs.map((d) => this.links.loadDoc(d, true, claim)));
+      let made: number | undefined;
+      if (claim) made = this.links.applyAuto(got.flatMap((g) => g.apply), this.doc, "reviewer").length;
+      else if (j.state === "done" && this.settings.autolink === "on") {
+        const sure = got.flatMap((g) => g.found).filter((x) => x.tier === "auto" && !x.review && !x.decided);
         if (sure.length) this.links.applyAuto(sure);
       }
-      this.say(this.jobText(j));
+      this.say(this.jobText(j, made));
     })();
   }
 

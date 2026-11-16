@@ -118,7 +118,8 @@ export function selectionEntries(c: SelCtx, act: Act): Entry[] {
     c.suggestion && key(act, `Link to ${c.suggestion}`, "y", { sub: "a suggested link" }),
     c.suggestion && key(act, "Decline the suggestion", "n"),
     (c.link || c.note) && !c.article && key(act, c.link ? "Retarget…" : "Link it…", "w"),
-    (c.link || c.note) && key(act, c.link && !c.note ? "Remove the link" : "Delete the note", "D"),
+    (c.link || c.note) && key(act, c.link && !c.note ? "Remove the link" : "Delete the note", "D", c.link && !c.note ? { sub: "and do not link these words again here" } : {}),
+    c.link && c.note && !c.article && { t: "item", label: "Remove the link, keep the note", keyText: "/unlink", run: () => act.command("/unlink") },
     SEP,
     ...lenses(act),
     SEP,
@@ -225,7 +226,7 @@ export function articleRowEntries(title: string, panes: boolean, act: Act): Entr
 
 export interface TopCtx {
   view: "auto" | "column" | "panes";
-  autolink: "suggest" | "on" | "off";
+  autolink: "review" | "suggest" | "on" | "off";
   auto: boolean;
   speculate: boolean;
   curves: boolean;
@@ -249,11 +250,11 @@ export function topEntries(c: TopCtx, act: Act): Entry[] {
     key(act, "Undo", "u"),
     key(act, "Redo", "U", { disabled: !c.canRedo }),
     SEP,
-    c.doc && key(act, "Review suggested links", "S"),
+    c.doc && key(act, "Links found: review and reverse", "S"),
     c.doc && { t: "item", label: "Find links in this document", keyText: "/linkdoc", run: () => act.command("/linkdoc") },
     SEP,
     { t: "choices", label: "Layout", options: [view("auto"), view("column"), view("panes")] },
-    { t: "choices", label: "Links found", options: [auto("suggest", "suggest"), auto("on", "link sure"), auto("off", "off")] },
+    { t: "choices", label: "Links found", options: [auto("review", "review"), auto("suggest", "suggest"), auto("on", "link sure"), auto("off", "off")] },
     setting("Reconcile after edits", "auto", c.auto),
     setting("Write ahead while reading", "speculate", c.speculate),
     c.panes && setting("Curves between panes", "curves", c.curves),

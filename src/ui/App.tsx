@@ -6,7 +6,7 @@ import { hostOf } from "../core/ref";
 import { nodeRef } from "../core/links";
 import { HELP, handleKey } from "./keys";
 import { DocBar, DocsPanel } from "./Menu";
-import { LinkCard, LinkPicker, NodeBacklinks, NodeRelated, TargetRow } from "./Links";
+import { LinkCard, LinkPicker, LinksPanel, NodeBacklinks, NodeRelated, TargetRow } from "./Links";
 import { NodeBody, Outline, PendingSections, TopMatter } from "./Node";
 import { Panes } from "./Panes";
 import { PANES_MIN_WIDTH, store, type Aux, type WRow } from "./store";
@@ -376,9 +376,14 @@ function StatusLine() {
   const sugg = selecting && store.focusedSuggestion();
   const commentary = selecting && store.commentaryAt(f.range);
   const noteHere = selecting && store.noteAt(f.range);
-  // Reviewing suggestions: where the review is, and its keys as buttons.
+  // The links list: where it is, and its keys as buttons (unless something has just been said).
+  const row = store.mode === "review" && !store.status ? store.reviewRow() : undefined;
   const reviewing: Hint | null =
-    store.mode === "review" && store.status.startsWith("review ") ? [store.status.split(" · y link")[0], ["y", "link"], ["n", "decline"], ["s", "skip"], ["Y", "link all"], ["Escape", "stop"]] : null;
+    store.mode === "review" && !store.status
+      ? row
+        ? [`${store.reviewRows().findIndex((x) => x.key === row.key) + 1}/${store.reviewRows().length} ${row.status}`, ...(row.status !== "linked" ? [["y", "link"] as [string, string]] : []), ...(row.status !== "rejected" ? [["n", row.status === "linked" ? "remove" : "decline"] as [string, string]] : []), ["j", "next"], ["Enter", "go"], ["Escape", "close"]]
+        : ["links list", ["1", "linked"], ["2", "rejected"], ["3", "pending"], ["Escape", "close"]]
+      : null;
   const hint: Hint = store.aux
     ? store.aux.kind === "wiki"
       ? store.inArticleText
@@ -691,7 +696,7 @@ export function App() {
   };
 
   return (
-    <div class={`app mode-${store.mode}${store.mode === "history" || store.mode === "docs" ? " with-panel" : ""}${panes ? " view-panes" : ""}`} onMouseOver={onOver} onContextMenu={onContext}>
+    <div class={`app mode-${store.mode}${store.mode === "history" || store.mode === "docs" || store.mode === "review" ? " with-panel" : ""}${panes ? " view-panes" : ""}`} onMouseOver={onOver} onContextMenu={onContext}>
       <main
         class="page"
         onClick={onClick}
@@ -709,6 +714,7 @@ export function App() {
       </main>
       {store.mode === "history" && <HistoryPanel verdict={verdict} />}
       {store.mode === "docs" && <DocsPanel />}
+      {store.mode === "review" && <LinksPanel />}
       {store.mode === "help" && <Help />}
       {store.mode === "jump" && <Jump />}
       {store.mode === "command" && <CommandBar prefill={prefill} />}

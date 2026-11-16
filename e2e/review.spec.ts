@@ -53,7 +53,8 @@ test.afterEach(async ({ page }) => {
 
 test("with /autolink on, the sure links are made at once after an edit, as their own commit, and u removes them", async ({ page }) => {
   await column(page);
-  expect(await state(page, (s) => s.settings.autolink)).toBe("suggest");
+  // With a model, review is the default (e2e/reviewer.spec.ts); on links the scanner's sure ones unreviewed.
+  expect(await state(page, (s) => s.settings.autolink)).toBe("review");
   await command(page, "/autolink on");
   await newDoc(page, "Autolink one", "The cephalopod met Fred Hoyle, who taught it the lambda calculus.");
   await idle(page);
@@ -68,7 +69,7 @@ test("with /autolink on, the sure links are made at once after an edit, as their
   expect(await body(page)).toContain("Fred Hoyle");
 });
 
-test("suggestions are drawn in the text; Tab reaches them, y links one, n declines one for good; S reviews the rest", async ({ page }) => {
+test("suggestions are drawn in the text; Tab reaches them, y links one, n declines one for good; S lists the rest", async ({ page }) => {
   await column(page);
   await command(page, "/autolink suggest");
   await newDoc(page, "Suggested links", "The cephalopod met Fred Hoyle.\n\nHe spoke of the Hoyle state of carbon-12 and of the lambda calculus.");
@@ -93,18 +94,24 @@ test("suggestions are drawn in the text; Tab reaches them, y links one, n declin
   await keys(page, "Escape");
   await idle(page);
   expect(await suggestions(page)).not.toContain("Fred Hoyle");
-  // Review: step through what is left; s skips, n declines, Y links all that remain.
+  // The list: the link made, and the three waiting (the declined one is behind the rejected filter);
+  // the first waiting is selected in the text. s skips, n declines, Y links all the waiting shown.
   await keys(page, "S");
-  await expect(page.locator(".status .message")).toContainText("review 1/3");
+  const panel = page.locator("[data-links-panel]");
+  await expect(panel.locator(".lrow")).toHaveCount(4);
+  await expect(panel.locator(".lfilter[data-filter=rejected]")).toHaveClass(/off/);
+  await expect(panel.locator(".lfilter[data-filter=rejected] .n")).toHaveText("1");
   expect(await selected(page)).toBe("Hoyle state");
   await keys(page, "s");
   expect(await selected(page)).toBe("carbon-12");
   await keys(page, "n");
   expect(await selected(page)).toBe("lambda calculus");
   await keys(page, "Y");
+  expect(await linksHere(page)).toEqual({ cephalopod: "Cephalopod", "Hoyle state": "Hoyle state", "lambda calculus": "Lambda calculus" });
+  expect(await suggestions(page)).toEqual([]);
+  await expect(panel.locator(".lfilter[data-filter=linked] .n")).toHaveText("3");
+  await keys(page, "Escape");
   expect(await state(page, (s) => s.mode)).toBe("normal");
-  expect(await linksHere(page)).toEqual({ cephalopod: "Cephalopod", "lambda calculus": "Lambda calculus" });
-  expect(await suggestions(page)).toEqual(["Hoyle state"]);
 });
 
 test("typing [[ in the editor completes from library titles first, then Wikipedia; the choice is linked on save", async ({ page }) => {
@@ -203,7 +210,7 @@ test("/linkdoc and /linkall look for links in the background, with progress in t
     return s.links.under(Object.keys(s.snap.nodes), s.snap).length > 0;
   });
   await keys(page, "S");
-  await expect(page.locator(".status .message")).toContainText("review 1/");
+  await expect(page.locator("[data-links-panel] .lrow.pending").first()).toBeVisible();
   await keys(page, "Escape");
 });
 
@@ -232,6 +239,7 @@ test("/autolink off looks for nothing, suggest only suggests, on links", async (
 
 test("Tab then Enter on an article that is still loading go to its first link once it arrives", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
+  await autoLayout(page);
   await page.goto("/");
   await page.waitForFunction(() => (globalThis as any).__ie?.ready);
   await newDoc(page, "Slow article link", "About the [[Hoyle state]].");
@@ -239,7 +247,6 @@ test("Tab then Enter on an article that is still loading go to its first link on
   expect(await linksHere(page)).toEqual({ "Hoyle state": "Hoyle state" });
   // The article takes a while to come (a slow network); the reader does not wait for it.
   await page.route(/\/api\/wiki\/article\?title=Hoyle/, async (r) => {
-  await autoLayout(page);
     await new Promise((done) => setTimeout(done, 1500));
     await r.continue();
   });
