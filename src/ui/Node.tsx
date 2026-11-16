@@ -182,6 +182,7 @@ export function NoteView({ v, inNote }: { v: VNote; inNote: boolean }) {
   const kids = v.id ? sections(snap, v.id) : [];
   return (
     <span class={`${v.form === "passage" || inNote ? "inset" : "sidenote"}${cls}`} data-node={v.id}>
+      {v.id && <button type="button" class="more" data-more="note" tabIndex={-1} aria-haspopup="menu" title="More for this note (right-click works too)">⋯</button>}
       {meta}
       {content}
       {kids.length > 0 && <Outline ids={kids} />}
@@ -357,7 +358,12 @@ export function Flags({ id }: { id: NodeId }) {
     n.pinned && n.parent && "locked",
   ].filter(Boolean) as string[];
   if (!flags.length) return null;
-  return <span class={`flags${st.up || st.down || conflict ? " attn" : ""}`}>{flags.join(" · ")}</span>;
+  // A stale flag says what to do about it when clicked: the node's menu, its remedies first.
+  return (
+    <span class={`flags${st.up || st.down || conflict ? " attn" : ""}`} data-more={st.up || st.down ? "flag" : undefined} title={st.up || st.down ? "What to do about it" : undefined}>
+      {flags.join(" · ")}
+    </span>
+  );
 }
 
 /** Redraws a section only when something in its subtree changed. */
@@ -378,6 +384,7 @@ export function Row({ id, open, leaf, editing }: { id: NodeId; open: boolean; le
       <span class="mark">{open ? "▾" : leaf ? "·" : "▸"}</span>
       {editing ? <TitleEditor id={id} /> : <span class="title">{n.title || <i class="untitled">untitled</i>}</span>}
       <Flags id={id} />
+      <button type="button" class="more" data-more="row" tabIndex={-1} aria-haspopup="menu" title="More for this section (right-click works too)">⋯</button>
     </div>
   );
 }
@@ -456,6 +463,7 @@ export function TopMatter({ id }: { id: NodeId }) {
             : `${library ? `${kids.length} document${kids.length === 1 ? "" : "s"}` : `${kids.length} section${kids.length === 1 ? "" : "s"}`} · ${count} nodes`}{" "}
           · branch {store.repo.current}
           <Flags id={id} />
+          <button type="button" class="more" data-more="page" tabIndex={-1} aria-haspopup="menu" title="More for this page (right-click works too)">⋯</button>
         </div>
       </header>
       <div class={`abstract${prompt ? " seed" : ""}${folded ? " folded" : ""}`} onClick={folded ? () => store.toggleFold(id) : undefined}>

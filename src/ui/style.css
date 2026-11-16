@@ -398,7 +398,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .col.crowded > .pane[data-over]::before { content: ""; position: absolute; z-index: 4; top: 0; left: 0; right: 0; height: 1px; background: var(--rule); }
 .tabline {
   position: absolute; z-index: 2; top: 0; left: 0; right: 0; height: var(--tab); display: flex; align-items: center; gap: 0.4em;
-  padding: 0 3.4rem 0 var(--spine); background: inherit; border-bottom: 1px solid var(--pane-rule); opacity: 0; pointer-events: none; cursor: pointer; transition: opacity 0.12s;
+  padding: 0 4.6rem 0 var(--spine); background: inherit; border-bottom: 1px solid var(--pane-rule); opacity: 0; pointer-events: none; cursor: pointer; transition: opacity 0.12s;
   font-family: var(--sans); font-size: 0.74rem; letter-spacing: 0.02em; color: var(--dim); white-space: nowrap;
 }
 .tabline .tabtitle { overflow: hidden; text-overflow: ellipsis; }
@@ -416,7 +416,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .col[data-peek] .spine, .col.crowded > .pane[data-peek] > .tabline { opacity: 0; pointer-events: none; }
 
 /* Dragging a pane in its column: its grip, quiet until pointed at; the line where it will go. */
-.grip { position: absolute; z-index: 3; top: 0; left: var(--spine); right: 3.6rem; height: 1.15rem; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.grip { position: absolute; z-index: 3; top: 0; left: var(--spine); right: 4.6rem; height: 1.15rem; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .grip::before { content: ""; position: absolute; left: 50%; top: 0.42rem; width: 1.1rem; margin-left: -0.55rem; height: 3px; border-top: 1px solid var(--faint); border-bottom: 1px solid var(--faint); opacity: 0; transition: opacity 0.12s; }
 .col.split .grip:hover::before { opacity: 0.8; }
 .col:not(.split) .grip, .col.crowded > .pane[data-covered] > .grip { display: none; }
@@ -657,3 +657,136 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .completer .t { color: var(--fg); font-weight: 600; }
 .completer .p { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :is(.backlinks, .related-list) .bl-key { color: var(--link); font-family: var(--mono, monospace); font-size: 0.7rem; min-width: 0.8em; }
+
+/* ---- the mouse and touch (src/ui/Mouse.tsx, actions.ts) ----
+ * Every function is reachable without the keys, and nothing shows until it is wanted: key hints
+ * are buttons, a click on a sentence brings a bar of words over it, a ⋯ (shown when its row, pane,
+ * page or note is pointed at or focused) and a right-click bring a menu. Each item names its key.
+ */
+
+/* Key hints: a key named in the status line or a panel's head is a button that does what the key does. */
+.key {
+  font: inherit; color: inherit; background: none; border: 0; border-radius: 2px; padding: 0 0.15em; margin: 0 -0.15em;
+  cursor: pointer; white-space: nowrap;
+}
+.key kbd { font-size: 0.86em; padding: 0 0.25em; margin-right: 0.3em; border-bottom-width: 1px; color: var(--dim); }
+.key:hover { background: var(--sel); border: 0; }
+.key:hover .lbl { text-decoration: underline 1px dotted; text-underline-offset: 0.18em; }
+.key:focus-visible { outline: 1px solid var(--fg); outline-offset: 1px; }
+.hsep { color: var(--faint); }
+.status .q .key kbd { margin-right: 0.2em; }
+.panel-head .keys .key { font-size: inherit; }
+.firstrun { color: var(--faint); font-style: italic; }
+.firstrun .key { font-style: normal; }
+
+/* The one menu: a small list of text, every item with its key. */
+.menu {
+  position: fixed; z-index: 30; min-width: 15rem; max-width: 24rem; padding: 0.3rem 0;
+  background: var(--bg); border: 3px double var(--rule); box-shadow: 1px 2px 8px 0 color-mix(in srgb, var(--fg) 16%, transparent);
+  font-family: var(--sans); font-size: 0.74rem; line-height: 1.35; color: var(--fg); outline: none;
+}
+.menu .mh { padding: 0.35rem 0.85rem 0.15rem 1.1rem; font-size: 0.58rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu .mi {
+  position: relative; display: flex; align-items: baseline; gap: 1.2em; width: 100%; padding: 0.24rem 0.85rem 0.24rem 1.1rem; margin: 0;
+  font: inherit; color: inherit; text-align: left; background: none; border: 0; border-radius: 0; cursor: pointer;
+}
+.menu .mi:hover, .menu .mi:focus-visible { background: var(--sel); outline: none; }
+.menu .mi[aria-disabled="true"] { color: var(--faint); cursor: default; background: none; }
+.menu .mi .lbl { flex: none; }
+.menu .mi .k { margin-left: auto; flex: none; font-family: var(--mono); font-size: 0.62rem; color: var(--faint); }
+.menu .mi .sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.62rem; color: var(--faint); }
+.menu .mi .chk { position: absolute; left: 0.3rem; color: var(--dim); }
+.menu .sep { height: 0; border-top: 1px solid var(--hair); margin: 0.3rem 0; }
+/* A row of choices in one item: move up, down, in, out; a setting's values. */
+.menu .choices { display: flex; align-items: baseline; gap: 0.15rem; padding: 0.2rem 0.85rem 0.2rem 1.1rem; }
+.menu .choices .lbl { color: var(--fg); margin-right: auto; padding-right: 0.8em; }
+.menu .choices button { font: inherit; font-size: 0.68rem; border: 1px solid transparent; border-radius: 2px; background: none; padding: 0.05rem 0.4rem; color: var(--soft); }
+.menu .choices button:hover, .menu .choices button:focus-visible { border-color: var(--rule); outline: none; }
+.menu .choices button.on { border-color: var(--fg); color: var(--fg); }
+.menu .choices button .k { font-family: var(--mono); font-size: 0.9em; color: var(--faint); margin-left: 0.25em; }
+
+/* The selection bar: what can be asked about the words selected with the pointer, as words, over them. */
+.selbar {
+  position: fixed; z-index: 16; display: flex; align-items: baseline; padding: 0.12rem 0.25rem;
+  background: var(--bg); border: 1px solid var(--rule); border-radius: 2px;
+  box-shadow: 1px 2px 8px 0 color-mix(in srgb, var(--fg) 14%, transparent);
+  font-family: var(--sans); font-size: 0.72rem; white-space: nowrap;
+}
+.selbar button {
+  font: inherit; color: var(--fg); background: none; border: 0; border-radius: 2px; padding: 0.12rem 0.42rem;
+  font-variant-caps: all-small-caps; letter-spacing: 0.05em; font-size: 0.82rem; line-height: 1.2;
+}
+.selbar button:hover { background: var(--sel); }
+.selbar button .k { font-family: var(--mono); font-variant-caps: normal; font-size: 0.62rem; letter-spacing: 0; color: var(--faint); margin-left: 0.3em; }
+.selbar .bar-sep { align-self: stretch; width: 0; border-left: 1px solid var(--hair); margin: 0.2rem 0.2rem; }
+.selbar::after { /* a hairline tick pointing at the words */
+  content: ""; position: absolute; left: var(--tick, 50%); bottom: -5px; width: 8px; height: 8px; margin-left: -4px;
+  background: var(--bg); border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); transform: rotate(45deg);
+}
+.selbar.below::after { bottom: auto; top: -5px; transform: rotate(225deg); }
+
+/* The ⋯ by a row, a pane's head, a page's head or a note: invisible until wanted, never moving the text. */
+.more {
+  flex: none; font: inherit; font-family: var(--sans); font-size: 0.9em; line-height: 1; letter-spacing: 0.05em;
+  color: var(--faint); background: none; border: 0; border-radius: 2px; padding: 0.15em 0.4em; margin: 0 -0.2em 0 0.4em;
+  opacity: 0; cursor: pointer;
+}
+.row:hover > .more, .node.focused > .row > .more, .more[aria-expanded="true"], .more:focus-visible,
+.top:hover .more, .top.focused .more,
+:is(.sidenote, .inset):hover > .more, :is(.sidenote, .inset).focused > .more { opacity: 1; }
+.more:hover, .more[aria-expanded="true"] { color: var(--fg); background: var(--sel); border: 0; }
+.row > .title + .more { margin-left: auto; }
+.row > .flags + .more { margin-left: 0.5em; }
+/* After the arrow of a row whose pane is open. */
+.node.showing > .row > .more, .node.forked > .row > .more { order: 1; margin-left: 0.4em; }
+.flags[data-more] { cursor: pointer; }
+.flags[data-more]:hover { text-decoration: underline 1px dotted; text-underline-offset: 0.2em; }
+.byline .more { margin: 0 -0.4em 0 0.5em; font-size: 1.2em; }
+:is(.sidenote, .inset) > .more { position: absolute; top: 0.15rem; right: 0.15rem; margin: 0; font-size: 0.82rem; }
+.inset { position: relative; }
+/* A pane's own ⋯ stands for its page's. */
+.pane .top .more { display: none; }
+.pane-btn.more { display: flex; align-items: center; justify-content: center; padding: 0; font-family: var(--sans); font-size: 0.8rem; line-height: 1; letter-spacing: 0.04em; }
+.pane-btn.more[aria-expanded="true"] { color: var(--fg); background: var(--sel); }
+
+/* The top bar stays at the top, in the column too: undo, redo when there is one, and the menu. */
+.docbar {
+  position: sticky; top: 0; z-index: 4; margin: -44px 0 16px; padding: 14px 0 6px;
+  background: var(--bg); box-shadow: 0 0 0 100vmax var(--bg); clip-path: inset(0 -100vmax);
+}
+.view-panes .docbar { position: relative; box-shadow: none; clip-path: none; background: none; }
+.docbar .tools { margin-left: auto; display: flex; align-items: baseline; gap: 1.1em; }
+.docbar .tool { font: inherit; color: var(--dim); background: none; border: 0; padding: 0; cursor: pointer; letter-spacing: 0.02em; }
+.docbar .tool:hover, .docbar .tool[aria-expanded="true"] { color: var(--fg); text-decoration: underline 1px dotted; text-underline-offset: 0.2em; }
+.docbar .tool .chev { display: inline-block; width: 0; height: 0; border: 0.38em solid transparent; border-top: 0.46em solid var(--faint); border-bottom: 0; margin-left: 0.3em; vertical-align: 0.1em; }
+
+/* Touch: no hover, no right-click, no keys. The bar docks at the foot; a menu is a sheet. */
+.selbar.docked {
+  left: 0; right: 0; bottom: 1.75rem; top: auto !important; border-width: 1px 0 0; border-radius: 0; box-shadow: none;
+  padding: 0.3rem 0.4rem; background: var(--bg); flex-wrap: wrap; justify-content: center;
+}
+.selbar.docked::after, .selbar.docked .k, .selbar.docked .bar-sep { display: none; }
+.selbar.docked button { padding: 0.45rem 0.6rem; font-size: 0.95rem; }
+.menu.sheet {
+  left: 0; right: 0; bottom: 1.75rem; top: auto; max-width: none; max-height: 70vh; overflow-y: auto;
+  border-width: 3px 0 0; padding-bottom: 0.4rem; font-size: 0.86rem; box-shadow: 0 -2px 10px 0 color-mix(in srgb, var(--fg) 12%, transparent);
+}
+.menu.sheet .mi { padding: 0.62rem 1rem; }
+.menu.sheet .choices { padding: 0.45rem 1rem; }
+.menu.sheet .choices button { padding: 0.35rem 0.6rem; font-size: 0.8rem; }
+@media (hover: none) {
+  .more { pointer-events: none; padding: 0.45em 0.6em; margin: -0.3em -0.4em -0.3em 0.3em; }
+  .node.focused > .row > .more, .top.focused .more, :is(.sidenote, .inset).focused > .more { opacity: 1; pointer-events: auto; }
+  .pane .pane-btn { color: var(--faint); }
+  .status .key { padding: 0.35rem 0.2em; }
+  .docbar .tool { padding: 0.4rem 0; }
+}
+/* A phone has no keys to teach in the status line: the bar and the menus say what there is. */
+@media (hover: none) and (max-width: 720px) {
+  .status .message .hints { display: none; }
+}
+/* The way to every key is never hidden, however narrow the window. */
+@media (max-width: 720px) {
+  .status .q { display: inline; }
+}
+/* ---- end mouse ---- */

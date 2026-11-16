@@ -1655,6 +1655,12 @@ class Store {
     this.setFocus({ node: f.node, grain: "word", range: next });
   }
 
+  /** The sentence of a node's text at an offset (where a click or a right-click lands). */
+  sentenceAt(id: NodeId, at: number): Range | undefined {
+    const n = this.snap.nodes[id];
+    return n ? sentences(n.body).find((r) => at >= r[0] && at <= r[1]) : undefined;
+  }
+
   noteAt(range: Range | undefined, node = this.focus.node): NodeId | undefined {
     if (!range) return;
     const s = this.snap;
@@ -1974,6 +1980,10 @@ class Store {
       this.doc.group = { start: () => manager.groupStart(), end: () => manager.groupEnd() };
     }
     return u;
+  }
+  /** Whether U would redo something (the top bar offers redo only then). */
+  canRedo(): boolean {
+    return !this.preview && this.undoManager().canRedo();
   }
   /** u: undo the last edit made in this tab, wherever in the library it was. */
   undoLast(redo = false) {

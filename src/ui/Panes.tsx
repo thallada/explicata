@@ -99,6 +99,9 @@ function Chrome({ props, title, mark }: { props: PaneProps; title: string; mark?
         <span class="tabtitle">{title}</span>
       </div>
       <div class="pane-ctl">
+        <span role="button" class="pane-btn more" data-more="pane" aria-haspopup="menu" title="More for this pane (right-click works too)" aria-label="More">
+          ⋯
+        </span>
         <span role="button" class={`pane-btn pin${pinned ? " on" : ""}`} data-pin={tid} title={pinned ? "Unpin this pane (P)" : "Pin this pane: it stays when what opened it closes, and never folds away (P)"} aria-label={pinned ? "Unpin" : "Pin"}>
           <svg viewBox="0 0 12 12" aria-hidden="true">
             <path d="M4 1.5h4M4.6 1.5v3.6L2.8 7.2h6.4L7.4 5.1V1.5M6 7.2V11" />

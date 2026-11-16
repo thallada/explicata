@@ -11,6 +11,7 @@ import { describeTarget, hostOf, parseTarget, validateRef, wikiTitle, type Ref }
 import { clip, plain } from "../core/text";
 import { kidClass, sameAux, store, type Aux } from "./store";
 import type { Sugg } from "./linker";
+import { Hints } from "./Mouse";
 import { suggest, summary, wikiConfig, type Attribution as Attr, type Suggestion } from "./wiki";
 
 const MARK: Record<Ref["kind"], string> = { wiki: "W", node: "§", url: "↗" };
@@ -193,7 +194,9 @@ export function Backlinks({ ids, title, focusedAt }: { ids: NodeId[]; title: str
 export function SuggestionCard({ sg }: { sg: Sugg }) {
   return (
     <span class={`inset lpreview suggestion l-${sg.target.kind}`} data-suggestion={sg.id}>
-      <span class="meta">suggested link{sg.tier === "auto" ? " (sure)" : ""} · y links · n declines{store.review ? " · s skips" : " · S reviews them all"}</span>
+      <span class="meta">
+        <Hints hint={[`suggested link${sg.tier === "auto" ? " (sure)" : ""}`, ["y", "links"], ["n", "declines"], store.review ? ["s", "skips"] : ["S", "reviews them all"]]} />
+      </span>
       <LinkCard r={sg.target} compact />
       <span class="meta why">{sg.why}</span>
     </span>

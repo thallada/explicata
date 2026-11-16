@@ -1,7 +1,13 @@
 /** The top bar (where the reader is, and whether it is saved) and the documents menu it opens (m). */
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { clip } from "../core/text";
+import { topEntries } from "./actions";
+import { Hints, act, showMenu } from "./Mouse";
+import { press } from "./press";
 import { store } from "./store";
+
+/** A press on a tool keeps the focus where it was (the keys stay with the page). */
+const keep = (e: MouseEvent) => e.preventDefault();
 
 const SAVE_LABEL = { saved: "saved", saving: "saving…", offline: "offline · kept in this browser", foreign: "not saved · reload the page" };
 const SAVE_TITLE = {
@@ -31,6 +37,30 @@ export function DocBar() {
       </button>
       <span class={`save-state ${state}`} title={SAVE_TITLE[state]}>
         {SAVE_LABEL[state]}
+      </span>
+      <span class="tools">
+        <button type="button" class="tool" title="Undo the last edit made in this tab (u)" onMouseDown={keep} onClick={(e) => (e.stopPropagation(), press("u"))}>
+          undo
+        </button>
+        {store.canRedo() && (
+          <button type="button" class="tool" title="Redo (U)" onMouseDown={keep} onClick={(e) => (e.stopPropagation(), press("U"))}>
+            redo
+          </button>
+        )}
+        <button
+          type="button"
+          class="tool"
+          aria-haspopup="menu"
+          title="Documents, history, layout and settings"
+          onMouseDown={keep}
+          onClick={(e) => {
+            e.stopPropagation();
+            const s = store.settings;
+            showMenu(topEntries({ view: s.view, autolink: s.autolink, auto: s.auto, speculate: s.speculate, curves: s.curves, panes: store.panes, doc: !!store.currentDoc, canRedo: store.canRedo() }, act), e.currentTarget as HTMLElement);
+          }}
+        >
+          menu<span class="chev" />
+        </button>
       </span>
     </nav>
   );
@@ -96,7 +126,7 @@ export function DocsPanel() {
       <div class="panel-head">
         <span>Documents</span>
         <span class="keys">
-          {typing ? "type to filter · ↑ ↓ · Enter open · Esc for actions" : "j k · Enter open · n new · r rename · s save as · D delete · x export · i import · / filter · Esc"}
+          <Hints hint={typing ? ["type to filter · ↑ ↓", ["Enter", "open"], ["Escape", "for actions"]] : ["j k", ["Enter", "open"], ["n", "new"], ["r", "rename"], ["s", "save as"], ["D", "delete"], ["x", "export"], ["i", "import"], ["/", "filter"], ["Escape", "close"]]} />
         </span>
       </div>
       <input

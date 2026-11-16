@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "preact/hooks";
 import { ancestors, ancestorsInDoc, docOf, label, sections, staleness, type Conflict, type NodeId } from "../core/model";
 import { verifyHistory, type Commit } from "../core/repo";
-import { clip, plain, sentences } from "../core/text";
+import { clip, plain } from "../core/text";
 import { hostOf } from "../core/ref";
 import { nodeRef } from "../core/links";
 import { HELP, handleKey } from "./keys";
@@ -12,6 +12,7 @@ import { Panes } from "./Panes";
 import { PANES_MIN_WIDTH, store, type Aux, type WRow } from "./store";
 import { WikiPage, WikiView } from "./Wiki";
 import { Usage } from "./Usage";
+import { FirstRun, Hints, Key, MenuHost, SelBar, closeMenu, hideBar, locate, locateIn, menuAt, menuShown, setPrompt, showBar, type Hint } from "./Mouse";
 
 function Page() {
   if (store.colWiki) return <WikiPage />;
@@ -98,7 +99,9 @@ function HistoryPanel({ verdict }: { verdict: string }) {
     <aside class="panel" ref={ref}>
       <div class="panel-head">
         <span>History{store.historyFilter && store.currentDoc ? ` · ${clip(store.snap.nodes[store.currentDoc]?.title ?? "", 30)}` : " · the library"}</span>
-        <span class="keys">j k · Enter · r revert{store.currentDoc ? " this document" : ""} · n branch · m merge · f {store.historyFilter ? "everything" : "this document"} · v verify · Esc</span>
+        <span class="keys">
+          <Hints hint={["j k", ["Enter", "view"], ["r", `revert${store.currentDoc ? " this document" : ""}`], ["n", "branch"], ["m", "merge"], ["f", store.historyFilter ? "everything" : "this document"], ["v", "verify"], ["Escape", "close"]]} />
+        </span>
       </div>
       {verdict && <div class="verdict">{verdict}</div>}
       {items.map((it, i) => {
@@ -367,37 +370,41 @@ function StatusLine() {
   const st = staleness(snap, f.node);
   const path = [...ancestors(snap, f.node).reverse(), f.node].map((id) => clip(label(snap, id), 28)).join(" › ");
   const selecting = f.grain !== "node";
-  const hint = store.aux
+  const lensHint: Hint = [["e", `expand${store.generating ? "" : " (no model)"}`], ["d", "define"], ["y", "why"], ["x", "example"], ["c", "challenge"], [":", "ask"]];
+  const sugg = selecting && store.focusedSuggestion();
+  const commentary = selecting && store.commentaryAt(f.range);
+  const noteHere = selecting && store.noteAt(f.range);
+  const hint: Hint = store.aux
     ? store.aux.kind === "wiki"
       ? store.inArticleText
         ? store.articleNoteHere()
-          ? "Enter open/enter the note · e toggle · D delete note · Tab next"
+          ? [["Enter", "open/enter the note"], ["e", "toggle"], ["D", "delete note"], ["Tab", "next"]]
           : store.auxLink(store.aux)
-            ? `Enter opens “${clip(store.auxLink(store.aux)!.title, 40)}” · e d y x c annotate · W on wikipedia.org`
-            : `e expand${store.generating ? "" : " (no model)"} · d define · y why · x example · c challenge · : ask · Esc widen`
-        : `Wikipedia · j k rows · l open · h back · i select words · Tab links and notes · W on wikipedia.org${store.panes ? " · q close" : ""}`
-      : store.aux.kind === "target" ? "Enter opens what this is about"
-      : "Enter goes to the linking note"
+            ? [["Enter", `opens “${clip(store.auxLink(store.aux)!.title, 40)}”`], "e d y x c annotate", ["W", "on wikipedia.org"]]
+            : [...lensHint, ["Escape", "widen"]]
+        : ["Wikipedia · j k rows", ["l", "open"], ["h", "back"], ["i", "select words"], ["Tab", "links and notes"], ["W", "on wikipedia.org"], ...(store.panes ? [["q", "close"] as [string, string]] : [])]
+      : store.aux.kind === "target" ? [["Enter", "opens what this is about"]]
+      : [["Enter", "goes to the linking note"]]
     : store.preview
-    ? "read-only · r revert to this · n branch from this · Esc back to now"
-    : selecting && store.focusedSuggestion()
-      ? `suggested link → ${clip(store.focusedSuggestion()!.title, 40)} · y link · n decline · Tab next · S review all`
+    ? ["read-only", ["r", "revert to this"], ["n", "branch from this"], ["Escape", "back to now"]]
+    : sugg
+      ? [`suggested link → ${clip(sugg.title, 40)}`, ["y", "link"], ["n", "decline"], ["Tab", "next"], ["S", "review all"]]
     : selecting
-      ? store.commentaryAt(f.range)
-        ? `Enter opens the note with ${store.targetOf(store.commentaryAt(f.range)!)!.kind === "wiki" ? "its article" : "what it links to"} · e shows the note here · D delete note · w retarget`
-      : store.noteAt(f.range)
-        ? store.snap.nodes[store.noteAt(f.range)!].ref
-          ? `Enter open the link · w retarget · D remove${store.snap.nodes[store.noteAt(f.range)!].ref!.kind === "wiki" ? " · W on Wikipedia" : ""}`
-          : "Enter open/enter · e toggle · D delete note · w link it"
-        : `e expand${store.generating ? "" : " (no model)"} · d define · y why · x example · c challenge · : ask · w link`
+      ? commentary
+        ? [["Enter", `opens the note with ${store.targetOf(commentary)!.kind === "wiki" ? "its article" : "what it links to"}`], ["e", "shows the note here"], ["D", "delete note"], ["w", "retarget"]]
+      : noteHere
+        ? store.snap.nodes[noteHere].ref
+          ? [["Enter", "open the link"], ["w", "retarget"], ["D", "remove"], ...(store.snap.nodes[noteHere].ref!.kind === "wiki" ? [["W", "on Wikipedia"] as [string, string]] : [])]
+          : [["Enter", "open/enter"], ["e", "toggle"], ["D", "delete note"], ["w", "link it"]]
+        : [...lensHint, ["w", "link"]]
       : st.up || st.down
-        ? `stale · ${n.pinned ? "b accept · p unlock" : "R reconcile · b accept"}`
-        : "";
+        ? ["stale", ...((n.pinned ? [["b", "accept"], ["p", "unlock"]] : [["R", "reconcile"], ["b", "accept"]]) as [string, string][])]
+        : [];
   return (
     <footer class="status">
       <span class={`grain ${store.aux ? "aux" : f.grain}`}>{store.preview ? "history" : store.mode === "review" ? "review" : store.aux ? (store.aux.kind === "wiki" ? "article" : store.aux.kind === "back" ? "linked" : "target") : f.grain}</span>
       <span class="path">{path}</span>
-      <span class="message">{store.status || hint}</span>
+      <span class="message">{store.status || (hint.length ? <Hints hint={hint} /> : <FirstRun />)}</span>
       <span class="right">
         {store.links.job?.state === "running" && (
           <span class="job" title={store.jobText(store.links.job)}>
@@ -409,29 +416,15 @@ function StatusLine() {
         <span title="branch">{store.repo.current}</span>
         <span title="model">{store.llm.kind === "off" ? "no model" : store.llm.model}</span>
         <span class={`dot ${store.online ? "on" : "off"}`} title={store.online ? "synced with the local server" : "offline: changes are kept locally"} />
-        <span class="q">? keys</span>
+        <span class="q">
+          <Key k="?" what="keys" />
+        </span>
       </span>
     </footer>
   );
 }
 
 // ---- the app ----
-
-/** The offset in its text of a DOM position inside a piece marked with data-o. */
-function locateIn(node: Node, offset: number): number | null {
-  const el = node instanceof Element ? node : node.parentElement;
-  const piece = el?.closest<HTMLElement>("[data-o]");
-  return piece ? Number(piece.dataset.o) + (node instanceof Text ? offset : 0) : null;
-}
-
-/** Map a DOM position inside a body to (node, offset). */
-function locate(node: Node | null, offset: number): { id: NodeId; at: number } | null {
-  const el = node instanceof Element ? node : node?.parentElement;
-  const piece = el?.closest<HTMLElement>("[data-o]");
-  const body = el?.closest<HTMLElement>("[data-body]");
-  if (!piece || !body) return null;
-  return { id: body.dataset.body as NodeId, at: Number(piece.dataset.o) + (node instanceof Text ? offset : 0) };
-}
 
 let hover: ReturnType<typeof setTimeout> | undefined;
 
@@ -442,8 +435,17 @@ export function App() {
   useEffect(() => store.subscribe(() => tick(0)), []);
 
   useEffect(() => {
+    setPrompt((text) => {
+      setPrefill(text);
+      store.setMode("command");
+    });
     const onKey = (e: KeyboardEvent) => {
       clearTimeout(hover);
+      // The keys take over from the pointer: its bar and menu go (not for a modifier, or the copy key).
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && !["Shift", "Control", "Alt", "Meta"].includes(e.key)) {
+        hideBar();
+        if (menuShown()) closeMenu(false);
+      }
       if (store.popup) {
         store.popup = null;
         store.emit(store.top);
@@ -464,8 +466,19 @@ export function App() {
         },
       });
     };
+    // The copy key copies the words selected, when the browser has none of its own selected.
+    const onCopy = (e: ClipboardEvent) => {
+      const words = store.mode === "normal" && window.getSelection()?.isCollapsed !== false ? store.selectedText() : null;
+      if (!words || !e.clipboardData) return;
+      e.clipboardData.setData("text/plain", plain(words));
+      e.preventDefault();
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    document.addEventListener("copy", onCopy);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("copy", onCopy);
+    };
   }, []);
 
   // `auto` picks the layout from the window's width, so follow the width.
@@ -512,6 +525,9 @@ export function App() {
   const click = (e: MouseEvent) => {
     if (store.mode === "edit") return;
     const target = e.target as HTMLElement;
+    // A ⋯ (a row's, a pane's, the page's, a note's): its menu, for what it is on.
+    const more = target.closest<HTMLElement>("[data-more]");
+    if (more) return void menuAt(more, more);
     // A pane's × and pin act on that pane, wherever the focus is.
     const ctl = target.closest<HTMLElement>("[data-close], [data-pin]");
     if (ctl) return ctl.dataset.close ? store.closePane(Number(ctl.dataset.close)) : store.togglePanePin(Number(ctl.dataset.pin));
@@ -579,12 +595,13 @@ export function App() {
       const b = selection && !selection.isCollapsed ? at(selection.focusNode, selection.focusOffset) : null;
       if (a !== null && b !== null && a !== b) {
         selection!.removeAllRanges();
-        return store.selectInArticle(host, row, [Math.min(a, b), Math.max(a, b)], "word");
+        store.selectInArticle(host, row, [Math.min(a, b), Math.max(a, b)], "word");
+        return showBar();
       }
       const note = target.closest<HTMLElement>("[data-note]")?.dataset.note as NodeId | undefined;
       if (note) return store.toggleAnnotation(host, row, note);
       const o = selection ? at(selection.anchorNode, selection.anchorOffset) : null;
-      if (o !== null) return store.selectInArticle(host, row, [o, o], "sentence");
+      if (o !== null) return store.selectInArticle(host, row, [o, o], "sentence"), showBar();
       return;
     }
     // A drag selection inside one body becomes the focus range.
@@ -594,7 +611,7 @@ export function App() {
       if (a && b && a.id === b.id && a.at !== b.at) {
         store.go(a.id, "word", [Math.min(a.at, b.at), Math.max(a.at, b.at)]);
         selection.removeAllRanges();
-        return;
+        return showBar();
       }
     }
     const anchor = target.closest<HTMLElement>("[data-note]");
@@ -639,16 +656,21 @@ export function App() {
       return;
     }
     const at = selection && locate(selection.anchorNode, selection.anchorOffset);
-    if (at) {
-      const all = sentences(store.snap.nodes[at.id].body);
-      const hit = all.find((r) => at.at >= r[0] && at.at <= r[1]);
-      if (hit) return store.go(at.id, "sentence", hit);
-    }
+    // A click in a node's text selects the sentence, and the bar offers what can be done with it.
+    const hit = at && store.sentenceAt(at.id, at.at);
+    if (at && hit) return store.go(at.id, "sentence", hit), showBar();
     const node = target.closest<HTMLElement>("[data-node]");
     if (!node) return;
     // A pane's head makes that pane the active one.
     if (panes && paneEl && node.matches(".pane-head, .top")) store.paneAt = paneIndex;
     store.go(node.dataset.node as NodeId);
+  };
+
+  // A right-click on a node, words, a row, a link or a pane: the app's menu for it, Copy first where there is text. Shift+right-click is the browser's.
+  const onContext = (e: MouseEvent) => {
+    const t = e.target as HTMLElement;
+    if (e.shiftKey || store.mode === "edit" || t.closest("input, textarea, [contenteditable]") || !t.closest(".page")) return;
+    if (menuAt(t, { x: e.clientX, y: e.clientY })) e.preventDefault();
   };
 
   const onOver = (e: MouseEvent) => {
@@ -664,13 +686,13 @@ export function App() {
   };
 
   return (
-    <div class={`app mode-${store.mode}${store.mode === "history" || store.mode === "docs" ? " with-panel" : ""}${panes ? " view-panes" : ""}`} onMouseOver={onOver}>
+    <div class={`app mode-${store.mode}${store.mode === "history" || store.mode === "docs" ? " with-panel" : ""}${panes ? " view-panes" : ""}`} onMouseOver={onOver} onContextMenu={onContext}>
       <main
         class="page"
         onClick={onClick}
         onAuxClick={(e) => e.button === 1 && (e.preventDefault(), onClick(e))}
         // A Shift-click would extend the text selection, and a middle press scrolls or pastes: neither, when they open a fork.
-        onMouseDown={(e) => (e.shiftKey || e.button === 1) && !(e.target as HTMLElement).closest("input, textarea") && e.preventDefault()}
+        onMouseDown={(e) => ((e.shiftKey && e.button === 0) || e.button === 1) && !(e.target as HTMLElement).closest("input, textarea") && e.preventDefault()}
       >
         <DocBar />
         {store.preview && (
@@ -688,6 +710,8 @@ export function App() {
       {store.mode === "link" && store.picker && <LinkPicker />}
       <Popup />
       <FocusPopup />
+      <SelBar />
+      <MenuHost />
       <AgentPanel />
       <StatusLine />
     </div>
