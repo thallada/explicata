@@ -3105,7 +3105,8 @@ class Store {
   async linkJob(scope: "doc" | "library", doc?: NodeId, quiet = false) {
     const r = await this.links.startJob(scope, doc);
     if (typeof r === "string") return this.say(`Could not start looking for links: ${r}`);
-    if (!quiet || r.slow) this.say(this.jobText(r));
+    // Already over (a short job announced its end first): that has been said.
+    if (r.state === "running" && (!quiet || r.slow)) this.say(this.jobText(r));
   }
 
   async cancelLinkJob() {

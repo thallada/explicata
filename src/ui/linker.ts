@@ -488,6 +488,9 @@ export class Linker {
     const res = await post("jobs", { scope, doc, review: this.effective() === "review" });
     const r = await res.json().catch(() => ({}));
     if (!res.ok) return r.error ?? `the server answered ${res.status}`;
+    // A short job's end can be announced before this answer arrives: keep the later news.
+    const had = this.job;
+    if (had && had.id === r.job.id && had.state !== "running") return had;
     this.job = r.job;
     return r.job;
   }
