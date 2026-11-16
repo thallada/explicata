@@ -92,9 +92,9 @@ Press `?` for every key. The short version:
   mark, `[` `]` up and down a column (a click on a pane does it), and the commands typed at `:`
   that no menu lists (`/branch`, `/switch`, `/merge`, `/user`, `/link`, …), which the menu's
   Command line… opens for typing.
-- On a window 1600 px wide or more the page opens as panes side by side, after Andy Matuschak's
-  notes: the library, the open document, its open sections. `v` switches between panes and the
-  single column, `/view auto|column|panes` sets it.
+- On a window 900 px wide or more, a laptop's too, the page opens as panes side by side, after
+  Andy Matuschak's notes: the library, the open document, its open sections. `v` switches between
+  panes and the single column, `/view auto|column|panes` sets it.
 - **Opening.** `Enter`, `l` or a click on a row, a link, a link in an article, or a "Linked from",
   "Mentioned in" or Related row opens its target in the next column, beside what is already open
   there (so do Ctrl-, Cmd- and middle clicks); `Shift+Enter` or a Shift-click opens it in place of

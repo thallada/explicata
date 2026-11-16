@@ -121,7 +121,7 @@ export const HELP: [string, [string, string][]][] = [
       ["/resolve", "have the model resolve open conflicts"],
       ["/auto on|off", "reconcile automatically after edits"],
       ["/speculate on|off", "start writing the focused sentence's expansion early"],
-      ["/view mode", "page layout: auto, column or panes; auto shows panes on windows 1600 px wide or more"],
+      ["/view mode", "page layout: auto, column or panes; auto shows panes on windows 900 px wide or more"],
       ["/curves on|off", "in panes: the faint curves from where each pane was opened to it"],
       ["/colors line|top|edge|off", "in panes: each fork's own colour, on its curves and the rule under its panes' titles (line, the default), across their tops, down their left edges, or none"],
       ["/user name", "set the name on your commits"],

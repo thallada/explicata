@@ -7,7 +7,7 @@
  * calculus, …) and the hashed-words embedder (IE_EMBED=fake).
  */
 import { expect, test, type Page } from "@playwright/test";
-import { command, idle, jump, keys, selected, settle, state, writeReport } from "./helpers";
+import { autoLayout, command, idle, jump, keys, selected, settle, state, writeReport } from "./helpers";
 
 const body = (page: Page) => state(page, (s) => s.snap.nodes[s.focus.node].body as string);
 /** The links on the focused node: quote → target title (or node id). */
@@ -239,6 +239,7 @@ test("Tab then Enter on an article that is still loading go to its first link on
   expect(await linksHere(page)).toEqual({ "Hoyle state": "Hoyle state" });
   // The article takes a while to come (a slow network); the reader does not wait for it.
   await page.route(/\/api\/wiki\/article\?title=Hoyle/, async (r) => {
+  await autoLayout(page);
     await new Promise((done) => setTimeout(done, 1500));
     await r.continue();
   });

@@ -6,7 +6,7 @@
  * other spec uses, and undo what they write.
  */
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { command, idle, keys, settle, state } from "./helpers";
+import { autoLayout, command, idle, keys, settle, state } from "./helpers";
 
 const DOC = "/doc/tuning-and-temperament";
 const FIRST = "Two notes sound smooth together when their frequencies stand in a simple ratio such as 2 to 1 or 3 to 2.";
@@ -300,6 +300,7 @@ test("Lock: the menu, the badge, the status line and the help say lock; pin is a
 
 test.describe("panes", () => {
   test.use({ viewport: { width: 1920, height: 1080 } });
+  test.beforeEach(({ page }) => autoLayout(page));
 
   const paneOf = (page: Page, title: string) => page.locator(".strip .pane", { has: page.locator(`:is(.pane-head h2, .top h1):text-is("${title}")`) }).first();
   const trail = (page: Page) => state(page, (s) => s.trail.map((p: any) => (p.kind === "wiki" ? `W:${p.title}` : s.snap.nodes[p.id].title)));

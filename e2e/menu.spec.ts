@@ -5,7 +5,7 @@
  * their own documents and leave the first one alone: the other specs share it.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { command, idle, jump, keys, settle, state, synced } from "./helpers";
+import { autoLayout, command, idle, jump, keys, settle, state, synced } from "./helpers";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseDoc } from "../src/core/format";
@@ -324,6 +324,7 @@ test("the : commands do the same", async ({ page }) => {
 
 test("the menu works in panes and at phone width", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
+  await autoLayout(page);
   await open(page, "/doc/infinite-expand");
   await expect(page.locator(".strip .pane")).toHaveCount(2); // the library, and the document
   await openByMenu(page, "menu fixture");

@@ -130,7 +130,7 @@ export type View = "auto" | "column" | "panes";
 export type Colors = "line" | "top" | "edge" | "off";
 const COLORS: Colors[] = ["line", "top", "edge", "off"];
 /** The narrowest window, in CSS px, on which `auto` chooses panes. */
-export const PANES_MIN_WIDTH = 1600;
+export const PANES_MIN_WIDTH = 900;
 
 /** Text being generated that is not in the document yet. */
 export interface Pending {

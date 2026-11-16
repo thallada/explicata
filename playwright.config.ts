@@ -14,7 +14,13 @@ export default defineConfig({
   timeout: 60_000,
   workers: 1,
   reporter: [["list"]],
-  use: { baseURL: `http://localhost:${PORT}`, viewport: { width: 1440, height: 900 } },
+  // The page starts in the column (`/view column`): auto would show panes at this width. A test of
+  // the panes view sets its own width and lets the layout follow it (helpers.ts `autoLayout`).
+  use: {
+    baseURL: `http://localhost:${PORT}`,
+    viewport: { width: 1440, height: 900 },
+    storageState: { cookies: [], origins: [{ origin: `http://localhost:${PORT}`, localStorage: [{ name: "ie:settings", value: JSON.stringify({ view: "column" }) }] }] },
+  },
   webServer: {
     // The production build with the deterministic mock model: what is measured is the app's
     // own pipeline, not a model's speed.

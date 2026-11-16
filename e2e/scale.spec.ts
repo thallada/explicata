@@ -6,7 +6,7 @@
  * store call to the painted frame. Runs last: it fills the shared library.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { idle, state, synced, writeReport, type Sample } from "./helpers";
+import { autoLayout, idle, state, synced, writeReport, type Sample } from "./helpers";
 
 const ready = (page: Page) => page.waitForFunction(() => (globalThis as any).__ie?.ready === true, undefined, { timeout: 30_000 });
 /** One keystroke per frame, as in the other latency tests. */
@@ -98,6 +98,7 @@ test("a library of over 5,000 nodes in 100 more documents: keypress → paint an
 
   // ---- panes ----
   await page.setViewportSize({ width: 1920, height: 1080 });
+  await autoLayout(page);
   await page.goto("/");
   await ready(page);
   await expect(page.locator(".strip .pane")).toHaveCount(1);

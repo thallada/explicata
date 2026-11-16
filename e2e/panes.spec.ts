@@ -5,7 +5,7 @@
  * (z) and start from it, as the first pane.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { command, focusedTitle, idle, jump, keys, settle, state, writeReport, type Sample } from "./helpers";
+import { autoLayout, command, focusedTitle, idle, jump, keys, settle, state, writeReport, type Sample } from "./helpers";
 
 /** Each pane's title and box, left to right. */
 const panes = (page: Page) =>
@@ -31,6 +31,7 @@ async function open(page: Page) {
 test.use({ viewport: { width: 1920, height: 1080 } });
 test.describe.configure({ mode: "serial" });
 
+test.beforeEach(({ page }) => autoLayout(page));
 test.afterEach(({ page }) => settle(page));
 
 test("the library is the first pane, and a document opens in the next; reload and Back keep the place", async ({ page }) => {
@@ -63,13 +64,17 @@ test("the library is the first pane, and a document opens in the next; reload an
   await expect.poll(() => paneTitles(page)).toEqual(["Library", "Infinispand", "The tides"]);
 });
 
-test("auto shows panes at 1920 px and one column at 1440; v and /view switch", async ({ page }) => {
+test("auto shows panes at 1920 px and on a laptop's 1366, one column on a phone or a narrow window; v and /view switch", async ({ page }) => {
   await open(page);
   await expect(page.locator(".app.view-panes .strip .pane")).toHaveCount(1);
   await expect(page.locator(".strip .pane.root h1")).toHaveText("Infinispand");
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await expect(page.locator(".strip")).toHaveCount(0);
-  await expect(page.locator("article > .outline > .node").first()).toBeVisible();
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await expect(page.locator(".app.view-panes .strip .pane")).toHaveCount(1);
+  for (const [width, height] of [[820, 900], [390, 800]]) {
+    await page.setViewportSize({ width, height });
+    await expect(page.locator(".strip"), `${width}`).toHaveCount(0);
+    await expect(page.locator("article > .outline > .node").first()).toBeVisible();
+  }
   await page.setViewportSize({ width: 1920, height: 1080 });
   await expect(page.locator(".strip .pane")).toHaveCount(1);
   await keys(page, "v");

@@ -8,7 +8,7 @@
  * the documents are hoisted to (z) as in panes.spec.ts.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { focusedTitle, jump, keys, seedLinks, selected, settle, state } from "./helpers";
+import { autoLayout, command, focusedTitle, jump, keys, seedLinks, selected, settle, state } from "./helpers";
 
 /** The first tree of panes by title, the picked child starred: [title, [children]] or a leaf's title. */
 const tree = (page: Page) =>
@@ -114,7 +114,8 @@ test.describe.configure({ mode: "serial" });
 test.beforeAll(async ({ request }) => {
   await seedLinks(request);
 });
-test.beforeEach(async ({ context }) => {
+test.beforeEach(async ({ context, page }) => {
+  await autoLayout(page);
   await context.route(/wikipedia\.org|wikimedia\.org|stanford\.edu|example\.org/, (r) => r.abort());
 });
 test.afterEach(({ page }) => settle(page));
@@ -771,6 +772,7 @@ test("in the column a Shift open is a plain open, and the status line says why o
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/doc/fixed-points");
   await page.waitForFunction(() => (globalThis as any).__ie?.ready);
+  await command(page, "/view column");
   await jump(page, "Recursion without names");
   await keys(page, "Shift+Enter");
   await expect(page.locator(".status .message")).toContainText("panes view");

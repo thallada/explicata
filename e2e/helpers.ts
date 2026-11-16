@@ -18,6 +18,17 @@ export interface Sample {
 /** Run a function on the page's store and return what it returns. */
 export const state = <T>(page: Page, fn: (s: any) => T): Promise<T> => page.evaluate(`(${fn})(globalThis.__ie)`) as Promise<T>;
 
+/**
+ * Let this page's layout follow the window, as a reader's does (`/view auto`), from its first load:
+ * the tests start in the column (playwright.config.ts). Later loads keep what the page has set.
+ */
+export const autoLayout = (page: Page) =>
+  page.addInitScript(() => {
+    if (sessionStorage.getItem("e2e:auto")) return;
+    sessionStorage.setItem("e2e:auto", "1");
+    localStorage.removeItem("ie:settings");
+  });
+
 /** Press space-separated keys, in order. */
 export const keys = async (page: Page, seq: string) => {
   for (const k of seq.split(" ")) await page.keyboard.press(k);
