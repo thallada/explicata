@@ -6,6 +6,9 @@
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { singular } from "../../src/core/links";
+
+export { singular };
 
 let ranks: Map<string, number> | null = null;
 
@@ -37,11 +40,3 @@ export function rank(word: string): number {
 /** Whether a lower-case word is in the list at all. */
 export const listed = (word: string) => load().has(word.toLowerCase());
 
-/** A light English singular: enough for "cephalopods", "octopuses", "theories", "boxes". */
-export function singular(w: string): string {
-  if (w.length <= 3) return w;
-  if (/ies$/i.test(w) && w.length > 4) return w.slice(0, -3) + (w[w.length - 1] === "S" ? "Y" : "y");
-  if (/(uses|sses|shes|ches|xes|zes)$/i.test(w)) return w.slice(0, -2);
-  if (/s$/i.test(w) && !/(ss|us|is|ous)$/i.test(w) && !/ies$/i.test(w)) return w.slice(0, -1);
-  return w;
-}

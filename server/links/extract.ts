@@ -9,7 +9,10 @@
  * lookups per node bounded.
  */
 import type { Mark } from "../../src/core/marks";
+import { phraseKey } from "../../src/core/links";
 import { UNLISTED, listed, rank, singular } from "./words";
+
+export { phraseKey };
 
 export type Kind = "forced" | "name" | "term" | "noun";
 
@@ -97,21 +100,6 @@ const low = (w: string) => w.toLowerCase();
 /** An adverb in -ly ("roughly", "independently"), when the stem is a word. */
 const adverb = (w: string) => /ly$/i.test(w) && w.length > 5 && listed(low(w)) && rank(low(w)) < UNLISTED && (listed(low(w).slice(0, -2)) || listed(low(w).slice(0, -3) + "e") || /ally$/i.test(w));
 
-/** Normalised form of a phrase, for comparing phrases with each other and with titles. */
-export function phraseKey(s: string): string {
-  return s
-    .normalize("NFKD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replace(/['’]s\b/g, "")
-    .replace(/[-–‑_/]/g, " ")
-    .replace(/[^\p{L}\p{N}\s]/gu, "")
-    .split(/\s+/)
-    .filter(Boolean)
-    .filter((w, i, all) => !(i === 0 && all.length > 1 && (w === "the" || w === "a" || w === "an")))
-    .map(singular)
-    .join(" ");
-}
 
 function variants(text: string): string[] {
   const out = [text];

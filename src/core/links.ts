@@ -237,3 +237,35 @@ export function applyLinks(doc: Doc, specs: LinkSpec[], meta: { message?: string
   return out;
 }
 
+/** What a target is, for telling one from another: an article by title, a node by id, a page by address. */
+export const targetKey = (r: Ref) => (r.kind === "wiki" ? wikiKey(r.lang, r.title) : r.kind === "node" ? `node:${r.id}` : r.url);
+
+// ---- phrases ----
+
+/** A light English singular: enough for "cephalopods", "octopuses", "theories", "boxes". */
+export function singular(w: string): string {
+  if (w.length <= 3) return w;
+  if (/ies$/i.test(w) && w.length > 4) return w.slice(0, -3) + (w[w.length - 1] === "S" ? "Y" : "y");
+  if (/(uses|sses|shes|ches|xes|zes)$/i.test(w)) return w.slice(0, -2);
+  if (/s$/i.test(w) && !/(ss|us|is|ous)$/i.test(w) && !/ies$/i.test(w)) return w.slice(0, -1);
+  return w;
+}
+
+/**
+ * Normalised form of a phrase, for comparing phrases with each other and with titles: what link
+ * discovery matches titles with and what a declined link records in its node's `nolink`.
+ */
+export function phraseKey(s: string): string {
+  return s
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/['’]s\b/g, "")
+    .replace(/[-–‑_/]/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((w, i, all) => !(i === 0 && all.length > 1 && (w === "the" || w === "a" || w === "an")))
+    .map(singular)
+    .join(" ");
+}
