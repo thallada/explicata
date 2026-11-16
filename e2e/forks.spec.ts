@@ -346,6 +346,47 @@ test("a curve per open edge, from where each pane was opened to its title; it fo
   await expect.poll(async () => (await curves(page)).length).toBeGreaterThan(3);
 });
 
+test("each fork has a colour, shared by its curve and the rule under its title; the first trail is plain ink; /colors off takes them away", async ({ page }) => {
+  await cells(page);
+  const ids: Record<string, number> = {};
+  for (const t of ["Two kinds of cell", "Eukaryote", "Simple cells", "Complex cells", "Bacteria"]) ids[t] = await tid(page, t);
+  /** A curve's stroke and colour index, by the pane it runs into. */
+  const curve = (to: string) =>
+    page.locator(`.curves path[data-to="${ids[to]}"]`).evaluate((el) => ({ stroke: getComputedStyle(el).stroke, hue: (el as SVGElement).dataset.hue }));
+  const rule = (t: string) => pane(page, t).locator(".wiki-head, .pane-head").first().evaluate((el) => getComputedStyle(el).borderBottomColor);
+  const hue = (t: string) => pane(page, t).getAttribute("data-hue");
+  // Eukaryote went on from Two kinds of cell, Bacteria from it: the first trail, uncoloured. Simple and Complex cells are forks, each its own colour.
+  for (const t of ["Two kinds of cell", "Eukaryote", "Bacteria"]) expect(await hue(t), t).toBeNull();
+  expect((await curve("Eukaryote")).hue).toBeUndefined();
+  expect(await hue("Simple cells")).not.toBeNull();
+  expect(await hue("Complex cells")).not.toBe(await hue("Simple cells"));
+  // A curve and its pane's title rule: one colour, off the focused branch (Simple cells) or on it (Complex cells), and the two forks' differ.
+  for (const t of ["Simple cells", "Complex cells"]) {
+    expect((await curve(t)).hue).toBe(await hue(t));
+    expect((await curve(t)).stroke, t).toBe(await rule(t));
+  }
+  expect(await rule("Simple cells")).not.toBe(await rule("Complex cells"));
+  expect((await curve("Simple cells")).stroke).not.toBe((await curve("Eukaryote")).stroke);
+  // The active pane's heavy ink rule is as it was.
+  expect(await page.locator(".pane.active").evaluate((el) => getComputedStyle(el, "::after").height)).toBe("3px");
+  // Off: plain ink everywhere, as before colours.
+  await page.keyboard.press(":");
+  await page.keyboard.type("/colors off");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".panes")).toHaveAttribute("data-colors", "off");
+  await nextFrames(page);
+  expect((await curve("Simple cells")).stroke).toBe((await curve("Eukaryote")).stroke);
+  expect(await rule("Simple cells")).toBe(await rule("Complex cells"));
+  // Kept with the settings.
+  await page.reload();
+  await page.waitForSelector(".strip .pane");
+  await expect(page.locator(".panes")).toHaveAttribute("data-colors", "off");
+  await page.keyboard.press(":");
+  await page.keyboard.type("/colors line");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".panes")).toHaveAttribute("data-colors", "line");
+});
+
 test("curves down one gutter take lanes of their own, side by side, up to as many as fit; the rest share the outermost", async ({ page }) => {
   await page.goto("/");
   await page.waitForSelector(".strip .pane");
