@@ -353,6 +353,8 @@ export function Panes() {
         tops = offsets(heights, pinned, TAB, h);
       }
       c.classList.toggle("crowded", crowded);
+      // Only a crowded column is marked (measure): one that has room again is uncovered here.
+      if (!crowded) unmark(ps);
       ps.forEach((p, i) => {
         if (p.style.height !== `${heights[i]}px`) (p.style.height = `${heights[i]}px`), (p.style.flex = "none");
       });
