@@ -74,7 +74,7 @@ export class LinkIndex {
       for (const [id, before] of was) {
         if (before?.ref) this.file(id, before.ref, false);
         const after = nodes[id];
-        if (after?.ref) this.file(id, after.ref, true);
+        if (after?.ref && !articleNode(nodes, after)) this.file(id, after.ref, true);
       }
     });
     this.rebuild(doc.snap().nodes);
@@ -86,7 +86,7 @@ export class LinkIndex {
     this.unresolved.clear();
     for (const id in nodes) {
       const r = nodes[id as NodeId].ref;
-      if (r) this.file(id as NodeId, r, true);
+      if (r && !articleNode(nodes, nodes[id as NodeId])) this.file(id as NodeId, r, true);
     }
   }
 
@@ -135,6 +135,9 @@ export class LinkIndex {
     return [...this.byWiki].map(([key, s]) => ({ key, count: s.size }));
   }
 }
+
+/** An article's own node in the Wikipedia container (article.ts) is where its annotations hang, not a mention of it. */
+const articleNode = (nodes: Record<NodeId, NodeSnap>, n: NodeSnap) => !!n.parent && !!nodes[n.parent]?.articles;
 
 const indexes = new WeakMap<Doc, LinkIndex>();
 /** The backlinks index of a library, made on first use and kept current from then on. */

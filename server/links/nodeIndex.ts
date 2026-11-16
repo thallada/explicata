@@ -5,6 +5,7 @@
  * request that made the edit (a section whose text is unchanged is skipped by its hash). Without a
  * model the index still holds the texts, so BM25 search works and "related" is text-only.
  */
+import { inArticles } from "../../src/core/article";
 import { Doc, docOf, isLibraryRoot, type NodeId, type Snap } from "../../src/core/model";
 import { plain } from "../../src/core/text";
 import { VectorIndex, type Embedder, type Hit, type HybridHit } from "../embed";
@@ -15,10 +16,10 @@ const nodeText = (snap: Snap, id: NodeId) => {
   return `${n.title}\n${plain(n.body)}`.trim();
 };
 
-/** Sections (and documents) worth indexing: not the library root, not notes, and with some text. */
+/** Sections (and documents) worth indexing: not the library root, not notes, not the Wikipedia container's, and with some text. */
 const indexable = (snap: Snap, id: NodeId) => {
   const n = snap.nodes[id];
-  return !!n && n.kind === "section" && !isLibraryRoot(snap, id) && (n.body.trim().length > 0 || n.title.trim().length > 0);
+  return !!n && n.kind === "section" && !isLibraryRoot(snap, id) && !inArticles(snap, id) && (n.body.trim().length > 0 || n.title.trim().length > 0);
 };
 
 interface IndexStatus {

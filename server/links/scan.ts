@@ -17,6 +17,7 @@
  * strongest kept. See judge() for the rule. Only phrases and search queries go to Wikipedia;
  * embeddings are local.
  */
+import { inArticles } from "../../src/core/article";
 import { docOf, notesOf, sections, ancestors as ancestorsOf, descendants, type Doc, type NodeId, type Snap } from "../../src/core/model";
 import { nodeRef } from "../../src/core/links";
 import type { Mark } from "../../src/core/marks";
@@ -304,7 +305,7 @@ function titleIndex(snap: Snap): Map<string, NodeId[]> {
   ix = new Map();
   for (const id in snap.nodes) {
     const n = snap.nodes[id as NodeId];
-    if (n.kind !== "section" || !n.parent) continue;
+    if (n.kind !== "section" || !n.parent || inArticles(snap, n.id)) continue;
     const key = titleKeyOf(n.title);
     if (!key) continue;
     const list = ix.get(key) ?? [];

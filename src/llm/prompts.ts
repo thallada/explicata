@@ -50,7 +50,9 @@ Web research (only in a run where you have web search and web fetch tools):
  */
 export function renderContext(snap: Snap, focus: NodeId, opts: { ids?: boolean; budget?: number } = {}): string {
   const budget = opts.budget ?? 160_000;
-  const top = docOf(snap, focus);
+  let top = docOf(snap, focus);
+  // An annotation on an article is read in its article's node, not the whole Wikipedia container.
+  if (top && snap.nodes[top].articles) top = [focus, ...ancestors(snap, focus)].find((x) => snap.nodes[x].parent === top) ?? top;
   if (!top) {
     const lines = documents(snap).map((d) => `- ${opts.ids ? `[${d}] ` : ""}${snap.nodes[d].title || "(untitled)"}`);
     return `<library>\n${lines.join("\n")}\n</library>`;
@@ -132,6 +134,34 @@ export function expandPrompt(snap: Snap, id: NodeId, range: [number, number], fo
     question ? `They asked about the selection: ${question}` : (LENS[lens] ?? LENS.elaborate),
     SIZE[form],
     form === "gloss" ? "" : linkingNote(nearby),
+  ].filter(Boolean).join("\n\n");
+}
+
+/** What a note on words of a Wikipedia article is written from: the article's lead, the section the words are in (trimmed), the words, and the reader's own sentence when they came from one. */
+export interface ArticleContext {
+  title: string;
+  lead: string;
+  /** The headings down to the section, or null when the words are in the lead. */
+  heading: string | null;
+  section: string;
+  selection: string;
+  /** The sentence of the reader's own text the article was opened from, if any. */
+  from?: string;
+}
+
+/** The article as a prompt's cached context: its title and lead. */
+export const articleContext = (c: ArticleContext) => `<wikipedia_article title="${c.title}">\n${c.lead}\n</wikipedia_article>`;
+
+/** Ask for a note on a selection inside a Wikipedia article. */
+export function articlePrompt(c: ArticleContext, form: Form, lens: string, question?: string): string {
+  return [
+    `The reader is reading the Wikipedia article “${c.title}”, whose lead is given above${c.heading ? `, in its section “${c.heading}”` : ""}.`,
+    c.heading ? `The passage around the selection:\n<section>\n${c.section}\n</section>` : "",
+    `They selected:\n<selection>\n${c.selection}\n</selection>`,
+    c.from ? `They came to this article from their own notes, from this sentence:\n<their_text>\n${plain(c.from)}\n</their_text>` : "",
+    question ? `They asked about the selection: ${question}` : (LENS[lens] ?? LENS.elaborate),
+    SIZE[form],
+    "The note sits beside Wikipedia's text as the reader's own: do not restate the article, and say so plainly where the article and what you know disagree or where you are unsure.",
   ].filter(Boolean).join("\n\n");
 }
 

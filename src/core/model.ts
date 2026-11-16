@@ -16,6 +16,7 @@
  */
 import { Cursor, LoroDoc, LoroText, type LoroEventBatch, type LoroMap, type LoroTreeNode, type TreeID } from "loro-crdt";
 import { RefError, canonRef, validateRef, type Ref } from "./ref";
+import type { WikiAnchor } from "./article";
 import { digest, sha256, slugify, words, type Form, type Range } from "./text";
 
 export type { Ref } from "./ref";
@@ -55,6 +56,13 @@ export interface NodeSnap {
    * replicas declining at once both keep theirs.
    */
   nolink?: string[];
+  /**
+   * The Wikipedia container (see article.ts): a section of the library root that holds a node per
+   * annotated article. It is not a document: it is listed nowhere and never reconciled.
+   */
+  articles?: boolean;
+  /** An annotation on a Wikipedia article: where in the article it attaches (its parent is the article's node). */
+  wanchor?: WikiAnchor;
   anchors: Anchor[];
   seenUp: string;
   seenDown: string;
@@ -92,6 +100,10 @@ export type Op =
       slug?: string;
       /** What the node is about, elsewhere. A note with a target and no body is a link. */
       ref?: Ref;
+      /** Make this section of the library root the Wikipedia container (article.ts). */
+      articles?: boolean;
+      /** For an annotation on an article: where in the article it attaches, in place of anchors. */
+      wanchor?: WikiAnchor;
     }
   /** `ref: null` removes the target. Changing a target is not a change of content: it leaves authorship and staleness alone. */
   /** `nolink` adds phrases the writer declined to link; like a target, it is not a change of content. */
@@ -368,6 +380,8 @@ export class Doc {
     if (d.lens) snap.lens = d.lens as string;
     if (d.slug) snap.slug = d.slug as string;
     if (d.ref && typeof d.ref === "object") snap.ref = d.ref as Ref;
+    if (d.articles) snap.articles = true;
+    if (d.wanchor && typeof d.wanchor === "object") snap.wanchor = d.wanchor as WikiAnchor;
     const declined = Object.keys(d).filter((k) => k.startsWith(NOLINK)).map((k) => k.slice(NOLINK.length)).sort();
     if (declined.length) snap.nolink = declined;
     return snap;
@@ -557,6 +571,7 @@ export class Doc {
       const n = snap.nodes[id];
       const row: unknown[] = [n.kind, n.title, n.body, n.by, n.pinned, n.form ?? null, n.lens ?? null, n.anchors.map((a) => [a.start, a.end]), n.children.map(visit)];
       // A node target is compared by where its target sits, since ids differ between copies.
+      if (n.wanchor || n.articles) row.push(n.wanchor ?? null, n.articles ?? null);
       if (n.ref) row.push(n.ref.kind === "node" ? ["node", n.ref.id && snap.nodes[n.ref.id] ? position(snap, n.ref.id) : [n.ref.doc ?? null, n.ref.path ?? null], n.ref.quote ?? null] : canonRef(n.ref));
       return row;
     };
@@ -651,6 +666,7 @@ export class Doc {
       if (s.form) n.data.set("form", s.form);
       if (s.lens) n.data.set("lens", s.lens);
       if (s.ref) n.data.set("ref", s.ref as never);
+      if (s.wanchor) n.data.set("wanchor", s.wanchor as never);
       if (s.nolink?.length) setNolink(n, s.nolink);
       n.data.set("up", s.seenUp);
       n.data.set("down", s.seenDown);
@@ -692,14 +708,15 @@ export class Doc {
         switch (op.op) {
           case "create": {
             const parent = this.node(op.parent);
-            const kind: Kind = op.kind ?? (op.anchors || op.quote ? "note" : "section");
+            const kind: Kind = op.kind ?? (op.anchors || op.quote || op.wanchor ? "note" : "section");
             let ranges = op.anchors;
             if (!ranges && op.quote) {
               const at = this.bodyOf(parent).toString().indexOf(op.quote);
               if (at < 0) throw new OpError(`quote not found in parent body: "${op.quote}"`);
               ranges = [[at, at + op.quote.length]];
             }
-            if (kind === "note" && !ranges?.length) throw new OpError("a note needs an anchor or a quote");
+            if (kind === "note" && !ranges?.length && !op.wanchor) throw new OpError("a note needs an anchor or a quote");
+            if (op.articles && (kind !== "section" || !parent.data.get("library"))) throw new OpError("only a section of the library can be the Wikipedia container");
             const count = parent.children()?.length ?? 0;
             const n = parent.createNode(Math.max(0, Math.min(op.index ?? count, count)));
             this.mark(parent.id);
@@ -713,7 +730,10 @@ export class Doc {
             if (op.lens) n.data.set("lens", op.lens);
             if (op.ref) n.data.set("ref", checkRef(op.ref) as never);
             if (ranges?.length) n.data.set("anchors", this.makeAnchors(parent, ranges) as never);
-            const slug = kind === "section" ? this.slugFor(n, op.slug, op.title || "untitled") : undefined;
+            else if (op.wanchor) n.data.set("wanchor", checkWikiAnchor(op.wanchor) as never);
+            if (op.articles) n.data.set("articles", true);
+            // The container is not a document, so it has no address.
+            const slug = kind === "section" && !op.articles ? this.slugFor(n, op.slug, op.title || "untitled") : undefined;
             if (op.slug && kind !== "section") throw new OpError("only a document (a section of the library) has a slug");
             if (slug) n.data.set("slug", slug);
             created.push(n.id);
@@ -880,7 +900,7 @@ export function setNolink(n: LoroTreeNode, phrases: string[]) {
   for (const p of phrases) if (n.data.get(NOLINK + p) === undefined) n.data.set(NOLINK + p, 1);
 }
 const sameNode = (a: NodeSnap, b: NodeSnap) =>
-  refString(a.ref) === refString(b.ref) && (a.nolink ?? []).join("\u0000") === (b.nolink ?? []).join("\u0000") && a.parent === b.parent && a.kind === b.kind && a.title === b.title && a.body === b.body && a.by === b.by && a.pinned === b.pinned &&
+  refString(a.ref) === refString(b.ref) && a.articles === b.articles && JSON.stringify(a.wanchor) === JSON.stringify(b.wanchor) && (a.nolink ?? []).join("\u0000") === (b.nolink ?? []).join("\u0000") && a.parent === b.parent && a.kind === b.kind && a.title === b.title && a.body === b.body && a.by === b.by && a.pinned === b.pinned &&
   a.form === b.form && a.lens === b.lens && a.slug === b.slug && a.seenUp === b.seenUp && a.seenDown === b.seenDown && a.depth === b.depth &&
   a.children.length === b.children.length && a.children.every((c, i) => c === b.children[i]) &&
   a.anchors.length === b.anchors.length && a.anchors.every((x, i) => x.start === b.anchors[i].start && x.end === b.anchors[i].end && x.quote === b.anchors[i].quote && x.text === b.anchors[i].text);
@@ -889,10 +909,10 @@ const sameNode = (a: NodeSnap, b: NodeSnap) =>
 
 const row = (n: NodeSnap) => {
   const r: unknown[] = [n.id, n.parent, n.kind, n.title, n.body, n.by, n.pinned, n.form ?? null, n.lens ?? null, n.anchors.map((a) => [a.start, a.end]), n.seenUp, n.seenDown];
-  // Optional fields go last, and only when set, so commits made before they existed still verify.
-  if (n.slug || n.ref || n.nolink) r.push(n.slug ?? null);
-  if (n.ref || n.nolink) r.push(n.ref ? canonRef(n.ref) : null);
-  if (n.nolink) r.push(n.nolink);
+  // Optional fields go last, and only up to the last one set, so commits made before they existed still verify.
+  const tail = [n.slug ?? null, n.ref ? canonRef(n.ref) : null, n.nolink ?? null, n.wanchor ?? null, n.articles ? true : null];
+  while (tail.length && tail[tail.length - 1] === null) tail.pop();
+  r.push(...tail);
   return r;
 };
 
@@ -942,7 +962,8 @@ export function freeSlug(hint: string, taken: Set<string | undefined>): string {
 
 // ---- staleness: computed, never stored ----
 
-export const sections = (snap: Snap, id: NodeId) => snap.nodes[id].children.filter((c) => snap.nodes[c].kind === "section");
+/** A node's sections, in order. The Wikipedia container (article.ts) is nobody's section: it is not a document. */
+export const sections = (snap: Snap, id: NodeId) => snap.nodes[id].children.filter((c) => snap.nodes[c].kind === "section" && !snap.nodes[c].articles);
 
 /**
  * Hash of what a node's body should be a summary of: its section children, in order. The
@@ -1005,10 +1026,15 @@ export function staleness(snap: Snap, id: NodeId): Staleness {
   const parent = n.parent ? snap.nodes[n.parent] : undefined;
   const seen = memo.get(n);
   if (seen && seen.parent === parent) return seen.s;
-  const orphan = n.kind === "note" && (!n.anchors.length || n.anchors.every(anchorLost));
+  // An annotation is anchored in an article, which is not in the library: whether its words are still
+  // there is found when the article is shown (article.ts), never here.
+  const orphan = n.kind === "note" && !n.wanchor && (!n.anchors.length || n.anchors.every(anchorLost));
   // A link has no text of its own to fall out of date: it is never stale, so it never asks a model
   // to rewrite it, and nothing else looks at it (a parent summarises its sections, not its notes).
-  const s = isLink(n) ? { up: false, down: false, orphan } : { up: n.seenUp !== upInput(snap, id), down: n.seenDown !== downInput(snap, id), orphan };
+  // Nor are the Wikipedia container and its article nodes, which hold no text, nor an annotation
+  // against the article it elaborates.
+  const fixed = isLink(n) || n.articles || !!(parent?.articles);
+  const s = fixed ? { up: false, down: false, orphan } : { up: n.seenUp !== upInput(snap, id), down: !n.wanchor && n.seenDown !== downInput(snap, id), orphan };
   memo.set(n, { parent, s });
   return s;
 }
@@ -1028,6 +1054,16 @@ function position(snap: Snap, id: NodeId): number[] {
   const out: number[] = [];
   for (let n = snap.nodes[id]; n?.parent; n = snap.nodes[n.parent]) out.unshift(snap.nodes[n.parent].children.indexOf(n.id));
   return out;
+}
+
+/** An annotation's place in an article, checked like a target. */
+function checkWikiAnchor(a: unknown): WikiAnchor {
+  const x = a as Record<string, unknown>;
+  const str = (v: unknown, max: number) => typeof v === "string" && v.length <= max;
+  if (!x || typeof x !== "object" || !str(x.q, 2000) || !(x.q as string).trim() || !str(x.pre, 200) || !str(x.post, 200)) throw new OpError("an article anchor needs its words (q) and the text around them (pre, post)");
+  if (!Array.isArray(x.sec) || x.sec.length > 16 || !x.sec.every((h) => str(h, 300))) throw new OpError("an article anchor's section is a list of headings");
+  if (!Number.isInteger(x.rev) || (x.rev as number) < 0) throw new OpError("an article anchor's revision must be a whole number");
+  return { sec: x.sec as string[], q: x.q as string, pre: x.pre as string, post: x.post as string, rev: x.rev as number };
 }
 
 /** An op's target, checked: a bad one is refused like any other bad op. */

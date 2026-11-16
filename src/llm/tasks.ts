@@ -8,8 +8,9 @@ import { nodeRef, resolveNode as resolveTargetPath } from "../core/links";
 import { mergeBranch, resolveConflict, type MergeReport } from "../core/repo";
 import { clip, digest, type Form } from "../core/text";
 import { stripMarks, type Mark } from "../core/marks";
+import { articleParent, type ArticleKey, type WikiAnchor } from "../core/article";
 import {
-  AGENT_SYSTEM, SYSTEM, type Grounding, type Nearby, cascadePrompt, contradictionPrompt, deepenPrompt, expandPrompt, pathOf, regenDownPrompt,
+  AGENT_SYSTEM, SYSTEM, type ArticleContext, type Grounding, type Nearby, articleContext, articlePrompt, cascadePrompt, contradictionPrompt, deepenPrompt, expandPrompt, pathOf, regenDownPrompt,
   regenUpPrompt, renderContext, resolvePrompt, writePrompt,
 } from "./prompts";
 import type { Block, CascadeDecision, Contradictions, LLM, Resolutions, ToolUseBlock, TurnReq } from "./types";
@@ -96,6 +97,46 @@ export function commitExpansion(doc: Doc, r: ExpansionRequest, text: string, onM
     { actor: "llm", tag: "expand" },
   );
   return report(created[0]);
+}
+
+/** A note on words of a Wikipedia article: where it attaches, and what it is written from. */
+export interface ArticleNoteRequest {
+  article: ArticleKey;
+  anchor: WikiAnchor;
+  form: Form;
+  lens: string;
+  question?: string;
+  context: ArticleContext;
+}
+
+/** Stream a note on words of an article. Does not touch the library. */
+export function streamArticleNote(llm: LLM, r: ArticleNoteRequest, onText: OnText = noop, signal?: AbortSignal): Promise<string> {
+  return llm.stream(
+    {
+      task: "expand",
+      system: SYSTEM,
+      context: articleContext(r.context),
+      prompt: articlePrompt(r.context, r.form, r.lens, r.question),
+      vars: { quote: r.anchor.q, form: r.form, lens: r.question ?? r.lens },
+      effort: "low",
+      maxTokens: r.form === "passage" ? 2000 : 800,
+    },
+    onText,
+    signal,
+  );
+}
+
+/** Keep a note on an article: under the article's node, made (with its container) on the first one. Link marks are dropped: nothing in an article's notes is linked. */
+export function commitArticleNote(doc: Doc, r: ArticleNoteRequest, text: string): NodeId {
+  text = stripMarks(text.trim()).text;
+  if (r.form === "gloss") text = text.replace(/[.\s]+$/, "");
+  const { ops, parent } = articleParent(doc.snap(), r.article);
+  const { created } = doc.apply(
+    [...ops, { op: "create", parent, kind: "note", wanchor: r.anchor, form: r.form, lens: r.question ?? r.lens, body: text }],
+    `Expand “${clip(r.anchor.q, 40)}” in “${clip(r.context.title, 40)}”`,
+    { actor: "llm", tag: "expand" },
+  );
+  return created[created.length - 1];
 }
 
 export function parseSections(text: string): { title: string; body: string }[] {
