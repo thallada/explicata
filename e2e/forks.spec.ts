@@ -510,6 +510,9 @@ test("a pane is dragged by its grip, or its tab, up or down its column; the orde
   await page.reload();
   await page.waitForSelector(".strip .pane");
   expect((await columns(page))[1]).toEqual([kids[4], ...kids.slice(0, 4)]);
+  // Downward, reaching the top of a pane below is enough: the dragged pane lands after it.
+  await drag(kids[4], kids[1]);
+  expect((await columns(page))[1]).toEqual([kids[0], kids[1], kids[4], kids[2], kids[3]]);
   // And by its tab, in a crowded column.
   await page.setViewportSize({ width: 1920, height: 1080 });
   await expect.poll(() => page.locator(".strip > .col").nth(1).getAttribute("class")).toContain("crowded");

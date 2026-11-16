@@ -572,13 +572,21 @@ export function Panes() {
         drag.line.className = "drop-line";
         wrap.appendChild(drag.line);
       }
-      const others = [...drag.col.querySelectorAll<HTMLElement>(":scope > .pane")].filter((p) => Number(p.dataset.tid) !== drag!.tid);
+      const panes = [...drag.col.querySelectorAll<HTMLElement>(":scope > .pane")];
+      const mine = panes.findIndex((p) => Number(p.dataset.tid) === drag!.tid);
+      const others = panes.filter((_, k) => k !== mine);
       const c = drag.col.getBoundingClientRect();
       const tops = others.map((p) => Math.max(c.top, Math.min(c.bottom, p.getBoundingClientRect().top)));
       const ends = others.map((p, i) => Math.min(tops[i + 1] ?? c.bottom, Math.max(c.top, Math.min(c.bottom, p.getBoundingClientRect().bottom))));
-      const i = others.findIndex((_, k) => e.clientY < (tops[k] + ends[k]) / 2);
+      // The pane under the pointer gives way: one that was below the dragged pane lets it in after
+      // itself, one that was above lets it in before. So reaching any part of a pane is enough, in
+      // either direction.
+      let k = -1;
+      while (k + 1 < others.length && tops[k + 1] <= e.clientY) k++;
+      const at = k < 0 ? 0 : k >= mine || e.clientY >= ends[k] ? k + 1 : k;
+      const i = at < others.length ? at : -1;
       drag.before = i < 0 ? null : Number(others[i].dataset.tid);
-      const y = i < 0 ? (ends[ends.length - 1] ?? c.top) : tops[i];
+      const y = at === 0 ? (tops[0] ?? c.top) : ends[at - 1];
       const box = wrap.getBoundingClientRect();
       Object.assign(drag.line!.style, { left: `${c.left - box.left}px`, width: `${c.width}px`, top: `${y - box.top - 1}px` });
     };
