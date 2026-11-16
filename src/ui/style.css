@@ -508,6 +508,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .pane-head .title-editor { font-size: 1.32rem; font-weight: 600; }
 
 /* Its child sections, as outline rows. The one whose pane is open to the right is marked. */
+.col.crowded > .pane[data-covered] > .spine::before { display: none; }
 .pane .rows { margin-top: 1.4rem; padding-top: 0.55rem; border-top: 1px solid var(--hair); }
 .pane.root .rows { margin-top: 0; padding-top: 0; border-top: 0; }
 .pane .rows > .node { margin-top: 0.12rem; }
