@@ -1206,7 +1206,7 @@ class Store {
   }
   private restoreView() {
     const s = this.doc.snap();
-    const v = lsGet<{ open: NodeId[]; focus: Focus | null; hoist: NodeId | null; forest?: unknown; at?: number; forks?: unknown; trail?: PaneRef[]; paneAt?: number }>(this.viewKey(), { open: [], focus: null, hoist: null });
+    const v = lsGet<{ open: NodeId[]; focus: Focus | null; hoist: NodeId | null; forest?: unknown; at?: number; hues?: number; forks?: unknown; trail?: PaneRef[]; paneAt?: number }>(this.viewKey(), { open: [], focus: null, hoist: null });
     this.open = new Set(v.open.filter((id) => s.nodes[id]));
     this.hoist = v.hoist && s.nodes[v.hoist] ? v.hoist : null;
     this.focus = v.focus && s.nodes[v.focus.node] ? v.focus : { node: this.top, grain: "node" };
@@ -1219,7 +1219,7 @@ class Store {
   saveView() {
     const bare = (p: PaneRef): PaneRef => ({ ...p, from: undefined });
     // The trail too, for a build from before forks.
-    lsSet(this.viewKey(), { open: [...this.open], focus: this.focus, hoist: this.hoist, forest: this.forest.trees.map((t) => saveTree(t, bare)), at: this.forest.at, trail: this.trail.map(bare), paneAt: this.paneAt });
+    lsSet(this.viewKey(), { open: [...this.open], focus: this.focus, hoist: this.hoist, forest: this.forest.trees.map((t) => saveTree(t, bare)), at: this.forest.at, hues: this.forest.hues ?? 0, trail: this.trail.map(bare), paneAt: this.paneAt });
   }
   /** Keep focus on something that exists and is on screen. */
   private repairView() {

@@ -12,7 +12,14 @@
  * so a forest that did not change is the same object (the store memoises on identity). A node's
  * `id` names the pane for as long as it is open (keys, curves, the hosts of article panes off the
  * branch).
+ *
+ * Each pane has its branch's colour (`hue`), fixed when it opens: a pane opened as its parent's first
+ * child takes its parent's, any further child starts the next colour of the palette, so a plain trail
+ * is one colour and each fork starts a new one. The first tree's root trail has none (plain ink).
  */
+
+/** How many colours branches cycle through (style.css `--hue-0` …). */
+export const HUES = 7;
 
 export interface Tree<R, S = unknown> {
   ref: R;
@@ -28,12 +35,16 @@ export interface Tree<R, S = unknown> {
   col?: number;
   /** Its place in its column, once the panes there have been put in an order by hand (dragged); unranked panes follow, in tree order. */
   rank?: number;
+  /** Its branch's colour, 0 to HUES − 1; none on the first tree's root trail. Kept for the pane's life. */
+  hue?: number;
 }
 
 /** The trees, the first starting at the top node; `at` is the one the focused branch is in. */
 export interface Forest<R, S = unknown> {
   trees: Tree<R, S>[];
   at: number;
+  /** How many branch colours have been started: the next is this one, round the palette. */
+  hues?: number;
 }
 
 export type Same<R> = (a: R, b: R) => boolean;
@@ -53,6 +64,25 @@ export const plain = <R, S>(refs: R[]): Forest<R, S> => {
   const t = chain<R, S>(refs);
   return { trees: t ? [t] : [], at: 0 };
 };
+
+/** A tree with this colour on every pane (none: as it is). */
+const tint = <R, S>(t: Tree<R, S>, hue: number | undefined): Tree<R, S> => (hue === undefined ? t : { ...t, hue, kids: t.kids.map((k) => tint(k, hue)) });
+
+/** Colours started by one operation: the next of the palette each time, never the parent's own. */
+function palette(f: Forest<unknown, unknown>) {
+  let n = f.hues ?? 0;
+  return {
+    next(parent?: number): number {
+      let h = n++ % HUES;
+      if (h === parent) h = n++ % HUES;
+      return h;
+    },
+    /** The forest, counting the colours started. */
+    done<R, S>(g: Forest<R, S>): Forest<R, S> {
+      return n === (g.hues ?? 0) ? g : { ...g, hues: n };
+    },
+  };
+}
 
 /** The column a tree's root is in. */
 export const colOf = (t: Tree<unknown, unknown>) => t.col ?? 0;
@@ -185,7 +215,7 @@ export function focus<R, S>(f: Forest<R, S>, id: number): Forest<R, S> {
   if (!hit) return f;
   const t = select(f.trees[hit.ti], id)!;
   if (t === f.trees[hit.ti] && hit.ti === f.at) return f;
-  return { trees: t === f.trees[hit.ti] ? f.trees : f.trees.map((x, j) => (j === hit.ti ? t : x)), at: hit.ti };
+  return { ...f, trees: t === f.trees[hit.ti] ? f.trees : f.trees.map((x, j) => (j === hit.ti ? t : x)), at: hit.ti };
 }
 
 /**
@@ -203,7 +233,7 @@ function replace<R, S>(f: Forest<R, S>, ti: number, t: Tree<R, S> | null, orphan
   const trees = [...f.trees.slice(0, ti), ...(t ? [t] : []), ...orphans, ...f.trees.slice(ti + 1)];
   const was = f.trees[f.at];
   const at = trees.indexOf(was);
-  return { trees, at: at >= 0 ? at : Math.min(ti, trees.length - 1) };
+  return { ...f, trees, at: at >= 0 ? at : Math.min(ti, trees.length - 1) };
 }
 
 /** Remove a child of a node, picking the one that takes its place (the one below, else the one above). */
@@ -224,18 +254,22 @@ export function open<R, S>(f: Forest<R, S>, i: number, ref: R, fork: boolean, sa
   const t = focused(f);
   if (!t) return plain([ref]);
   const orphans: Tree<R, S>[] = [];
+  const hues = palette(f);
   const next = at(t, i, (n) => {
     const k = n.kids.findIndex((c) => same(c.ref, ref));
     if (k >= 0) return k === n.pick ? n : { ...n, pick: k };
-    if (!n.kids.length) return { ...n, kids: [leaf(ref)], pick: 0 };
-    if (fork || n.kids[n.pick].pinned) return { ...n, kids: [...n.kids, leaf(ref)], pick: n.kids.length };
-    orphans.push(...survivors(n.kids[n.pick], colOf(t) + i + 1, true));
+    // The first child goes on in its parent's colour; another starts the next one.
+    if (!n.kids.length) return { ...n, kids: [tint(leaf<R, S>(ref), n.hue)], pick: 0 };
+    if (fork || n.kids[n.pick].pinned) return { ...n, kids: [...n.kids, tint(leaf<R, S>(ref), hues.next(n.hue))], pick: n.kids.length };
+    const was = n.kids[n.pick];
+    orphans.push(...survivors(was, colOf(t) + i + 1, true));
     const kids = n.kids.slice();
-    // In its place, in its column too.
-    kids[n.pick] = n.kids[n.pick].rank === undefined ? leaf(ref) : { ...leaf<R, S>(ref), rank: n.kids[n.pick].rank };
+    // In its place, in its column and its colour too.
+    const put = tint(leaf<R, S>(ref), was.hue);
+    kids[n.pick] = was.rank === undefined ? put : { ...put, rank: was.rank };
     return { ...n, kids };
   });
-  return replace(f, f.at, next, orphans);
+  return hues.done(replace(f, f.at, next, orphans));
 }
 
 /**
@@ -330,8 +364,9 @@ export function withBranch<R, S>(f: Forest<R, S>, refs: R[], same: Same<R>): For
     const old = f.trees[0] && !f.trees[0].col ? f.trees[0] : null;
     if (old) orphans.push(...survivors(old, 0, false));
     const rest = old ? f.trees.slice(1) : f.trees;
-    return { trees: [chain<R, S>(refs)!, ...orphans, ...rest], at: 0 };
+    return { ...f, trees: [chain<R, S>(refs)!, ...orphans, ...rest], at: 0 };
   }
+  const hues = palette(f);
   const go = (n: Tree<R, S>, i: number): Tree<R, S> => {
     if (i === refs.length) {
       const kept = n.kids.filter((k) => k.pinned);
@@ -342,20 +377,20 @@ export function withBranch<R, S>(f: Forest<R, S>, refs: R[], same: Same<R>): For
     const k = n.kids.findIndex((c) => same(c.ref, refs[i]));
     if (k < 0) {
       const rest = chain<R, S>(refs.slice(i))!;
-      if (!n.kids.length) return { ...n, kids: [rest], pick: 0 };
-      if (n.kids[n.pick].pinned) return { ...n, kids: [...n.kids, rest], pick: n.kids.length };
+      if (!n.kids.length) return { ...n, kids: [tint(rest, n.hue)], pick: 0 };
+      if (n.kids[n.pick].pinned) return { ...n, kids: [...n.kids, tint(rest, hues.next(n.hue))], pick: n.kids.length };
       orphans.push(...survivors(n.kids[n.pick], i, true));
-      return { ...n, kids: n.kids.map((c, j) => (j === n.pick ? rest : c)) };
+      return { ...n, kids: n.kids.map((c, j) => (j === n.pick ? tint(rest, c.hue) : c)) };
     }
     const sub = go(n.kids[k], i + 1);
     return sub === n.kids[k] && k === n.pick ? n : { ...n, kids: n.kids.map((c, j) => (j === k ? sub : c)), pick: k };
   };
   const t = go(f.trees[0], 1);
-  const g = replace(f, 0, t, orphans);
+  const g = hues.done(replace(f, 0, t, orphans));
   return g.at === 0 ? g : { ...g, at: 0 };
 }
 
-/** As stored: refs (made storable by the caller), children, picks, pins and an orphan's column; no ids, nothing remembered. */
+/** As stored: refs (made storable by the caller), children, picks, pins, an orphan's column, places and colours; no ids, nothing remembered. */
 export interface Saved<R> {
   ref: R;
   kids?: Saved<R>[];
@@ -363,6 +398,7 @@ export interface Saved<R> {
   pin?: 1;
   col?: number;
   rank?: number;
+  hue?: number;
 }
 
 export function save<R, S, O>(t: Tree<R, S>, ref: (r: R) => O): Saved<O> {
@@ -372,6 +408,7 @@ export function save<R, S, O>(t: Tree<R, S>, ref: (r: R) => O): Saved<O> {
   if (t.pinned) out.pin = 1;
   if (t.col) out.col = t.col;
   if (t.rank !== undefined) out.rank = t.rank;
+  if (t.hue !== undefined) out.hue = t.hue;
   return out;
 }
 
@@ -385,32 +422,44 @@ export function load<R, S>(o: unknown, ok: (r: unknown) => r is R): Tree<R, S> |
   if (s.pin) t.pinned = true;
   if (typeof s.col === "number" && s.col >= 1) t.col = Math.floor(s.col);
   if (typeof s.rank === "number" && Number.isFinite(s.rank)) t.rank = s.rank;
+  if (typeof s.hue === "number" && Number.isInteger(s.hue) && s.hue >= 0 && s.hue < HUES) t.hue = s.hue;
   return t;
 }
 
 /**
  * What was stored: the forest; from before orphans, one tree; from before forks, the trail as a
- * tree with one branch. An orphan stored first (its tree's root gone) is dropped.
+ * tree with one branch. An orphan stored first (its tree's root gone) is dropped. Stored from
+ * before colours (no count of them), the panes are coloured as if opened in tree order.
  */
-export function restore<R, S>(saved: { forest?: unknown; at?: unknown; forks?: unknown; trail?: unknown[] }, ok: (r: unknown) => r is R): Forest<R, S> {
+export function restore<R, S>(saved: { forest?: unknown; at?: unknown; forks?: unknown; trail?: unknown[]; hues?: unknown }, ok: (r: unknown) => r is R): Forest<R, S> {
+  let f: Forest<R, S>;
   if (Array.isArray(saved.forest)) {
     const trees = saved.forest.map((o) => load<R, S>(o, ok)).filter((t): t is Tree<R, S> => !!t);
     const first = trees.findIndex((t) => !t.col);
     const kept = first < 0 ? trees.filter((t) => t.col) : [trees[first], ...trees.filter((t, j) => j !== first && t.col)];
     const at = typeof saved.at === "number" ? Math.floor(saved.at) : 0;
-    return { trees: kept, at: at >= 0 && at < kept.length ? at : 0 };
+    f = { trees: kept, at: at >= 0 && at < kept.length ? at : 0 };
+  } else {
+    const t = saved.forks ? load<R, S>(saved.forks, ok) : chain<R, S>((saved.trail ?? []).filter(ok));
+    f = { trees: t ? [t] : [], at: 0 };
   }
-  const t = saved.forks ? load<R, S>(saved.forks, ok) : chain<R, S>((saved.trail ?? []).filter(ok));
-  return { trees: t ? [t] : [], at: 0 };
+  if (typeof saved.hues === "number" && Number.isInteger(saved.hues) && saved.hues >= 0) return { ...f, hues: saved.hues };
+  const hues = palette(f);
+  const paint = (t: Tree<R, S>, hue: number | undefined): Tree<R, S> => {
+    const kids = t.kids.map((k, j) => paint(k, j === 0 ? hue : hues.next(hue)));
+    return hue === undefined ? { ...t, kids } : { ...t, kids, hue };
+  };
+  return hues.done({ ...f, trees: f.trees.map((t) => paint(t, t.col ? hues.next() : undefined)) });
 }
 
-/** Whether a forest is well formed: picks in range, no pane twice among siblings, ids unique, orphans in a column right of the first, the focused tree there. */
+/** Whether a forest is well formed: picks in range, colours in the palette, no pane twice among siblings, ids unique, orphans in a column right of the first, the focused tree there. */
 export function valid<R, S>(f: Forest<R, S>, same: Same<R>): boolean {
   const seen = new Set<number>();
   const ok = (n: Tree<R, S>): boolean => {
     if (seen.has(n.id)) return false;
     seen.add(n.id);
     if (n.pick < 0 || n.pick >= Math.max(1, n.kids.length) || !Number.isInteger(n.pick)) return false;
+    if (n.hue !== undefined && !(Number.isInteger(n.hue) && n.hue >= 0 && n.hue < HUES)) return false;
     for (let a = 0; a < n.kids.length; a++) for (let b = a + 1; b < n.kids.length; b++) if (same(n.kids[a].ref, n.kids[b].ref)) return false;
     return n.kids.every((k) => k.col === undefined && ok(k));
   };

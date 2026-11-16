@@ -1,7 +1,7 @@
 /** The panes view's forest of forks (src/ui/forks.ts): each operation, and any sequence of them leaving a well-formed forest with one focused branch and one active pane. */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { all, besideInColumn, close, columns, find, focus, focused, load, open, path, pin, plain, prune, reorder, restore, save, valid, withBranch, type Forest, type Tree } from "../src/ui/forks";
+import { HUES, all, besideInColumn, close, columns, find, focus, focused, load, open, path, pin, plain, prune, reorder, restore, save, valid, withBranch, type Forest, type Tree } from "../src/ui/forks";
 
 type F = Forest<string>;
 type T = Tree<string>;
@@ -201,6 +201,8 @@ describe("forks", () => {
         let f: F = plain(["root"]);
         // The active pane, by id: on the focused branch.
         let active = f.trees[0].id;
+        // Each pane's colour, as first seen: it never changes while the pane is open.
+        const hueOf = new Map<number, number | undefined>();
         for (const o of ops) {
           const p = path(focused(f));
           const i = Math.max(0, p.findIndex((n) => n.id === active));
@@ -256,10 +258,111 @@ describe("forks", () => {
           // Exactly one active pane: it is open, once, and on the focused branch.
           if (all(f).filter((x) => x.node.id === active).length !== 1 || !b.some((n) => n.id === active)) return false;
           if (!find(f, active) || f.trees[0].ref !== "root") return false;
+          if (f.trees[0].hue !== undefined) return false;
+          for (const x of all(f)) {
+            if (hueOf.has(x.node.id) && hueOf.get(x.node.id) !== x.node.hue) return false;
+            hueOf.set(x.node.id, x.node.hue);
+          }
         }
         return true;
       }),
       { numRuns: 500 },
     );
+  });
+});
+
+describe("branch colours", () => {
+  const isStr = (r: unknown): r is string => typeof r === "string";
+  /** Each pane's colour by its ref, "-" for none. */
+  const hues = (f: F) => Object.fromEntries(all(f).map((x) => [x.node.ref, x.node.hue ?? "-"]));
+  const roundTrip = (f: F) => restore<string, unknown>(JSON.parse(JSON.stringify({ forest: f.trees.map((t) => save(t, (r) => r)), at: f.at, hues: f.hues ?? 0 })), isStr);
+
+  it("a plain trail is one colour, the first tree's none; each further child of a pane starts the next colour", () => {
+    let f: F = plain(["a", "b", "c"]);
+    expect(hues(f)).toEqual({ a: "-", b: "-", c: "-" });
+    f = open(f, 0, "x", true, same); // a second child of a: a new colour
+    f = open(f, 1, "x1", true, same); // x's first child: x's colour
+    f = open(f, 2, "x2", false, same);
+    f = open(f, 1, "y", true, same); // a second child of x
+    f = open(f, 0, "z", true, same); // a third child of a
+    expect(hues(f)).toEqual({ a: "-", b: "-", c: "-", x: 0, x1: 0, x2: 0, y: 1, z: 2 });
+    expect(f.hues).toBe(3);
+  });
+
+  it("the palette goes round, never giving a fork its parent's colour", () => {
+    let f: F = plain(["a"]);
+    for (let i = 0; i < HUES + 2; i++) f = open(focus(f, f.trees[0].id), 0, `k${i}`, true, same);
+    // k0 is a's first child (no colour); k1… take 0, 1, … round the palette.
+    expect(all(f).slice(1).map((x) => x.node.hue ?? "-")).toEqual(["-", ...Array.from({ length: HUES + 1 }, (_, i) => i % HUES)]);
+    // Forks of a coloured pane skip its colour when the palette comes round to it.
+    let g: F = plain(["a"]);
+    g = open(g, 0, "b", true, same);
+    g = open(g, 0, "c", true, same); // 0
+    for (let i = 0; i < HUES - 1; i++) g = open(focus(g, g.trees[0].id), 0, `p${i}`, true, same); // 1 … HUES − 1
+    g = open(focus(g, idOf(g, "c")), 1, "c1", true, same); // c's first: 0
+    g = open(focus(g, idOf(g, "c")), 1, "c2", true, same); // next would be 0, c's own
+    expect(all(g).find((x) => x.node.ref === "c2")!.node.hue).toBe(1);
+  });
+
+  it("a pane opened in place of another takes its colour; one beside a pinned pane starts a new one; so does withBranch", () => {
+    let f: F = plain(["a", "b"]);
+    f = open(f, 0, "x", true, same);
+    f = open(f, 0, "y", true, same);
+    f = open(focus(f, idOf(f, "x")), 0, "x'", false, same); // in x's place
+    expect(hues(f)).toEqual({ a: "-", b: "-", "x'": 0, y: 1 });
+    f = pin(f, idOf(f, "x'"), true);
+    f = open(f, 0, "w", false, same); // beside a pinned pane: a fork
+    expect(hues(f).w).toBe(2);
+    let g: F = plain(["a", "b"]);
+    g = open(g, 0, "x", true, same);
+    g = withBranch(g, ["a", "x", "x1", "x2"], same);
+    expect(hues(g)).toMatchObject({ x: 0, x1: 0, x2: 0 });
+    g = withBranch(g, ["a", "x", "q"], same); // in x1's place
+    expect(hues(g).q).toBe(0);
+    expect(hues(withBranch(g, ["r", "s"], same))).toMatchObject({ r: "-", s: "-" });
+  });
+
+  it("colours stay through a reorder, a close, a pin and a prune; an orphan keeps its own", () => {
+    let f: F = plain(["a", "b", "b1"]);
+    f = open(f, 1, "c", true, same);
+    f = open(f, 2, "c1", true, same);
+    f = open(f, 0, "d", true, same);
+    f = open(f, 1, "d1", true, same);
+    const was = hues(f);
+    f = reorder(f, idOf(f, "d1"), idOf(f, "b1"));
+    expect(hues(f)).toEqual(was);
+    f = pin(f, idOf(f, "c1"), true);
+    f = close(f, idOf(f, "c"), idOf(f, "d1")).forest;
+    expect(f.trees[1].ref).toBe("c1");
+    const { c: _c, ...rest } = was;
+    expect(hues(f)).toEqual(rest);
+    const { d1: _d1, ...left } = rest;
+    expect(hues(prune(f, (r) => r !== "d1"))).toEqual(left);
+    // A new fork after all that still takes the next colour, not one used already.
+    expect(hues(open(focus(f, idOf(f, "a")), 0, "e", true, same)).e).toBe(f.hues);
+  });
+
+  it("colours are stored with the view; a view stored before colours is coloured as if opened in tree order", () => {
+    let f: F = plain(["a", "b", "c"]);
+    f = open(f, 0, "x", true, same);
+    f = open(f, 1, "x1", true, same);
+    f = open(f, 0, "y", true, same);
+    f = pin(f, idOf(f, "x1"), true);
+    f = close(f, idOf(f, "x"), idOf(f, "y")).forest;
+    expect(hues(f)).toEqual({ a: "-", b: "-", c: "-", y: 1, x1: 0 });
+    const back = roundTrip(f);
+    expect(hues(back)).toEqual(hues(f));
+    expect(back.hues).toBe(f.hues);
+    // From before colours: the root trail plain, each further child and each orphan a new colour.
+    const old = restore<string, unknown>({ forest: [{ ref: "a", kids: [{ ref: "b", kids: [{ ref: "c" }, { ref: "c2" }] }, { ref: "x", kids: [{ ref: "x1" }] }] }, { ref: "o", col: 2, kids: [{ ref: "o1" }] }], at: 0 }, isStr);
+    expect(hues(old)).toEqual({ a: "-", b: "-", c: "-", c2: 0, x: 1, x1: 1, o: 2, o1: 2 });
+    expect(old.hues).toBe(3);
+    expect(valid(old, same)).toBe(true);
+    // Older still: one tree, or a trail.
+    expect(hues(restore<string, unknown>({ forks: { ref: "a", kids: [{ ref: "b" }, { ref: "c" }], pick: 1 } }, isStr))).toEqual({ a: "-", b: "-", c: 0 });
+    expect(hues(restore<string, unknown>({ trail: ["a", "b"] }, isStr))).toEqual({ a: "-", b: "-" });
+    // A colour out of the palette is not trusted.
+    expect(load({ ref: "a", hue: HUES }, isStr)!.hue).toBeUndefined();
+    expect(load({ ref: "a", hue: 1.5 }, isStr)!.hue).toBeUndefined();
   });
 });
