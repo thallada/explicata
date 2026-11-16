@@ -68,7 +68,7 @@ function counting(o: { fail?: boolean; delay?: number } = {}) {
 
 /** A made-up suggestion in a node. */
 const sugg = (node: NodeId, quote: string, at: number, more: Partial<Suggestion> = {}): Suggestion => ({
-  id: `${node}:${quote}:${at}`, node, range: [at, at + quote.length], quote, key: quote.toLowerCase(), target: W(quote), score: 0.7, tier: "suggest", why: "", source: "wikipedia", title: quote, description: null, kind: "term", ...more,
+  id: `${node}:${quote}:${at}`, node, range: [at, at + quote.length], quote, key: quote.toLowerCase(), target: W(quote[0].toUpperCase() + quote.slice(1)), score: 0.7, tier: "suggest", why: "", source: "wikipedia", title: quote, description: null, kind: "term", ...more,
 });
 
 describe("the determination store", () => {
@@ -331,5 +331,35 @@ describe("the scan route in review mode", () => {
     const marked = await post("scan", { node: ids.arms, text, forced: [{ start: 10, end: 20, phrase: "Fred Hoyle" }], review: "unmarked" });
     expect(marked.suggestions.find((s: Suggestion) => s.kind === "forced")).toBeTruthy();
     expect(marked.entries.find((s: Suggestion) => s.kind === "forced").review).toBeUndefined();
+  });
+});
+
+describe("the links list in the page", () => {
+  it("shows each stored suggestion as it stands, links nothing accounts for, and old declines as the phrase alone", async () => {
+    const { Linker: PageLinker } = await import("../src/ui/linker");
+    const { arms, doc } = library();
+    const body = doc.snap().nodes[arms].body;
+    // An old decline with no stored target, a link made by hand, and two stored suggestions: one the reviewer rejected, one waiting.
+    doc.apply([{ op: "update", id: arms, nolink: ["tastes"] }, { op: "create", parent: arms, kind: "note", quote: "arm", ref: W("Arm") }], "Earlier");
+    const page = new PageLinker({ doc: () => doc, user: () => "tyler", mode: () => "review", generating: () => true, say: () => {}, emit: () => {}, rendered: () => false });
+    const rejected = sugg(arms, "cephalopod", body.indexOf("cephalopod"), { review: { link: false, reason: "too general", at: 1 } });
+    const waiting = sugg(arms, "Fred Hoyle", body.indexOf("Fred Hoyle"));
+    (page as unknown as { byNode: Map<NodeId, Suggestion[]> }).byNode.set(arms, [rejected, waiting]);
+    const rows = page.rows([arms], doc.snap());
+    const by = (q: string) => rows.find((r) => r.quote === q)!;
+    expect(by("cephalopod")).toMatchObject({ status: "rejected", by: "reviewer", reason: "too general" });
+    expect(by("Fred Hoyle")).toMatchObject({ status: "pending", by: null });
+    expect(by("arm")).toMatchObject({ status: "linked", by: null, title: "Arm" });
+    expect(by("tastes")).toMatchObject({ status: "rejected", target: null, range: null });
+    // Only the waiting one is drawn as a suggestion.
+    expect(page.forNode(arms, doc.snap()).map((s) => s.quote)).toEqual(["Fred Hoyle"]);
+    // A person overrules the reviewer: linked by them, the reviewer's no still shown.
+    expect(page.accept([rejected], true)).toBe(1);
+    expect(page.rows([arms], doc.snap()).find((r) => r.quote === "cephalopod")).toMatchObject({ status: "linked", by: "tyler", verdict: false });
+    // Removing a link declines its words in the node, in one commit.
+    const note = page.rows([arms], doc.snap()).find((r) => r.quote === "cephalopod")!.note!;
+    expect(page.removeLink(note)).toBe("cephalopod");
+    expect(doc.snap().nodes[arms].nolink).toEqual(["cephalopod", "tastes"]);
+    expect(page.rows([arms], doc.snap()).find((r) => r.quote === "cephalopod")).toMatchObject({ status: "rejected", by: "tyler" });
   });
 });

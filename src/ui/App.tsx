@@ -398,7 +398,7 @@ function StatusLine() {
     : store.preview
     ? ["read-only", ["r", "revert to this"], ["n", "branch from this"], ["Escape", "back to now"]]
     : sugg
-      ? [`suggested link → ${clip(sugg.title, 40)}`, ["y", "link"], ["n", "decline"], ["Tab", "next"], ["S", "review all"]]
+      ? [`suggested link → ${clip(sugg.title, 40)}`, ["y", "link"], ["n", "decline"], ["Tab", "next"], ["S", "list all"]]
     : selecting
       ? commentary
         ? [["Enter", `opens the note with ${store.targetOf(commentary)!.kind === "wiki" ? "its article" : "what it links to"}`], ["e", "shows the note here"], ["D", "delete note"], ["w", "retarget"]]
