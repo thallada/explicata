@@ -78,6 +78,26 @@ Press `?` for every key. The short version:
   notes: the library, the open document, its open sections. Following a link opens its target in
   the next pane; moving back left with `h` closes nothing; `q` closes panes. `v` switches between
   panes and the single column, `/view auto|column|panes` sets it.
+- **Forks.** To go two ways from one pane, open the second with `Shift+Enter` (or a Shift-, Ctrl- or
+  Cmd-click, or a middle click) on a row, a link, a link in an article, or a "Linked from",
+  "Mentioned in" or Related row: it opens beside what is to the right instead of replacing it, and
+  the space right of the pane divides into rows, one per fork, top to bottom in the order they were
+  opened. Each fork goes on to the right on its own and can fork again. Rows share the height down
+  to a third of it each; with more, the rows scroll down (the pane they came from stays at the top),
+  keeping the focused one in view. Sideways the whole strip scrolls as one, so a fork always sits in
+  the column next to the pane it came from. That pane marks every fork's row, link or words, the
+  focused fork's as before and the others lightly. A plain `Enter` or click works as it always has:
+  it replaces the focused fork (or, on something already open as a fork of that pane, focuses it);
+  with nothing open to the right, a fork is a plain open.
+  `[` and `]` move to the fork above and below (in the order the rows are drawn, the nearest first),
+  back where you were in it or to its pane nearest your column; a click anywhere in a fork does the
+  same. `h` and `l` move along the focused fork, as along a trail. `q` closes the panes right of the
+  one being read, every fork among them; with none, it closes that pane and steps left, and in a fork
+  that means the whole fork, from where it branched to its end. With one fork left the panes are a
+  plain trail again. The forks are kept with the rest of the view, so a reload brings them back; the
+  address names the focused pane only. On a window too short or narrow for rows only the focused fork
+  is drawn, and its first pane says which fork of how many it is. The column has one page: there a
+  modified open is a plain one.
 
 ### Links and Wikipedia
 
@@ -190,7 +210,8 @@ What is sent where:
   `wikiRoutes.ts`, `wikiMock.ts`), local embeddings (`embed.ts`), link discovery (`links/`), and
   migrates data from older layouts (`migrate.ts`).
 - **`src/ui/`** The browser's replica of the library (`session.ts`, kept in IndexedDB), the store
-  and keymap, and the page.
+  and keymap, and the page. The panes view's panes are a tree of forks (`forks.ts`, pure functions;
+  the store's `trail` is its focused branch).
 
 ## The library
 

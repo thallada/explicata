@@ -1,11 +1,12 @@
 /**
  * A large library in the browser: 100 more documents of 50 nodes each (over 5,000 nodes in all),
  * written over the op API. Keypress → paint is measured as in the other specs, while moving
- * through the library page, inside documents and across them, in the column and in panes; a body
- * edit is timed from the store call to the painted frame. Runs last: it fills the shared library.
+ * through the library page, inside documents and across them, in the column and in panes, and
+ * between four forks of the library pane, each three panes deep; a body edit is timed from the
+ * store call to the painted frame. Runs last: it fills the shared library.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { state, synced, writeReport, type Sample } from "./helpers";
+import { idle, state, synced, writeReport, type Sample } from "./helpers";
 
 const ready = (page: Page) => page.waitForFunction(() => (globalThis as any).__ie?.ready === true, undefined, { timeout: 30_000 });
 /** One keystroke per frame, as in the other latency tests. */
@@ -104,18 +105,38 @@ test("a library of over 5,000 nodes in 100 more documents: keypress → paint an
   for (let i = 0; i < 40; i++) await paced(page, "j");
   for (let i = 0; i < 6; i++) await paced(page, "l l l j l i j Escape h h h j");
   const panes = stats(await keySamples(page));
+
+  // ---- forks: four documents opened side by side from the library pane, each three panes deep (document, part, leaf) ----
+  await page.goto("/doc/scale-document-90");
+  await ready(page);
+  await paced(page, "l l l l");
+  for (let d = 1; d < 4; d++) await paced(page, "h h j Shift+Enter l l l l");
+  await idle(page);
+  // The twelve panes' Related lists are fetched as they are first drawn: let them arrive, so what is timed is moving between forks.
+  await page.waitForTimeout(1000);
+  const depths = await state(page, (s) => s.tree.kids.map((k: any) => {
+    let depth = 0;
+    for (let n = k; n; n = n.kids[n.pick]) depth++;
+    return depth;
+  }));
+  expect(depths).toEqual([3, 3, 3, 3]);
+  await page.evaluate(() => ((globalThis as any).__ie.samples.length = 0));
+  for (let i = 0; i < 8; i++) await paced(page, "[ [ [ ] ] ]");
+  const forks = stats(await keySamples(page));
   await page.goto("/doc/scale-document-98");
   await ready(page);
   await paced(page, "l l j");
   const panesEdit = stats(await editTimes(page, 15));
 
-  const report = { nodes, documents: await state(page, (s) => s.snap.nodes[s.snap.root].children.length), writtenMs: written, bootFreshMs: bootFresh, bootStoredMs: bootStored, column, columnEdit, panes, panesEdit };
+  const report = { nodes, documents: await state(page, (s) => s.snap.nodes[s.snap.root].children.length), writtenMs: written, bootFreshMs: bootFresh, bootStoredMs: bootStored, column, columnEdit, panes, panesEdit, forks };
   console.log("large library:", JSON.stringify(report));
   writeReport("scale", report);
   for (const r of [column, panes]) {
     expect(r.n).toBeGreaterThan(80);
     expect(r.p95).toBeLessThan(50);
   }
+  expect(forks.n).toBeGreaterThanOrEqual(40);
+  expect(forks.p95).toBeLessThan(50);
   for (const r of [columnEdit, panesEdit]) expect(r.median).toBeLessThan(50);
   expect(bootStored).toBeLessThan(10_000);
 });
