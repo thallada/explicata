@@ -497,7 +497,7 @@ export function App() {
       store.t0 = null;
       requestAnimationFrame(() => {
         const ch = new MessageChannel();
-        ch.port1.onmessage = () => store.samples.push({ what: t.what, ms: performance.now() - t.at });
+        ch.port1.onmessage = () => store.addSample(t, performance.now() - t.at);
         ch.port2.postMessage(0);
       });
     }

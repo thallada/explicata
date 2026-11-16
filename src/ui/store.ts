@@ -145,6 +145,8 @@ export interface Pending {
 export interface Sample {
   what: string;
   ms: number;
+  /** The key's time stamp, to match the browser's own measure of it. */
+  at?: number;
 }
 
 /** A replica of a document from before the library, holding edits the server never received. */
@@ -245,6 +247,37 @@ class Store {
   /** Whether the window is wide enough for `auto` to mean panes. Kept current by the page. */
   wide = typeof window !== "undefined" && window.innerWidth >= PANES_MIN_WIDTH;
   samples: Sample[] = [];
+  /**
+   * Keypress → paint, as the browser itself measures it (the Event Timing API: from a key's event to
+   * the next paint after its handlers), by the key's time stamp. Under a steady stream of keys an
+   * ordinary task posted after a frame can wait behind many later frames, so where the browser has
+   * measured a key, its figure is the sample's.
+   */
+  private painted = new Map<number, number>();
+  private paintObserver = (() => {
+    try {
+      const o = new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) if (e.name === "keydown") this.notePaint(e.startTime, e.duration);
+      });
+      o.observe({ type: "event", durationThreshold: 16 } as PerformanceObserverInit);
+      return o;
+    } catch {
+      return null;
+    }
+  })();
+  private notePaint(at: number, ms: number) {
+    const s = this.samples.find((x) => x.at !== undefined && Math.abs(x.at - at) < 1);
+    if (s) s.ms = Math.min(s.ms, ms);
+    else this.painted.set(at, ms);
+  }
+  /** Record a keypress → paint sample (App.tsx), taking the browser's own figure for it where there is one. */
+  addSample(t: { what: string; at: number }, ms: number) {
+    for (const r of this.paintObserver?.takeRecords() ?? []) if (r.name === "keydown") this.notePaint(r.startTime, r.duration);
+    const by = [...this.painted].find(([at]) => Math.abs(at - t.at) < 1);
+    if (by) this.painted.delete(by[0]);
+    this.samples.push({ what: t.what, ms: by ? Math.min(ms, by[1]) : ms, at: t.at });
+    if (this.painted.size > 200) this.painted.clear();
+  }
   /** Set at a keypress; cleared when the resulting frame has been painted. */
   t0: { what: string; at: number } | null = null;
   /** Replicas of pre-library documents whose edits never reached the server. */
