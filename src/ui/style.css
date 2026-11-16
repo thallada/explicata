@@ -500,19 +500,26 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 [data-hue="4"] { --hue: var(--hue-4); }
 [data-hue="5"] { --hue: var(--hue-5); }
 [data-hue="6"] { --hue: var(--hue-6); }
-.panes:not([data-colors="off"]) :is(.pane, .curves path)[data-hue] { --branch: color-mix(in oklab, var(--hue) 70%, transparent); }
-.panes:not([data-colors="off"]) :is(.pane.on-branch, .curves path.on)[data-hue] { --branch: var(--hue); }
-.panes:not([data-colors="off"]) .curves path[data-hue] { stroke: var(--branch); }
+/* Fainter off the focused branch. Both are fixed per pane, so moving the branch changes no custom property (which every element in the pane would inherit). */
+[data-hue] { --hue-faint: color-mix(in oklab, var(--hue) 70%, transparent); }
+.panes:not([data-colors="off"]) .curves path[data-hue] { stroke: var(--hue-faint); }
+.panes:not([data-colors="off"]) .curves path.on[data-hue] { stroke: var(--hue); }
 .panes:not([data-colors="off"]) .curves path.on:not([data-hue]) { stroke: var(--curve-ink); }
 /* line */
-[data-colors="line"] .pane[data-hue] > .pane-scroll > .pane-body > :is(.pane-head:not(.focused), .top:not(.focused) h1, .wiki:not(.embedded) > .wiki-head:not(.focused)) { border-bottom-color: var(--branch); }
-[data-colors="line"] .pane[data-hue] > .tabline { border-bottom-color: var(--branch); }
-[data-colors="line"] .pane[data-hue] > .spine::before { content: ""; position: absolute; top: 1.72rem; left: 50%; width: 0.9rem; margin-left: -0.45rem; height: 1px; background: var(--branch); }
+[data-colors="line"] .pane[data-hue] > .pane-scroll > .pane-body > :is(.pane-head:not(.focused), .top:not(.focused) h1, .wiki:not(.embedded) > .wiki-head:not(.focused)),
+[data-colors="line"] .pane[data-hue] > .tabline { border-bottom-color: var(--hue-faint); }
+[data-colors="line"] .pane.on-branch[data-hue] > .pane-scroll > .pane-body > :is(.pane-head:not(.focused), .top:not(.focused) h1, .wiki:not(.embedded) > .wiki-head:not(.focused)),
+[data-colors="line"] .pane.on-branch[data-hue] > .tabline { border-bottom-color: var(--hue); }
+[data-colors="line"] .pane[data-hue] > .spine::before { content: ""; position: absolute; top: 1.72rem; left: 50%; width: 0.9rem; margin-left: -0.45rem; height: 1px; background: var(--hue-faint); }
+[data-colors="line"] .pane.on-branch[data-hue] > .spine::before { background: var(--hue); }
+.col.crowded > .pane[data-covered] > .spine::before { display: none; }
 /* top: under the active pane's ink rule, above the focused branch's hairline */
-[data-colors="top"] .pane[data-hue] { background-image: linear-gradient(var(--branch), var(--branch)); background-size: 100% 2px; background-repeat: no-repeat; }
+[data-colors="top"] .pane[data-hue] { background-image: linear-gradient(var(--hue-faint), var(--hue-faint)); background-size: 100% 2px; background-repeat: no-repeat; }
+[data-colors="top"] .pane.on-branch[data-hue] { background-image: linear-gradient(var(--hue), var(--hue)); }
 [data-colors="top"] .pane[data-hue].on-branch:not(.active)::after { top: 2px; }
 /* edge */
-[data-colors="edge"] .pane[data-hue] { background-image: linear-gradient(var(--branch), var(--branch)); background-size: 2px 100%; background-position: 1px 0; background-repeat: no-repeat; }
+[data-colors="edge"] .pane[data-hue] { background-image: linear-gradient(var(--hue-faint), var(--hue-faint)); background-size: 2px 100%; background-position: 1px 0; background-repeat: no-repeat; }
+[data-colors="edge"] .pane.on-branch[data-hue] { background-image: linear-gradient(var(--hue), var(--hue)); }
 
 /* A pane's head: a section heading, smaller than the page title the first pane keeps. */
 .pane-head { display: flex; align-items: baseline; gap: 0.6em; margin: 0 0 0.85rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--faint); cursor: pointer; }
@@ -521,7 +528,6 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .pane-head .title-editor { font-size: 1.32rem; font-weight: 600; }
 
 /* Its child sections, as outline rows. The one whose pane is open to the right is marked. */
-.col.crowded > .pane[data-covered] > .spine::before { display: none; }
 .pane .rows { margin-top: 1.4rem; padding-top: 0.55rem; border-top: 1px solid var(--hair); }
 .pane.root .rows { margin-top: 0; padding-top: 0; border-top: 0; }
 .pane .rows > .node { margin-top: 0.12rem; }
