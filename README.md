@@ -75,29 +75,36 @@ Press `?` for every key. The short version:
   `/import`. All of these are ordinary edits of the library, made in the browser's replica.
 - Edits are saved as they are made; the top bar says `saved` once the server has them all.
 - On a window 1600 px wide or more the page opens as panes side by side, after Andy Matuschak's
-  notes: the library, the open document, its open sections. Following a link opens its target in
-  the next pane; moving back left with `h` closes nothing; `q` closes panes. `v` switches between
-  panes and the single column, `/view auto|column|panes` sets it.
-- **Forks.** To go two ways from one pane, open the second with `Shift+Enter` (or a Shift-, Ctrl- or
-  Cmd-click, or a middle click) on a row, a link, a link in an article, or a "Linked from",
-  "Mentioned in" or Related row: it opens beside what is to the right instead of replacing it, and
-  the space right of the pane divides into rows, one per fork, top to bottom in the order they were
-  opened. Each fork goes on to the right on its own and can fork again. Rows share the height down
-  to a third of it each; with more, the rows scroll down (the pane they came from stays at the top),
-  keeping the focused one in view. Sideways the whole strip scrolls as one, so a fork always sits in
-  the column next to the pane it came from. That pane marks every fork's row, link or words, the
-  focused fork's as before and the others lightly. A plain `Enter` or click works as it always has:
-  it replaces the focused fork (or, on something already open as a fork of that pane, focuses it);
-  with nothing open to the right, a fork is a plain open.
-  `[` and `]` move to the fork above and below (in the order the rows are drawn, the nearest first),
-  back where you were in it or to its pane nearest your column; a click anywhere in a fork does the
-  same. `h` and `l` move along the focused fork, as along a trail. `q` closes the panes right of the
-  one being read, every fork among them; with none, it closes that pane and steps left, and in a fork
-  that means the whole fork, from where it branched to its end. With one fork left the panes are a
-  plain trail again. The forks are kept with the rest of the view, so a reload brings them back; the
-  address names the focused pane only. On a window too short or narrow for rows only the focused fork
-  is drawn, and its first pane says which fork of how many it is. The column has one page: there a
-  modified open is a plain one.
+  notes: the library, the open document, its open sections. `v` switches between panes and the
+  single column, `/view auto|column|panes` sets it.
+- **Opening.** `Enter`, `l` or a click on a row, a link, a link in an article, or a "Linked from",
+  "Mentioned in" or Related row opens its target in the next column, beside what is already open
+  there (so do Ctrl-, Cmd- and middle clicks); `Shift+Enter` or a Shift-click opens it in place of
+  the focused branch's pane there, closing that pane and what was opened from it. Opening what is
+  open already focuses it; a second `Enter` on an open row keeps it (closing is `q`'s or the x's).
+  A document chosen in the menu, or by `/open`, opens in place of the one open. Moving back left
+  with `h` closes nothing.
+- **Columns.** Column d holds every pane at depth d, top to bottom, and divides its own height among
+  them, a short pane taking only what its text needs. When they do not all fit, the column stacks
+  them the way the strip stacks columns: each pane stuck a tab below the one before, the pane on the
+  focused branch shown whole and the others slid under it, partly and at the limit down to a
+  one-line tab, just as earlier columns slide under later ones down to a spine. Mouse resting on a
+  covered pane, tab or spine: after a moment it peeks out over its neighbours; a click makes it the
+  active pane. A pane's grip (the band above its title, by the pin and x, shown when pointed at) or
+  its tab drags it up or down its column; Esc cancels; the column keeps that order. `[` and `]` go to
+  the pane above and below in the column, back where you were in it; at the top or bottom they stay.
+  `h` and `l` move along the focused branch.
+- **Curves.** A faint curve runs from the words, row or link each pane was opened from (joined to
+  their underline) to its title; the focused branch's is drawn stronger. Curves down one gutter run
+  side by side, ordered to cross as little as they can. `/curves off` hides them.
+- **The active pane**, where the keys act, has a heavy rule across its top; the rest of the focused
+  branch, a hairline. `q` closes it and every pane opened from it (whatever it shows: a section, a
+  note, an article); each pane's x does the same for that pane. `P`, or a pane's pin, pins it: a
+  pinned pane stays where it is when a pane it was opened from closes (it shows that its source has
+  closed), is never replaced by a Shift open, and is never covered, in its column or along the
+  strip. The panes, their order and pins are kept with the rest of the view, so a reload brings them
+  back; the address names the focused pane only. The column has one page: there a Shift open is a
+  plain one.
 
 ### Links and Wikipedia
 
@@ -210,8 +217,9 @@ What is sent where:
   `wikiRoutes.ts`, `wikiMock.ts`), local embeddings (`embed.ts`), link discovery (`links/`), and
   migrates data from older layouts (`migrate.ts`).
 - **`src/ui/`** The browser's replica of the library (`session.ts`, kept in IndexedDB), the store
-  and keymap, and the page. The panes view's panes are a tree of forks (`forks.ts`, pure functions;
-  the store's `trail` is its focused branch).
+  and keymap, and the page. The panes view's panes are a forest of forks (`forks.ts`, pure functions;
+  the store's `trail` is its focused branch); `stack.ts` is the stacking shared by the strip and its
+  columns, `lanes.ts` orders the curves' lanes.
 
 ## The library
 
