@@ -8,6 +8,8 @@ export const LANE_PITCH = 4;
 export const LANE_FIRST = 5;
 export const LANE_LAST = 29;
 export const LANES = Math.floor((LANE_LAST - LANE_FIRST) / LANE_PITCH) + 1;
+/** Up to this many curves in a gutter, every lane is tried for each; past it, only the neighbouring lanes. */
+const MOVES = 8;
 
 /**
  * How many times curves in one gutter cross, for an order of lanes (rightmost first): a lead-out
@@ -46,12 +48,14 @@ export function laneOrder<T extends { key: string; sy: number; ey: number }>(edg
     const at = order.findIndex((o) => rule.indexOf(o) > r);
     order.splice(at < 0 ? order.length : at, 0, e);
   }
-  // Move one curve to another lane while that removes crossings (a few curves per gutter: cheap).
+  // Move one curve to another lane while that removes crossings: a few curves per gutter, every place
+  // tried; many (past MOVES), only neighbours swapped, which stays cheap enough for every frame.
   let best = crossings(order);
-  for (let pass = 0, better = true; better && pass < order.length; pass++) {
+  const far = order.length <= MOVES;
+  for (let pass = 0, better = best > 0; better && pass < order.length; pass++) {
     better = false;
     for (let i = 0; i < order.length && best; i++)
-      for (let j = 0; j < order.length; j++) {
+      for (let j = far ? 0 : i + 1; j < (far ? order.length : Math.min(order.length, i + 2)); j++) {
         if (j === i) continue;
         const moved = order.slice();
         moved.splice(j, 0, ...moved.splice(i, 1));

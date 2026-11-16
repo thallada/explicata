@@ -155,7 +155,7 @@ test("panes: Tab and Enter open an article in the next pane; its sections open a
   expect(await selected(page)).toBe("fixed-point combinator");
   expect(await trail(page)).toEqual(["Library", "Fixed points", "Recursion without names", "W:Fixed-point combinator", "W:Fixed-point combinator#2", "W:Lambda calculus"]);
   await expect(panes(page)).toHaveCount(6);
-  // Opening something else from an earlier pane replaces what is to its right.
+  // Opening something else from an earlier pane opens it beside what is to its right.
   await tabTo(page, "lambda calculus");
   await keys(page, "Enter");
   expect((await trail(page)).slice(3)).toEqual(["lambda calculus"]);
@@ -167,13 +167,12 @@ test("panes: Tab and Enter open an article in the next pane; its sections open a
   expect(req.url()).toBe("https://en.wikipedia.org/wiki/Fixed-point_combinator");
   for (const p of page.context().pages()) if (p !== page) await p.close();
   // Spines of covered article panes carry the W and the tint.
-  await keys(page, "j j l l Tab Enter");
-  await expect(panes(page).last().locator(".wiki-head h2")).toHaveText("Lambda calculus");
-  // (Tab also stops on notes the library keeps on the article, if an earlier test wrote one.)
-  await expect(panes(page).last().locator(".wiki-text a[data-wiki]").first()).toBeVisible();
-  for (let i = 0; i < 4 && (await state(page, (s) => s.selectedText())) !== "Alonzo Church"; i++) await keys(page, "Tab");
-  await keys(page, "Enter");
-  await expect(panes(page).last().locator(".wiki-head h2")).toHaveText("Alonzo Church");
+  await page.locator('.pane.active .wiki-text a[data-wiki="Lambda calculus"]').first().click();
+  await expect(page.locator(".pane.active .wiki-head h2")).toHaveText("Lambda calculus");
+  await page.locator('.pane.active .wiki-text a[data-wiki="Alonzo Church"]').first().click();
+  await expect(page.locator(".pane.active .wiki-head h2")).toHaveText("Alonzo Church");
+  await page.locator('.pane.active .wiki-text a[data-wiki="Lambda calculus"]').first().click();
+  await expect(page.locator(".pane.active .wiki-head h2")).toHaveText("Lambda calculus");
   const spine = page.locator(".col[data-covered] .wiki-pane .spine").first();
   await expect(spine.locator(".wmark")).toHaveText("W");
   expect(await spine.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(await page.locator(".pane.root .spine").evaluate((el) => getComputedStyle(el).backgroundColor));
@@ -388,30 +387,30 @@ test("a disambiguation page lists its senses as rows; a missing article, an unre
   await keys(page, "i i");
   await command(page, "/link w:Mercury");
   await keys(page, "Enter");
-  const art = page.locator(".wiki-pane").last();
+  const art = page.locator(".wiki-pane.active");
   await expect(art.locator(".senses h3")).toContainText("may refer to");
   await expect(art.locator(".sense .title")).toHaveText(["Mercury (planet)", "Mercury (element)", "Mercury (mythology)", "Freddie Mercury"]);
   await keys(page, "j l");
-  await expect(page.locator(".wiki-pane").last().locator(".wiki-head h2")).toHaveText("Mercury (planet)");
-  await expect(page.locator(".wiki-pane").last().locator(".wattr")).toBeVisible();
+  await expect(page.locator(".wiki-pane.active").locator(".wiki-head h2")).toHaveText("Mercury (planet)");
+  await expect(page.locator(".wiki-pane.active").locator(".wattr")).toBeVisible();
   for (const [title, says] of [["No such article zzz", "No article"], ["Offline example", "could not be reached"]]) {
     await keys(page, "h h h");
     await command(page, `/link w:${title}`);
     await keys(page, "Enter");
-    await expect(page.locator(".wiki-pane").last().locator(".wiki-problem")).toContainText(says);
+    await expect(page.locator(".wiki-pane.active").locator(".wiki-problem")).toContainText(says);
   }
   // Refused or slow, Wikipedia gets a plain message, and the reader is told once (only once) how to make it fast.
   await keys(page, "h h h");
   await command(page, "/link w:Rate limited example");
   await keys(page, "Enter");
-  await expect(page.locator(".wiki-pane").last().locator(".wiki-problem")).toContainText("fewer requests");
+  await expect(page.locator(".wiki-pane.active").locator(".wiki-problem")).toContainText("fewer requests");
   await expect(page.locator(".status .message")).toContainText("IE_WIKI_CONTACT");
   expect(await page.evaluate(() => localStorage.getItem("ie:wiki-hint"))).toBe("true");
   await keys(page, "h h h");
   await command(page, "/link w:Slow article");
   await keys(page, "Enter");
-  await expect(page.locator(".wiki-pane").last().locator(".wiki-wait")).toContainText("Loading");
-  await expect(page.locator(".wiki-pane").last().locator(".wiki-head h2")).toHaveText("Slow article", { timeout: 10_000 });
+  await expect(page.locator(".wiki-pane.active").locator(".wiki-wait")).toContainText("Loading");
+  await expect(page.locator(".wiki-pane.active").locator(".wiki-head h2")).toHaveText("Slow article", { timeout: 10_000 });
   await expect(page.locator(".status .message")).not.toContainText("IE_WIKI_CONTACT");
   await keys(page, "h h h");
   await command(page, "/unlink");

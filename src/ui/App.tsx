@@ -507,8 +507,8 @@ export function App() {
   if (!store.ready) return <div class="loading">Loading…</div>;
 
   const panes = store.panes;
-  // Shift-, Ctrl- or Cmd-click (and a middle click) opens a fork: beside what is open, not instead of it.
-  const onClick = (e: MouseEvent) => store.withFork(e.shiftKey || e.ctrlKey || e.metaKey || e.button === 1, () => click(e));
+  // A click opens beside what is open (so do Ctrl-, Cmd- and middle clicks); a Shift-click in its place.
+  const onClick = (e: MouseEvent) => store.withReplace(e.shiftKey, () => click(e));
   const click = (e: MouseEvent) => {
     if (store.mode === "edit") return;
     const target = e.target as HTMLElement;
@@ -588,7 +588,7 @@ export function App() {
       return;
     }
     // A drag selection inside one body becomes the focus range.
-    if (selection && !selection.isCollapsed && !store.forking) {
+    if (selection && !selection.isCollapsed && !store.replacing) {
       const a = locate(selection.anchorNode, selection.anchorOffset);
       const b = locate(selection.focusNode, selection.focusOffset);
       if (a && b && a.id === b.id && a.at !== b.at) {
@@ -626,12 +626,7 @@ export function App() {
     if (row) {
       const id = row.dataset.row as NodeId;
       if (panes && id !== store.top) {
-        // In panes a click shows the row's pane: focus it and open it next. On the focused row whose pane is showing, it closes that pane.
-        const next = store.trail[paneIndex + 1];
-        if (!store.forking && store.focus.node === id && store.focus.grain === "node" && next?.kind === "node" && next.id === id) {
-          store.closeRow(paneIndex, id);
-          return;
-        }
+        // In panes a click shows the row's pane: focus it and open it next (or focus it where it is open).
         store.paneAt = paneIndex;
         store.go(id);
         store.open.add(id);

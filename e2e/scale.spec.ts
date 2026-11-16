@@ -107,10 +107,12 @@ test("a library of over 5,000 nodes in 100 more documents: keypress → paint an
   const panes = stats(await keySamples(page));
 
   // ---- forks: four documents opened side by side from the library pane, each three panes deep (document, part, leaf) ----
+  // A fresh view: the panes opened above stay open (opens go beside), and would be restored here.
+  await page.evaluate(() => localStorage.clear());
   await page.goto("/doc/scale-document-90");
   await ready(page);
   await paced(page, "l l l l");
-  for (let d = 1; d < 4; d++) await paced(page, "h h j Shift+Enter l l l l");
+  for (let d = 1; d < 4; d++) await paced(page, "h h j Enter l l l l");
   await idle(page);
   // The twelve panes' Related lists are fetched as they are first drawn: let them arrive, so what is timed is moving between forks.
   await page.waitForTimeout(1000);

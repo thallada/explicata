@@ -15,11 +15,11 @@ export const HELP: [string, [string, string][]][] = [
       ["/", "jump to a section by name, in any document"],
       ["z", "hoist: make this node the whole page (again, or h or Esc at its top, to step out)"],
       ["v", "view: one column ↔ panes side by side (in panes, j k move among siblings)"],
-      ["q", "in panes: close the active pane (the one under the heavy rule, whatever it shows) and every pane opened from it, except pinned ones; the focus goes back to where it was opened from. A pane's × does the same. Moving left never closes anything"],
-      ["P", "in panes: pin or unpin the active pane (or its pin, top right). A pinned pane stays where it is when a pane it came from closes, is never replaced by a plain open, and never folds into a tab or a spine"],
-      ["Shift+Enter", "in panes: open a fork: what Enter opens goes in the next column below what is open there, instead of replacing it (Shift-, Ctrl- or Cmd-click, or a middle click, does the same). With nothing open to the right it is a plain Enter; on something already open as a fork, it focuses that fork"],
-      ["[ ]", "in panes: the pane above / below in the same column, whichever fork it belongs to (back where you were in it, or at its head); at the top or bottom of the column nothing moves. A faint curve runs from where each pane was opened to its title"],
-    ],
+      ["q", "in panes: close the active pane (the one under the heavy rule, whatever it shows) and every pane opened from it, except pinned ones; the focus goes back to where it was opened from. A pane's x does the same. Moving left never closes anything"],
+      ["P", "in panes: pin or unpin the active pane (or its pin, top right). A pinned pane stays where it is when a pane it came from closes, is never replaced by a Shift open, and is never covered, in its column or along the strip"],
+      ["Enter l", "in panes: open into the next column, beside what is open there (so does a click, and a Ctrl-, Cmd- or middle click); on something open already, focus it"],
+      ["Shift+Enter", "in panes: open in place of the focused branch's pane in the next column (so does a Shift-click)"],
+      ["[ ]", "in panes: the pane above / below in the same column (back where you were in it, or at its head); at the top or bottom nothing moves. A crowded column stacks its panes as the strip stacks columns, covered to a tab; resting the mouse on a covered pane peeks it out; its grip or tab drags it up or down. A faint curve runs from where each pane was opened to its title"],    ],
   ],
   [
     "Links",
@@ -41,7 +41,7 @@ export const HELP: [string, [string, string][]][] = [
     "Expand",
     [
       ["e", "go deeper: open → open children → generate"],
-      ["Enter", "on a section: toggle. On a selection: open its note, or step into it"],
+      ["Enter", "on a section: toggle (in panes: open its pane, or focus it where it is open). On a selection: open its note, or step into it"],
       ["H L", "shrink / grow the selection by one unit"],
       ["d y x c", "on a selection: define · why · example · challenge"],
       [":", "on a selection: ask your own question about it"],
@@ -237,7 +237,7 @@ export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
       // The filter box is not focused (a key typed before it took focus, or after a click
       // elsewhere in the panel): keys still mean what they would there.
       if (k === "Escape" || k === "Tab") m.focus = "list";
-      else if (k === "Enter") return d && (e.preventDefault(), store.openDoc(d.node));
+      else if (k === "Enter") return d && (e.preventDefault(), store.openDoc(d.node, true));
       else if (k === "ArrowDown" || k === "ArrowUp") return e.preventDefault(), store.menuMove(k === "ArrowDown" ? 1 : -1);
       else if (k.length === 1) return e.preventDefault(), store.menuFilter(m.filter + k);
       else return;
@@ -265,7 +265,7 @@ export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
         store.menuMove(-1);
         break;
       case "Enter":
-        if (d) store.openDoc(d.node);
+        if (d) store.openDoc(d.node, true);
         break;
       case "/":
         m.focus = "filter";
@@ -347,11 +347,11 @@ export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
   }
   // An Enter after a Tab that is waiting for its article to arrive waits with it.
   if (store.aux && store.holdKey(k, e.shiftKey)) return done();
-  // Shift+Enter opens a fork: whatever Enter opens, it opens beside what is there.
-  const fork = k === "Enter" && e.shiftKey;
+  // Enter opens beside what is in the next column; Shift+Enter in place of the focused branch's pane there.
+  const replace = k === "Enter" && e.shiftKey;
   // Words selected in an article's text take the same keys as words of a node.
   if (store.aux && !store.inArticleText) {
-    if (store.withFork(fork, () => auxKey(k, e.shiftKey)) || commonKey(k, hooks)) return done();
+    if (store.withReplace(replace, () => auxKey(k, e.shiftKey)) || commonKey(k, hooks)) return done();
     const why = store.aux.kind === "wiki" ? store.articleRefuses(k, false) : null;
     if (why) (store.say(why), done());
     return;
@@ -394,7 +394,7 @@ export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
       break;
     case "Enter":
     case " ":
-      store.withFork(fork, () => {
+      store.withReplace(replace, () => {
         if (selecting) store.enterOrExpand();
         else if (store.snap.nodes[store.focus.node]?.kind === "note" && store.targetOf(store.focus.node)) store.followOwn();
         else store.toggle();

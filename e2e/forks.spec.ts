@@ -1,8 +1,9 @@
 /**
- * Forks in the panes view, laid out by column: a modified open (Shift+Enter, Shift-, Ctrl- or
- * middle-click) opens its pane below what is in the next column instead of replacing it; column d
- * holds every pane at depth d and divides its own height among them, folding all but one into tabs
- * when they do not fit. Curves run from where each pane was opened to its title; panes close (q, ×)
+ * Forks in the panes view, laid out by column: an open (Enter, a click, a Ctrl-, Cmd- or middle
+ * click) puts its pane below what is in the next column; Shift+Enter or a Shift-click opens it in
+ * place of the focused branch's pane there. Column d holds every pane at depth d and divides its
+ * own height among them; when they do not fit it stacks them as the strip stacks columns, covering
+ * all but the pane looked at, partly and then down to a tab. Curves run from where each pane was opened to its title; panes close (q, ×)
  * and pin (P, pin). Same build, mock model, mock Wikipedia and shared library as the other specs;
  * the documents are hoisted to (z) as in panes.spec.ts.
  */
@@ -33,7 +34,8 @@ const boxes = (page: Page) =>
     Object.fromEntries(
       [...document.querySelectorAll<HTMLElement>(".strip .pane")].map((p) => {
         const r = p.getBoundingClientRect();
-        return [p.querySelector(".wiki-head h2, .pane-head h2, .top h1")?.textContent?.trim() ?? "", { x: r.x, y: r.y, w: r.width, h: r.height, tab: p.hasAttribute("data-tab") }];
+        const c = p.parentElement!.getBoundingClientRect();
+        return [p.querySelector(".wiki-head h2, .pane-head h2, .top h1")?.textContent?.trim() ?? "", { x: r.x, y: r.y, w: r.width, h: r.height, tab: p.hasAttribute("data-covered"), whole: r.top >= c.top - 2 && r.bottom <= c.bottom + 2 && !p.nextElementSibling?.hasAttribute("data-over") }];
       }),
     ),
   );
@@ -57,14 +59,14 @@ const curves = (page: Page) =>
   });
 const tid = (page: Page, title: string) => pane(page, title).evaluate((el) => Number((el as HTMLElement).dataset.tid));
 const nextFrames = (page: Page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-/** Wait until the strip has stopped scrolling sideways (it scrolls smoothly to follow the focus), and the curves have been drawn after. */
+/** Wait until the strip and its columns have stopped scrolling (the strip follows the focus smoothly, columns other than the active pane's once the keys pause), and the curves have been drawn after. */
 async function still(page: Page) {
   await page.waitForFunction(
     () =>
       new Promise((r) => {
-        const el = document.querySelector(".strip")!;
-        const x = el.scrollLeft;
-        setTimeout(() => r(el.scrollLeft === x), 300);
+        const at = () => [document.querySelector(".strip")!, ...document.querySelectorAll(".strip > .col")].map((el) => `${el.scrollLeft},${el.scrollTop}`).join();
+        const x = at();
+        setTimeout(() => r(at() === x), 300);
       }),
   );
   await nextFrames(page);
@@ -100,8 +102,8 @@ async function cells(page: Page) {
   await expect(pane(page, "Eukaryote").locator(".wiki-text a[data-wiki]").first()).toBeVisible();
   await pane(page, "Eukaryote").locator('.wiki-text a[data-wiki="Bacteria"]').first().click();
   await expect(pane(page, "Bacteria").locator(".wiki-text").first()).toBeVisible();
-  await page.locator(".pane .row", { hasText: "Simple cells" }).first().click({ modifiers: ["Shift"] });
-  await page.locator(".pane .row", { hasText: "Complex cells" }).first().click({ modifiers: ["Shift"] });
+  await page.locator(".pane .row", { hasText: "Simple cells" }).first().click();
+  await page.locator(".pane .row", { hasText: "Complex cells" }).first().click();
   await expect.poll(() => columns(page)).toEqual([["Library"], ["The one merger"], ["Two kinds of cell"], ["Eukaryote", "Simple cells", "Complex cells"], ["Bacteria"]]);
   await still(page);
 }
@@ -117,14 +119,14 @@ test.beforeEach(async ({ context }) => {
 });
 test.afterEach(({ page }) => settle(page));
 
-test("Shift+Enter on a section row opens a fork below in the next column; Enter still replaces, and focuses a fork already open", async ({ page }) => {
+test("Enter on a section row opens its pane below in the next column; Shift+Enter in place of the focused one; Enter on one open focuses it", async ({ page }) => {
   await open(page);
   await keys(page, "l l l"); // Expansion by depth showing; the focus on its first row
-  // Nothing to the right yet: a fork is a plain open, and a plain trail is one pane per column.
-  await keys(page, "Shift+Enter");
+  // Nothing to the right yet: a plain trail is one pane per column.
+  await keys(page, "Enter");
   expect(await tree(page)).toEqual(["Infinispand", [["*", ["Expansion by depth", [["*", "Levels of a node"]]]]]]);
   expect(await columns(page)).toEqual([["Infinispand"], ["Expansion by depth"], ["Levels of a node"]]);
-  await keys(page, "j Shift+Enter");
+  await keys(page, "j Enter");
   expect(await columns(page)).toEqual([["Infinispand"], ["Expansion by depth"], ["Levels of a node", "Pre-generated depth"]]);
   expect(await trail(page)).toEqual(["Infinispand", "Expansion by depth", "Pre-generated depth"]);
   // They share the column's height, one above the other, beside the pane they came from.
@@ -138,44 +140,87 @@ test("Shift+Enter on a section row opens a fork below in the next column; Enter 
   // The pane they came from marks both, the focused one as before and the other lightly.
   await expect(pane(page, "Expansion by depth").locator(".node.showing > .row")).toHaveText([/Pre-generated depth/]);
   await expect(pane(page, "Expansion by depth").locator(".node.forked > .row")).toHaveText([/Levels of a node/]);
-  // A plain Enter replaces only the focused fork.
-  await keys(page, "j Enter");
+  // Shift+Enter opens in place of the focused one.
+  await keys(page, "j Shift+Enter");
   expect(await columns(page)).toEqual([["Infinispand"], ["Expansion by depth"], ["Levels of a node", "Generation on demand"]]);
-  // Enter (or Shift+Enter) on the row of a fork already open focuses that fork: no second copy.
+  // Enter (or Shift+Enter) on the row of a pane already open focuses it: no second copy, and nothing closes.
   await keys(page, "k k Enter");
   expect(await columns(page)).toEqual([["Infinispand"], ["Expansion by depth"], ["Levels of a node", "Generation on demand"]]);
   expect(await trail(page)).toEqual(["Infinispand", "Expansion by depth", "Levels of a node"]);
+  await keys(page, "Enter");
+  expect(await columns(page)).toEqual([["Infinispand"], ["Expansion by depth"], ["Levels of a node", "Generation on demand"]]);
   await keys(page, "j j Shift+Enter");
   expect(await trail(page)).toEqual(["Infinispand", "Expansion by depth", "Generation on demand"]);
 });
 
-test("Shift-, Ctrl- and middle-click fork from section rows; a click in another fork makes it the focused one", async ({ page }) => {
+test("a click, a Ctrl- and a middle click open beside; a Shift-click in place; a click in another fork makes it the focused one", async ({ page }) => {
   await open(page);
   const kids = await childTitles(page, "Borrowed from Gwern");
   expect(kids.length).toBeGreaterThanOrEqual(3);
   const row = (t: string) => page.locator(".pane .row", { hasText: t }).first();
   await row("Borrowed from Gwern").click();
-  await row(kids[0]).click({ modifiers: ["Shift"] }); // nothing right of it yet: a plain open
+  await row(kids[0]).click();
   expect(await trail(page)).toEqual(["Infinispand", "Borrowed from Gwern", kids[0]]);
   await row(kids[1]).click({ modifiers: ["Control"] });
   expect(await tree(page)).toEqual(["Infinispand", [["*", ["Borrowed from Gwern", [kids[0], ["*", kids[1]]]]]]]);
   await row(kids[2]).click({ button: "middle" });
   expect(await tree(page)).toEqual(["Infinispand", [["*", ["Borrowed from Gwern", [kids[0], kids[1], ["*", kids[2]]]]]]]);
-  // A Shift-click selected no text on the way.
-  expect(await page.evaluate(() => window.getSelection()?.isCollapsed ?? true)).toBe(true);
   // A click on the first fork's heading focuses that fork, and makes that pane the active one.
   await pane(page, kids[0]).locator(".pane-head").click();
   expect(await trail(page)).toEqual(["Infinispand", "Borrowed from Gwern", kids[0]]);
   expect(await focusedTitle(page)).toBe(kids[0]);
   await expect(page.locator(".pane.active .pane-head h2")).toHaveText(kids[0]);
-  // The first pane forks too: its forks share the next column, and the panes opened from each the one after.
-  await row("Display forms").click({ modifiers: ["Shift"] });
+  // The first pane's rows too: beside, in the next column; and a click on a row already open keeps it.
+  await row("Display forms").click();
   expect(await columns(page)).toEqual([["Infinispand"], ["Borrowed from Gwern", "Display forms"], kids.slice(0, 3)]);
-  await row("Display forms").click({ modifiers: ["Shift"] });
+  await row("Display forms").click();
   expect((await columns(page))[1]).toEqual(["Borrowed from Gwern", "Display forms"]);
-  await row("Editing and regeneration").click();
+  // A Shift-click opens in place of the focused one (Display forms), and selects no text on the way.
+  await row("Editing and regeneration").click({ modifiers: ["Shift"] });
   expect(await trail(page)).toEqual(["Infinispand", "Editing and regeneration"]);
   expect((await columns(page))[1]).toEqual(["Borrowed from Gwern", "Editing and regeneration"]);
+  expect(await page.evaluate(() => window.getSelection()?.isCollapsed ?? true)).toBe(true);
+});
+
+test("a link and an article's link open beside by default, in place with Shift; twenty opens stay usable", async ({ page }) => {
+  await page.goto("/doc/fixed-points");
+  await page.waitForSelector(".strip .pane");
+  await page.evaluate(() => document.fonts.ready);
+  await jump(page, "Recursion without names");
+  await tabTo(page, "fixed-point combinator");
+  await keys(page, "Enter");
+  await keys(page, "h");
+  await tabTo(page, "Y combinator");
+  await keys(page, "Enter");
+  expect((await columns(page))[3]).toEqual(["Fixed-point combinator", "How Y works"]);
+  await keys(page, "h");
+  await tabTo(page, "lambda calculus");
+  await keys(page, "Shift+Enter");
+  expect((await columns(page))[3]).toEqual(["Fixed-point combinator", "“lambda calculus”"]); // a note on the words, with the article beneath
+  // In an article: a click opens beside, a Shift-click in place.
+  const art = pane(page, "Fixed-point combinator");
+  await art.locator('.wiki-text a[data-wiki="Haskell Curry"]').click();
+  await art.locator('.wiki-text a[data-wiki="Recursion (computer science)"]').click();
+  expect((await columns(page))[4]).toEqual(["Haskell Curry", "Recursion (computer science)"]);
+  await art.locator('.wiki-text a[data-wiki="Lambda calculus"]').first().click({ modifiers: ["Shift"] });
+  expect((await columns(page))[4]).toEqual(["Haskell Curry", "Lambda calculus"]);
+  // Twenty opens in a row: each a pane of its own, the column stacked, the keys still quick.
+  await open(page);
+  await page.evaluate(() => ((globalThis as any).__ie.samples.length = 0));
+  const paced = async (seq: string) => {
+    for (const k of seq.split(" ")) {
+      await page.keyboard.press(k);
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null))));
+    }
+  };
+  await paced("l l l");
+  for (let i = 0; i < 20; i++) await paced(i % 4 === 3 ? "k k Enter" : "j Enter");
+  await paced("[ [ [ ] ] ] l h j k");
+  expect((await state(page, (s) => s.forest.trees[0].kids[0].kids.length)) as number).toBeGreaterThanOrEqual(3);
+  const ms = (await state(page, (s) => s.samples.map((x: any) => x.ms))).sort((a: number, b: number) => a - b);
+  const p95 = ms[Math.floor(ms.length * 0.95)];
+  console.log("twenty opens keypress → paint (ms):", JSON.stringify({ n: ms.length, median: ms[ms.length >> 1], p95 }));
+  expect(p95).toBeLessThan(50);
 });
 
 test("the owner's screenshot: the lone pane in the next column fills its height; the shared column gives short panes what they need", async ({ page }) => {
@@ -247,6 +292,12 @@ test("a curve per open edge, from where each pane was opened to its title; it fo
     expect(p.y).toBeLessThan(r.y + r.height + slack);
   };
   await nearIn(kinds.locator(".lnk", { hasText: "Eukaryotes" }), edge("Two kinds of cell", "Eukaryote")[0].a);
+  // From words, the curve starts at the right end of their underline (a short step joins it to the lead-out in the gap below).
+  const link = (await kinds.locator(".lnk", { hasText: "Eukaryotes" }).first().boundingBox())!;
+  const start = edge("Two kinds of cell", "Eukaryote")[0].a;
+  expect(Math.abs(start.x - (link.x + link.width))).toBeLessThan(2);
+  expect(start.y).toBeGreaterThan(link.y + link.height - 9);
+  expect(start.y).toBeLessThan(link.y + link.height);
   await nearIn(kinds.locator(".node.forked > .row", { hasText: "Simple cells" }), edge("Two kinds of cell", "Simple cells")[0].a);
   const title = (t: string) => pane(page, t).locator(".wiki-head h2, .pane-head h2").first();
   for (const t of ["Eukaryote", "Simple cells", "Complex cells"]) {
@@ -296,6 +347,30 @@ test("a curve per open edge, from where each pane was opened to its title; it fo
   await expect.poll(async () => (await curves(page)).length).toBeGreaterThan(3);
 });
 
+test("curves down one gutter take lanes of their own, side by side, up to as many as fit; the rest share the outermost", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForSelector(".strip .pane");
+  await page.evaluate(() => document.fonts.ready);
+  // Ten documents opened from the library: ten curves down the gutter into column 1.
+  for (let i = 0; i < 10; i++) await keys(page, "j Enter");
+  await still(page);
+  const runs = await page.evaluate(() =>
+    [...document.querySelectorAll<SVGPathElement>(".curves path")].map((p) => {
+      const v = /C[^C]*?([\d.]+) [\d.]+V/.exec(p.getAttribute("d")!);
+      return { lane: Number(p.dataset.lane), x: v ? Number(v[1]) : NaN };
+    }),
+  );
+  expect(runs).toHaveLength(10);
+  const lanes = await page.evaluate(() => 7);
+  const xs = new Set(runs.map((r) => r.x));
+  expect(xs.size).toBe(lanes);
+  // Each lane a pitch from the next.
+  const sorted = [...xs].sort((a, b) => a - b);
+  for (let i = 1; i < sorted.length; i++) expect(sorted[i] - sorted[i - 1]).toBeCloseTo(4, 0);
+  // Beyond the lanes, the rest share the outermost (the last).
+  expect(runs.filter((r) => r.lane === lanes - 1).length).toBe(10 - lanes + 1);
+});
+
 test("exactly one pane is active, under a heavy rule; the rest of the focused branch under a hairline", async ({ page }) => {
   await cells(page);
   const marks = () =>
@@ -323,25 +398,32 @@ test("exactly one pane is active, under a heavy rule; the rest of the focused br
 /** Five sections of the first pane, opened side by side: five panes in column 1. */
 async function five(page: Page) {
   await open(page);
-  await keys(page, "j Shift+Enter j Shift+Enter j Shift+Enter j Shift+Enter j Shift+Enter");
+  await keys(page, "j Enter j Enter j Enter j Enter j Enter");
   const kids = (await childTitles(page, "Infinispand")).slice(0, 5);
   expect((await columns(page))[1]).toEqual(kids);
+  await still(page);
   return kids;
 }
 
-test("a column with more panes than fit folds all but the focused one into tabs; moving the focus there, or a click on a tab, opens it", async ({ page }) => {
+test("a crowded column stacks its panes as the strip stacks columns: covered partly, then to a tab; moving the focus there, or a click on a tab, shows it whole", async ({ page }) => {
   const kids = await five(page);
-  const strip = await page.locator(".strip").evaluate((el) => el.clientHeight);
+  const col = page.locator(".strip > .col").nth(1);
+  await expect(col).toHaveClass(/crowded/);
+  const top = (await col.boundingBox())!.y;
   let b = await boxes(page);
-  // The focused fork (the last) takes the height less a tab's for each of the others; the others are tabs, in order, above it.
-  expect(kids.slice(0, 4).every((t) => b[t].tab)).toBe(true);
-  expect(b[kids[4]].tab).toBe(false);
-  expect(Math.abs(b[kids[4]].h - (strip - 4 * 30))).toBeLessThan(2);
-  for (let i = 1; i < 5; i++) expect(b[kids[i]].y).toBeCloseTo(b[kids[i - 1]].y + b[kids[i - 1]].h, 0);
-  await expect(pane(page, kids[0]).locator(".tabline .tabtitle")).toHaveText(kids[0]);
+  // The focused fork (the last) is whole; the ones before it are stuck a tab apart, the first covered down to its tab.
+  expect(b[kids[4]].whole).toBe(true);
+  // Each stuck no higher than a tab below the one before; the first covered down to its tab.
+  for (let i = 0; i < 4; i++) expect(b[kids[i]].y).toBeGreaterThanOrEqual(top + i * 30 - 1);
+  expect(b[kids[0]].y).toBeCloseTo(top, 0);
+  expect(b[kids[0]].tab).toBe(true);
+  for (let i = 1; i < 5; i++) expect(b[kids[i]].y).toBeGreaterThan(b[kids[i - 1]].y);
   await expect(pane(page, kids[0]).locator(".tabline")).toBeVisible();
+  await expect(pane(page, kids[0]).locator(".tabline .tabtitle")).toHaveText(kids[0]);
   await expect(pane(page, kids[0]).locator(".pane-ctl .pane-btn.close")).toBeVisible();
-  // l steps into the focused fork's pane; [ moves up the column: that tab opens, the one left folds.
+  // Its content is still there under the panes over it, clipped: the same pane, not a separate tab.
+  expect(await pane(page, kids[0]).locator(".pane-scroll").evaluate((el) => getComputedStyle(el).display)).not.toBe("none");
+  // l steps into the focused fork's pane; [ moves up the column: that pane is whole, the one below slid partly out of view.
   await keys(page, "l");
   await expect(page.locator(".pane.active .pane-head h2")).toHaveText(kids[4]);
   const where = await focusedTitle(page);
@@ -349,35 +431,114 @@ test("a column with more panes than fit folds all but the focused one into tabs;
   expect(await trail(page)).toEqual(["Infinispand", kids[3]]);
   await expect(page.locator(".pane.active .pane-head h2")).toHaveText(kids[3]);
   b = await boxes(page);
-  expect(b[kids[3]].tab).toBe(false);
-  expect(b[kids[4]].tab).toBe(true);
+  expect(b[kids[3]].whole).toBe(true);
+  expect(b[kids[4]].whole).toBe(false);
+  const bottom = top + (await col.evaluate((el) => el.clientHeight));
+  expect(b[kids[4]].y).toBeLessThan(bottom);
   // ] comes back down, to where the focus was.
   await keys(page, "]");
   await expect(page.locator(".pane.active .pane-head h2")).toHaveText(kids[4]);
   expect(await focusedTitle(page)).toBe(where);
   await keys(page, "]");
   await expect(page.locator(".status .message")).toContainText("No pane below");
-  // A click on a tab opens that pane and makes it the active one.
-  await pane(page, kids[1]).locator(".tabline").click();
-  await expect(page.locator(".pane.active .pane-head h2")).toHaveText(kids[1]);
+  // A click on a tab makes that pane the active one, whole.
+  await pane(page, kids[0]).locator(".tabline").click();
+  await expect(page.locator(".pane.active .pane-head h2")).toHaveText(kids[0]);
   b = await boxes(page);
-  expect(b[kids[1]].tab).toBe(false);
-  expect(b[kids[4]].tab).toBe(true);
+  expect(b[kids[0]].whole).toBe(true);
 });
 
-test("a pinned pane does not fold in its column, outlives a closed parent as an orphan in its column, and is not covered to a spine", async ({ page }) => {
+test("a pane resting covered peeks out under the mouse, over its neighbours without moving them; a click makes it active", async ({ page }) => {
+  const kids = await five(page);
+  const before = await boxes(page);
+  const tab = pane(page, kids[1]).locator(".tabline");
+  await tab.hover();
+  // Not at once: passing the mouse across does not flicker.
+  expect(await pane(page, kids[1]).getAttribute("data-peek")).toBeNull();
+  await expect(pane(page, kids[1])).toHaveAttribute("data-peek", "");
+  const peeked = (await pane(page, kids[1]).boundingBox())!;
+  expect(peeked.height).toBeGreaterThan(100);
+  expect(await pane(page, kids[1]).evaluate((el) => Number(getComputedStyle(el).zIndex))).toBeGreaterThan(2);
+  // Nothing else moved.
+  const after = await boxes(page);
+  for (const t of kids) if (t !== kids[1]) expect(after[t].y).toBeCloseTo(before[t].y, 0);
+  // Leaving puts it back.
+  await page.mouse.move(5, 500);
+  await expect(pane(page, kids[1])).not.toHaveAttribute("data-peek", "");
+  // A click on it makes it the active pane, whole.
+  await tab.hover();
+  await expect(pane(page, kids[1])).toHaveAttribute("data-peek", "");
+  await pane(page, kids[1]).locator(".pane-head").click();
+  await expect(page.locator(".pane.active .pane-head h2")).toHaveText(kids[1]);
+  expect((await boxes(page))[kids[1]].whole).toBe(true);
+  // A column covered across the strip peeks too, raised over the columns past it.
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.evaluate(() => localStorage.clear());
+  await open(page);
+  await keys(page, "l l l j j l l l");
+  await expect.poll(async () => (await columns(page)).length).toBe(4);
+  await expect.poll(() => page.evaluate(() => document.querySelectorAll(".strip > .col")[0].hasAttribute("data-covered"))).toBe(true);
+  await page.locator(".strip > .col").nth(0).locator(".spine-title").hover();
+  await expect(page.locator(".strip > .col").nth(0)).toHaveAttribute("data-peek", "");
+});
+
+test("a pane is dragged by its grip, or its tab, up or down its column; the order is kept, and Esc cancels", async ({ page }) => {
+  const kids = await five(page);
+  // Five panes: the column shares out its height once the window is tall enough.
+  await page.setViewportSize({ width: 1920, height: 1800 });
+  await expect.poll(() => page.locator(".strip > .col").nth(1).getAttribute("class")).not.toContain("crowded");
+  const drag = async (from: string, to: string, esc = false) => {
+    const g = (await pane(page, from).locator(".grip").boundingBox())!;
+    const t = (await pane(page, to).boundingBox())!;
+    await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(g.x + g.width / 2, g.y + 20, { steps: 3 });
+    await page.mouse.move(g.x + g.width / 2, t.y + 8, { steps: 6 });
+    await expect(page.locator(".drop-line")).toHaveCount(1);
+    if (esc) await page.keyboard.press("Escape");
+    await page.mouse.up();
+  };
+  // The grip shows only under the mouse.
+  expect(await pane(page, kids[4]).locator(".grip").evaluate((el) => getComputedStyle(el, "::before").opacity)).toBe("0");
+  await drag(kids[4], kids[0]);
+  expect((await columns(page))[1]).toEqual([kids[4], ...kids.slice(0, 4)]);
+  await expect(page.locator(".drop-line")).toHaveCount(0);
+  // Esc cancels.
+  await drag(kids[2], kids[0], true);
+  expect((await columns(page))[1]).toEqual([kids[4], ...kids.slice(0, 4)]);
+  // [ and ] go by the new order; curves follow.
+  await page.reload();
+  await page.waitForSelector(".strip .pane");
+  expect((await columns(page))[1]).toEqual([kids[4], ...kids.slice(0, 4)]);
+  // And by its tab, in a crowded column.
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await expect.poll(() => page.locator(".strip > .col").nth(1).getAttribute("class")).toContain("crowded");
+  const t = (await pane(page, kids[0]).locator(".tabline").boundingBox().catch(() => null)) ?? null;
+  if (t && (await pane(page, kids[0]).getAttribute("data-covered")) !== null) {
+    const last = (await pane(page, kids[3]).boundingBox())!;
+    await page.mouse.move(t.x + 200, t.y + t.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(t.x + 200, t.y + 30, { steps: 3 });
+    await page.mouse.move(t.x + 200, last.y + last.height - 4, { steps: 8 });
+    await page.mouse.up();
+    expect((await columns(page))[1].indexOf(kids[0])).toBeGreaterThan(1);
+  }
+});
+
+test("a pinned pane is not covered in its column, and outlives a closed parent as an orphan in its column", async ({ page }) => {
   const kids = await five(page);
   // Pin the second fork, by its button: it opens beside the focused one and stays open as the focus moves up and down the column.
   await pane(page, kids[1]).locator(".pane-ctl .pane-btn.pin").click();
   await expect(pane(page, kids[1])).toHaveClass(/pinned/);
   let b = await boxes(page);
-  expect(b[kids[1]].tab).toBe(false);
+  expect(b[kids[1]].whole).toBe(true);
   expect(b[kids[1]].h).toBeGreaterThan(200);
   await keys(page, "l [ [");
   await expect(page.locator(".pane.active .pane-head h2")).toHaveText(kids[2]);
   b = await boxes(page);
-  expect(b[kids[1]].tab).toBe(false);
-  expect(b[kids[4]].tab).toBe(true);
+  expect(b[kids[1]].whole).toBe(true);
+  expect(b[kids[2]].whole).toBe(true);
+  expect(b[kids[4]].whole).toBe(false);
   // The pin is kept across a reload.
   await page.reload();
   await page.waitForSelector(".strip .pane");
@@ -465,7 +626,7 @@ test("q on an article opened from an article in a fork closes that article only 
   await page.evaluate(() => document.fonts.ready);
   await jump(page, "Recursion without names");
   // A fork beside it from the document's pane: Recursion without names starts a fork.
-  await keys(page, "k Enter j Shift+Enter");
+  await keys(page, "k Enter j Enter");
   expect((await trail(page)).at(-1)).toBe("Recursion without names");
   await tabTo(page, "fixed-point combinator");
   await keys(page, "Enter");
@@ -490,7 +651,7 @@ test("from a Wikipedia link, a node link and a link inside an article: forks, ea
   await keys(page, "h"); // back to the words
   expect(await selected(page)).toBe("fixed-point combinator");
   await tabTo(page, "Y combinator");
-  await keys(page, "Shift+Enter");
+  await keys(page, "Enter");
   expect((await columns(page))[3]).toEqual(["Fixed-point combinator", "How Y works"]);
   // In the text it came from, both links are marked, the focused fork's more strongly.
   const from = page.locator('.pane[data-pane-index="2"]');
@@ -504,9 +665,9 @@ test("from a Wikipedia link, a node link and a link inside an article: forks, ea
   await expect(from.locator(".lnk.forked.picked")).toHaveText("fixed-point combinator");
   await keys(page, "j j l");
   expect((await trail(page)).at(-1)).toBe("W:Fixed-point combinator#2");
-  // A Shift-click on a link in the article's text forks beside that section.
+  // A click on a link in the article's text opens beside that section.
   const art = pane(page, "Fixed-point combinator");
-  await art.locator('.wiki-text a[data-wiki="Haskell Curry"]').click({ modifiers: ["Shift"] });
+  await art.locator('.wiki-text a[data-wiki="Haskell Curry"]').click();
   const article = ["W:Fixed-point combinator", ["W:Fixed-point combinator#2", ["*", "W:Haskell Curry"]]];
   const recursion = ["Recursion without names", [["*", article], "How Y works"]];
   expect(await tree(page)).toEqual(["Library", [["*", ["Fixed points", [["*", recursion]]]]]]);
@@ -522,10 +683,10 @@ test("a fork whose node is deleted closes, and the others stay", async ({ page, 
   const made = await request.post("/api/ops", { data: { author: "another", message: "Add a section", ops: [{ op: "create", parent: depth, title: "A section to delete", body: "Soon gone." }] } });
   expect(made.ok()).toBe(true);
   await open(page);
-  await keys(page, "l l l Shift+Enter");
+  await keys(page, "l l l Enter");
   const kids = await childTitles(page, "Expansion by depth");
   for (let i = 1; i < kids.indexOf("A section to delete"); i++) await keys(page, "j");
-  await keys(page, "j Shift+Enter");
+  await keys(page, "j Enter");
   expect((await columns(page))[2]).toEqual(["Levels of a node", "A section to delete"]);
   await page.locator(".pane .row", { hasText: "Levels of a node" }).first().click();
   const id = await state(page, (s) => (Object.values(s.snap.nodes) as any[]).find((n) => n.title === "A section to delete").id);
@@ -535,10 +696,10 @@ test("a fork whose node is deleted closes, and the others stay", async ({ page, 
   expect(await trail(page)).toEqual(["Infinispand", "Expansion by depth", "Levels of a node"]);
 });
 
-test("a window too short to share a column folds it at once: the focused pane open, the others tabs", async ({ page }) => {
+test("a window too short to share a column stacks it at once: the focused pane whole, the other covered to its tab", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 480 });
   await open(page);
-  await keys(page, "l l l Shift+Enter j Shift+Enter");
+  await keys(page, "l l l Enter j Enter");
   let b = await boxes(page);
   expect(b["Levels of a node"].tab).toBe(true);
   expect(b["Pre-generated depth"].tab).toBe(false);
@@ -551,8 +712,8 @@ test("a window too short to share a column folds it at once: the focused pane op
 
 test("many forks: a reload brings the forest back", async ({ page }) => {
   await open(page);
-  await keys(page, "j Shift+Enter");
-  for (let i = 0; i < 5; i++) await keys(page, "j Shift+Enter");
+  await keys(page, "j Enter");
+  for (let i = 0; i < 5; i++) await keys(page, "j Enter");
   expect((await columns(page))[1]).toHaveLength(6);
   const before = await tree(page);
   const was = await trail(page);
@@ -563,7 +724,7 @@ test("many forks: a reload brings the forest back", async ({ page }) => {
   expect((await columns(page))[1]).toHaveLength(6);
 });
 
-test("in the column a modified open is a plain open, and the status line says why once", async ({ page }) => {
+test("in the column a Shift open is a plain open, and the status line says why once", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/doc/fixed-points");
   await page.waitForFunction(() => (globalThis as any).__ie?.ready);

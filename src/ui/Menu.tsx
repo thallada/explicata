@@ -117,7 +117,7 @@ export function DocsPanel() {
             e.preventDefault();
             // The selection as it is now: the filter may have changed since this was drawn.
             const now = store.menuSelected();
-            if (now) store.openDoc(now.node);
+            if (now) store.openDoc(now.node, true);
           } else if (k === "Escape" || k === "Tab") {
             e.preventDefault();
             m.focus = "list";
@@ -161,7 +161,7 @@ export function DocsPanel() {
                 (document.activeElement as HTMLElement | null)?.blur();
                 store.emit();
               }}
-              onDblClick={() => store.openDoc(d.node)}
+              onDblClick={() => store.openDoc(d.node, true)}
             >
               <div class="line">
                 <span class="title">{d.title || "Untitled"}</span>
@@ -170,7 +170,7 @@ export function DocsPanel() {
               <div class="sub">{d.excerpt || "No text yet."}</div>
               {selected && (
                 <div class="actions">
-                  {d.node !== current && <button onClick={act(() => store.openDoc(d.node))}>open</button>}
+                  {d.node !== current && <button onClick={act(() => store.openDoc(d.node, true))}>open</button>}
                   <button onClick={act(() => store.menuPrompt("rename"))}>rename</button>
                   <button onClick={act(() => store.menuPrompt("duplicate"))}>save as</button>
                   <button onClick={act(() => store.exportDocument(d.node))}>export .md</button>

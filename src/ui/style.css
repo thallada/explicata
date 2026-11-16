@@ -334,6 +334,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
   --spine: 2.1rem;
   --pane-pad: 1.8rem;
   --pane: calc(var(--spine) + var(--pane-text) + var(--pane-pad));
+  --tab: 30px;
   --shade: rgb(0 0 0 / 0.2);
   --pane-rule: #d9d9d9;
   --curve: rgb(0 0 0 / 0.17);
@@ -386,19 +387,46 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
   .spine { transition: none; }
 }
 
-/* A folded pane: one line, its title (and W for an article), its pin and ×; a click opens it. */
+/*
+ * Down a crowded column the panes stack as the columns do across the strip (stack.ts): each stuck
+ * a tab below the one before, a later one sliding up over an earlier along a hairline (a shadow
+ * there costs too much painting, with many panes) and, covered to its tab, its title on one line,
+ * as a covered column shows its spine.
+ */
+.col.crowded { overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: var(--hair) transparent; }
+.col.crowded > .pane { position: sticky; }
+.col.crowded > .pane[data-over]::before { content: ""; position: absolute; z-index: 4; top: 0; left: 0; right: 0; height: 1px; background: var(--rule); }
 .tabline {
-  display: none; align-items: center; gap: 0.4em; height: 100%; padding: 0 3.4rem 0 var(--spine); cursor: pointer;
+  position: absolute; z-index: 2; top: 0; left: 0; right: 0; height: var(--tab); display: flex; align-items: center; gap: 0.4em;
+  padding: 0 3.4rem 0 var(--spine); background: inherit; border-bottom: 1px solid var(--pane-rule); opacity: 0; pointer-events: none; cursor: pointer; transition: opacity 0.12s;
   font-family: var(--sans); font-size: 0.74rem; letter-spacing: 0.02em; color: var(--dim); white-space: nowrap;
 }
 .tabline .tabtitle { overflow: hidden; text-overflow: ellipsis; }
 .tabline:hover { color: var(--fg); }
-.pane[data-tab] > .tabline { display: flex; }
-.pane[data-tab] > .pane-scroll, .pane[data-tab] > .spine { display: none; }
+.col.crowded > .pane[data-covered] > .tabline { opacity: 1; pointer-events: auto; }
+@media (prefers-reduced-motion: reduce) {
+  .tabline { transition: none; }
+}
+
+/* A pane or column covered down to its tab or spine has nothing else on show: it is not painted, until it peeks. */
+.col[data-buried]:not([data-peek]) .pane-scroll, .col.crowded > .pane[data-buried]:not([data-peek]) > .pane-scroll { content-visibility: hidden; }
+
+/* Peeking: a covered pane or column, the mouse resting on it, raised over its neighbours whole. */
+.col[data-peek], .pane[data-peek] { z-index: 6; box-shadow: 0 3px 18px 0 var(--shade); }
+.col[data-peek] .spine, .col.crowded > .pane[data-peek] > .tabline { opacity: 0; pointer-events: none; }
+
+/* Dragging a pane in its column: its grip, quiet until pointed at; the line where it will go. */
+.grip { position: absolute; z-index: 3; top: 0; left: var(--spine); right: 3.6rem; height: 1.15rem; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.grip::before { content: ""; position: absolute; left: 50%; top: 0.42rem; width: 1.1rem; margin-left: -0.55rem; height: 3px; border-top: 1px solid var(--faint); border-bottom: 1px solid var(--faint); opacity: 0; transition: opacity 0.12s; }
+.col.split .grip:hover::before { opacity: 0.8; }
+.col:not(.split) .grip, .col.crowded > .pane[data-covered] > .grip { display: none; }
+.tabline { touch-action: none; }
+.panes.dragging, .panes.dragging * { cursor: grabbing !important; user-select: none; }
+.drop-line { position: absolute; z-index: 7; height: 2px; background: var(--link); pointer-events: none; }
 
 /* A pane's pin and ×, top right, in the margin above its title: quiet until pointed at. A pinned pane's pin is filled. */
 .pane-ctl { position: absolute; z-index: 3; top: 0.25rem; right: 0.3rem; display: flex; gap: 0.05rem; }
-.pane[data-tab] > .pane-ctl { top: 2px; }
+.col.crowded > .pane[data-covered] > .pane-ctl { top: 2px; }
 .pane-btn { display: block; width: 1.3rem; height: 1.3rem; padding: 0.3rem; border-radius: 2px; cursor: pointer; color: var(--rule); }
 .pane-btn svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 .pane:hover .pane-btn { color: var(--faint); }
@@ -416,7 +444,8 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .pane.on-branch:not(.active)::after { height: 1px; background: var(--faint); }
 
 /* The curves: from what each pane was opened from to its title, behind nothing but in the gaps between lines. */
-.curves { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; overflow: hidden; }
+/* A layer of its own, so that drawing a curve again does not paint the panes under it again. */
+.curves { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; overflow: hidden; will-change: transform; }
 .curves path { fill: none; stroke: var(--curve); stroke-width: 1; }
 .curves path.on { stroke: var(--curve-on); }
 .curves path.lost { stroke-dasharray: 1 3; }

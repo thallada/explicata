@@ -36,7 +36,7 @@ import { remoteLLM } from "./remote";
 import { Session } from "./session";
 import { refreshAfterCalls } from "./usage";
 import { Linker, type AutoMode, type JobState, type Sugg } from "./linker";
-import { all, besideInColumn, close as closeIn, focus as focusIn, focused, open as openIn, path, pin as pinIn, prune, restore as restoreForest, rooted, save as saveTree, updateIn, withBranch, type Forest, type Placed, type Tree } from "./forks";
+import { all, besideInColumn, close as closeIn, columns as columnsOf, reorder, focus as focusIn, focused, open as openIn, path, pin as pinIn, prune, restore as restoreForest, rooted, save as saveTree, updateIn, withBranch, type Forest, type Placed, type Tree } from "./forks";
 import { stripMarks, type Mark } from "../core/marks";
 import { SEED_SLUG } from "../core/seed";
 
@@ -290,10 +290,10 @@ class Store {
   get tree(): Pane | null {
     return focused(this.forest);
   }
-  /** Set while a modified open (Shift+Enter, Shift-, Ctrl- or middle-click) runs: it opens a fork beside what is there. */
-  forking = false;
-  private toldForks = false;
-  private memo: { forest: Forest<PaneRef, Back> | null; nodes: Pane[]; trail: PaneRef[]; placed?: Placed<PaneRef, Back>[]; index?: Map<number, Placed<PaneRef, Back>>; ids?: Set<NodeId> } = { forest: null, nodes: [], trail: [] };
+  /** Set while a Shift open (Shift+Enter, Shift-click) runs: it opens in place of what is in the next column instead of beside it. */
+  replacing = false;
+  private toldReplace = false;
+  private memo: { forest: Forest<PaneRef, Back> | null; nodes: Pane[]; trail: PaneRef[]; placed?: Placed<PaneRef, Back>[]; cols?: Map<number, Placed<PaneRef, Back>[]>; index?: Map<number, Placed<PaneRef, Back>>; ids?: Set<NodeId> } = { forest: null, nodes: [], trail: [] };
   private get branch() {
     if (this.memo.forest !== this.forest) {
       const nodes = path(this.tree);
@@ -301,10 +301,15 @@ class Store {
     }
     return this.memo;
   }
-  /** Every pane, with its column, in the order panes stand in a column. */
+  /** Every pane, with its column, tree by tree, depth first. */
   get panesPlaced(): Placed<PaneRef, Back>[] {
     const m = this.branch;
     return (m.placed ??= all(this.forest));
+  }
+  /** The panes of each column, top to bottom (forks.ts `columns`). */
+  get paneColumns(): Map<number, Placed<PaneRef, Back>[]> {
+    const m = this.branch;
+    return (m.cols ??= columnsOf(this.forest));
   }
   /** The focused branch: the panes the keys move along, left to right. */
   get trail(): PaneRef[] {
@@ -555,11 +560,12 @@ class Store {
 
   /**
    * Open something to the right of pane i. If it is already open there, as any fork, that fork is
-   * focused. Otherwise a plain open replaces what was to the right (a pinned pane stays beside it);
-   * a fork (`forking`) opens it beside that, below in the next column. Returns the pane it is in.
+   * focused. Otherwise it opens beside what is there, a new pane in the next column; a Shift open
+   * (`replacing`) opens it in place of the focused branch's pane there instead (a pinned pane stays
+   * beside it). Returns the pane it is in.
    */
   openPane(i: number, ref: PaneRef): number {
-    this.setForest(openIn(this.forest, i, ref, this.forking, sameRef));
+    this.setForest(openIn(this.forest, i, ref, !this.replacing, sameRef));
     this.saveView();
     this.emit();
     return Math.min(i + 1, this.trail.length - 1);
@@ -572,18 +578,18 @@ class Store {
     this.closePane(kid.id);
   }
 
-  /** Run an open with or without a fork. In the column a fork is a plain open, and the status line says so once. */
-  withFork<T>(fork: boolean, fn: () => T): T {
-    if (fork && !this.panes && !this.toldForks) {
-      this.toldForks = true;
-      this.say("Forks (Shift+Enter, Shift- or Ctrl-click) open side by side in the panes view; in one column this opens as usual.");
+  /** Run an open beside what is there, or in its place (Shift). In the column there is only the one way, and the status line says so once. */
+  withReplace<T>(replace: boolean, fn: () => T): T {
+    if (replace && !this.panes && !this.toldReplace) {
+      this.toldReplace = true;
+      this.say("Shift+Enter and Shift-click open in place of the pane to the right in the panes view; in one column this opens as usual.");
     }
-    const was = this.forking;
-    this.forking = fork && this.panes;
+    const was = this.replacing;
+    this.replacing = replace && this.panes;
     try {
       return fn();
     } finally {
-      this.forking = was;
+      this.replacing = was;
     }
   }
 
@@ -711,6 +717,15 @@ class Store {
       return this.setFocus(q.kind === "node" ? { node: q.id, grain: "node" } : this.focus, { kind: "wiki", host, row: { t: "sec", id: ref.sec } });
     }
     this.land(i);
+  }
+
+  /** A pane dragged up or down its column, to just above another (or to the bottom). */
+  reorderPane(id: number, before: number | null) {
+    const f = reorder(this.forest, id, before);
+    if (f === this.forest) return;
+    this.setForest(f);
+    this.saveView();
+    this.emit();
   }
 
   /** P (on the active pane) or a pane's pin: pin or unpin it. */
@@ -1352,7 +1367,8 @@ class Store {
   }
 
   /** Open a document: hoist to it in the column, show it in the next pane in panes. */
-  openDoc(id: NodeId) {
+  /** Open a document: from its row in the library, beside what is open; from the menu, a command or an address (`nav`), in place of it. */
+  openDoc(id: NodeId, nav = false) {
     const s = this.doc.snap();
     if (!s.nodes[id]) return;
     void this.links.loadDoc(id);
@@ -1365,7 +1381,7 @@ class Store {
       this.open.add(id);
       this.focus = { node: id, grain: "node" };
       this.syncTrail();
-      if (s.nodes[id].parent === this.top) this.openPane(this.paneAt, { kind: "node", id });
+      if (s.nodes[id].parent === this.top) this.withReplace(nav || this.replacing, () => this.openPane(this.paneAt, { kind: "node", id }));
     } else this.hoist = id;
     this.focus = { node: id, grain: "node" };
     this.saveView();
@@ -1552,12 +1568,10 @@ class Store {
     if (this.listing(id)) return this.openDoc(id);
     // The head of a pane other than the first: Enter steps into its rows, as l does.
     if (this.panes && this.paneAt > 0 && this.paneHead(id)) return this.into();
-    // In panes, a row whose pane is open as a fork that is not the focused one, or any row opened as a fork, opens (focuses) its pane rather than closing it.
+    // In panes a row opens its pane, or focuses it where it is open already: closing is q's, or the pane's x.
     if (this.panes) {
       this.syncTrail();
-      const n = this.branchNodes[this.paneAt];
-      const k = n ? n.kids.findIndex((c) => c.ref.kind === "node" && c.ref.id === id) : -1;
-      if ((k >= 0 && k !== n.pick) || this.forking) return this.setOpen(id, true);
+      return this.setOpen(id, true);
     }
     this.setOpen(id, !this.isOpen(id));
   }
@@ -2537,7 +2551,7 @@ class Store {
     this.held = null;
     if (art?.state !== "ready") return;
     for (const k of h.keys) {
-      if (k === "Enter" || k === "S-Enter") this.withFork(k === "S-Enter", () => (this.inArticleText ? this.enterArticle() : this.auxActivate()));
+      if (k === "Enter" || k === "S-Enter") this.withReplace(k === "S-Enter", () => (this.inArticleText ? this.enterArticle() : this.auxActivate()));
       else if (k === "i") this.descend();
       else this.auxTab(k === "Tab" ? 1 : -1);
     }
@@ -3062,7 +3076,7 @@ class Store {
     if (!title) return this.say("A new document needs a title: /new <title>");
     this.docWrite(() => {
       const id = createDoc(this.doc, title, this.user);
-      this.openDoc(id);
+      this.openDoc(id, true);
       this.say(`Created “${clip(title, 60)}”: c writes its opening text, a adds a section.`);
     });
   }
@@ -3084,7 +3098,7 @@ class Store {
     if (!title) return this.say("The copy needs a title.");
     this.docWrite(() => {
       const copy = duplicateDoc(this.doc, id, title, this.user);
-      this.openDoc(copy);
+      this.openDoc(copy, true);
       this.say(`Saved a copy as “${clip(title, 60)}”; this is the copy.`);
     });
   }
@@ -3144,7 +3158,7 @@ class Store {
     const slug = freeSlug(file.name.replace(/\.(md|markdown|txt)$/i, ""), new Set(documents(s).map((d) => s.nodes[d].slug)));
     try {
       const id = importDoc(this.doc, text, file.name, { creator: this.user, slug });
-      this.openDoc(id);
+      this.openDoc(id, true);
       this.say(`Imported ${file.name} as “${clip(this.doc.snap().nodes[id].title, 60)}”.`);
       // Imported text is scanned like any other writing: by a background job, once the server has it.
       if (this.settings.autolink !== "off") void this.whenSynced().then(() => this.linkJob("doc", id, true));
@@ -3165,7 +3179,7 @@ class Store {
       all.find((x) => x.slug === q) ?? all.find((x) => x.title.toLowerCase() === q) ?? all.find((x) => x.title.toLowerCase().startsWith(q)) ??
       all.find((x) => `${x.title} ${x.slug}`.toLowerCase().includes(q));
     if (!d) return this.say(`No document matches “${name}”. m lists them.`);
-    this.openDoc(d.node);
+    this.openDoc(d.node, true);
     this.say(`Opened “${clip(d.title, 60)}”.`);
   }
 
@@ -3384,7 +3398,7 @@ class Store {
     this.aux = null;
     this.colWiki = null;
     const s = this.snap;
-    if (s.library && s.nodes[id]?.parent === s.root) return this.openDoc(id);
+    if (s.library && s.nodes[id]?.parent === s.root) return this.openDoc(id, true);
     this.reveal(id);
     this.focus = { node: id, grain: "node" };
     this.saveView();

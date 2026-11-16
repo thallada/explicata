@@ -18,11 +18,11 @@
 import { Component, type ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import { docOf, label, sections, staleness, type NodeId } from "../core/model";
-import type { Placed } from "./forks";
 import { LANES, LANE_FIRST, LANE_LAST, LANE_PITCH, laneOrder } from "./lanes";
+import { ACROSS, DOWN, mark, offsets, reveal, starts, stick, unmark, whole } from "./stack";
 import { NodeBacklinks, NodeRelated, PaneCtx, TargetRow } from "./Links";
 import { Flags, NodeBody, PendingSections, Row, TitleEditor, TopMatter } from "./Node";
-import { kidClass, refKey, store, type Aux, type Back, type Pane as PaneNode, type PaneRef } from "./store";
+import { kidClass, refKey, store, type Aux, type Pane as PaneNode, type PaneRef } from "./store";
 import { WikiView } from "./Wiki";
 import { article } from "./wiki";
 
@@ -93,6 +93,7 @@ function Chrome({ props, title, mark }: { props: PaneProps; title: string; mark?
           {title}
         </span>
       </div>
+      <div class="grip" data-grip={tid} title="Drag to move this pane up or down its column" />
       <div class="tabline" data-spine={props.index} title={title}>
         {mark}
         <span class="tabtitle">{title}</span>
@@ -226,10 +227,12 @@ const setAttr = (el: Element | undefined, name: string, on: boolean) => {
   if (el && el.hasAttribute(name) !== on) on ? el.setAttribute(name, "") : el.removeAttribute(name);
 };
 
-/** The least height a pane keeps in a column while all its panes fit; below it, the column folds all but one into tabs. */
+/** The least height a pane keeps in a column while all its panes fit; below it, the column stacks them. */
 export const PANE_MIN = 260;
-/** A folded pane's tab. */
+/** A covered pane's tab, the strip a pane leaves down a crowded column (as a spine does across). */
 export const TAB = 30;
+/** How long the mouse rests on a covered pane before it peeks out. */
+export const PEEK_MS = 200;
 
 /**
  * Heights for the panes of one column of height h, from what each needs to show all it holds:
@@ -257,22 +260,22 @@ const paneEls = (el: HTMLElement) => {
 
 const kidsKey = (t: PaneNode) => `${t.pick}:${t.kids.map((k) => refKey(k.ref)).join(",")}`;
 
-type Spot = Placed<PaneRef, Back>;
-
 export function Panes() {
   store.syncTrail();
   const strip = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const followed = useRef("");
-  /** Per column, the pane last on the focused branch there: the one a folded column keeps open when the branch is elsewhere. */
+  /** Per column, the pane last on the focused branch there: the one a crowded column shows whole when the branch is elsewhere. */
   const lastIn = useRef(new Map<number, number>());
-  /** What each pane last needed to show all it holds (a folded pane cannot be measured). */
-  const needs = useRef(new Map<number, number>());
   /** Each column's sticky left edge, in px, as last set. */
   const lefts = useRef<number[]>([]);
   const frame = useRef(0);
-  /** A pending layout of the columns other than the active pane's. */
+  /** A pending reveal in the columns other than the active pane's. */
   const later = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** What each pane last needed to show all it holds. */
+  const needs = useRef(new Map<number, number>());
+  /** The pane each crowded column was last scrolled to show whole. */
+  const shown = useRef(new Map<HTMLElement, number>());
   /** Each column's panes when last laid out. */
   const laid = useRef(new Map<HTMLElement, string>());
   /** The layout of the latest render (a pending one uses it). */
@@ -280,21 +283,18 @@ export function Panes() {
   /** The active pane's column when the strip last followed it. */
   const lastCol = useRef(-1);
 
-  const placed = store.panesPlaced;
   const branch = store.branchNodes;
   const onBranch = new Set(branch.map((n) => n.id));
   const activeId = branch[store.paneAt]?.id;
-  const cols = new Map<number, Spot[]>();
-  for (const x of placed) {
-    const c = cols.get(x.col);
-    if (c) c.push(x);
-    else cols.set(x.col, [x]);
-  }
+  const cols = store.paneColumns;
   const order = [...cols.keys()].sort((a, b) => a - b);
 
   /**
-   * Lay out the columns: each column's sticky left edge (every column before it leaves a spine, or
-   * the whole of a pinned pane's column), and the heights of the panes in each column with several.
+   * Lay out the stacks (stack.ts). Across: each column stuck a spine after the one before (a pinned
+   * pane's column, its whole width). Down: a column with several panes divides its height among
+   * them, a pane taking what its text needs; when they do not all fit, it becomes a stack of its
+   * own, each pane stuck a tab below the one before (a pinned one, its height) and the column
+   * scrolled to show whole the pane on the focused branch, or the one last on it there.
    */
   const layout = (all = false) => {
     const el = strip.current;
@@ -305,103 +305,101 @@ export function Panes() {
     const activeCol = activeId === undefined ? null : paneEls(el).get(activeId)?.parentElement;
     const w = colEls[0].offsetWidth;
     const spine = colEls[0].querySelector<HTMLElement>(".spine")?.offsetWidth ?? 0;
-    const view = el.clientWidth;
-    const n = colEls.length;
     // With no scrollbar under the panes (none needed, or one drawn over them) their last bottom edge meets the status line's: one line, not two.
     setAttr(el, "data-flush", el.offsetHeight - el.clientHeight < 1);
-    let left = 0;
-    lefts.current = colEls.map((c, i) => {
-      // Far enough left that the columns after it can still all be scrolled to.
-      const l = Math.round(Math.min(left, Math.max(i * spine, view - w - (n - 1 - i) * spine)));
-      if (c.style.left !== `${l}px`) c.style.left = `${l}px`;
-      left += c.hasAttribute("data-pinned") ? w : spine;
-      return l;
-    });
+    lefts.current = offsets(
+      colEls.map(() => w),
+      colEls.map((c) => c.hasAttribute("data-pinned")),
+      spine,
+      el.clientWidth,
+    );
+    stick(colEls, lefts.current, ACROSS);
+    let deferred = false;
     for (const c of colEls) {
-      const ps = [...c.children] as HTMLElement[];
+      const ps = [...c.children].filter((p): p is HTMLElement => p.classList.contains("pane"));
       if (ps.length < 2) {
-        for (const p of ps) {
-          setAttr(p, "data-tab", false);
-          if (p.style.height) (p.style.height = ""), (p.style.flex = "");
-        }
+        for (const p of ps) if (p.style.height) (p.style.height = ""), (p.style.flex = ""), (p.style.top = "");
+        c.classList.remove("crowded");
+        unmark(ps);
         continue;
       }
       const h = c.clientHeight;
       const col = Number(c.dataset.col);
-      const pad = (() => {
-        const s = ps.find((p) => !p.hasAttribute("data-tab"))?.querySelector<HTMLElement>(".pane-scroll");
-        if (!s) return 60;
-        const cs = getComputedStyle(s);
-        return parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 1;
-      })();
+      const sc = ps[0].querySelector<HTMLElement>(".pane-scroll")!;
+      const cs = getComputedStyle(sc);
+      const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 1;
       const tids = ps.map((p) => Number(p.dataset.tid));
+      // What each pane needs to show all it holds; a buried pane is not laid out, so it keeps what it last needed.
       const need = ps.map((p, i) => {
-        const body = p.hasAttribute("data-tab") ? null : p.querySelector<HTMLElement>(".pane-body");
-        if (body) needs.current.set(tids[i], body.offsetHeight + pad);
-        return needs.current.get(tids[i]) ?? PANE_MIN;
+        if (p.hasAttribute("data-buried") && needs.current.has(tids[i])) return needs.current.get(tids[i])!;
+        const n = p.querySelector<HTMLElement>(".pane-body")!.offsetHeight + pad;
+        needs.current.set(tids[i], n);
+        return n;
       });
       const pinned = ps.map((p) => p.classList.contains("pinned"));
-      const fits = need.reduce((s, x) => s + Math.min(x, PANE_MIN), 0) <= h;
+      const crowded = need.reduce((s, x) => s + Math.min(x, PANE_MIN), 0) > h;
       let heights: number[];
-      let tab: boolean[];
-      if (fits) {
-        tab = ps.map(() => false);
-        heights = fill(h, need);
-      } else {
-        // Too many to share the height: the pane on the focused branch (or the one last on it here) keeps it, pinned panes keep their least, the rest fold.
-        const here = tids.find((t) => onBranch.has(t));
-        const keep = here ?? (tids.includes(lastIn.current.get(col)!) ? lastIn.current.get(col)! : tids[0]);
-        tab = tids.map((t, i) => t !== keep && !pinned[i]);
-        const folded = tab.filter(Boolean).length;
-        const kept = tids.map((t, i) => (!tab[i] && t !== keep ? Math.min(need[i], PANE_MIN) : 0));
-        const rest = h - folded * TAB - kept.reduce((s, x) => s + x, 0);
-        heights = tids.map((t, i) => (tab[i] ? TAB : t === keep ? Math.max(PANE_MIN, rest) : kept[i]));
+      let tops: number[] = [];
+      if (!crowded) heights = fill(h, need);
+      else {
+        // Each pane what its text needs, up to the column less a tab for each other pane; a pinned one, at most a third of it, but its least.
+        const pin = need.map((x, i) => (pinned[i] ? Math.min(x, Math.max(PANE_MIN, Math.floor(h / 3))) : 0));
+        const free = h - pin.reduce((s, x) => s + x, 0) - (pinned.filter((x) => !x).length - 1) * TAB;
+        heights = need.map((x, i) => (pinned[i] ? pin[i] : Math.min(x, Math.max(PANE_MIN, free))));
+        tops = offsets(heights, pinned, TAB, h);
       }
-      // Folding and unfolding repaints whole panes: as the focus moves, in the active pane's column at once, in the others once the keys pause.
+      c.classList.toggle("crowded", crowded);
+      ps.forEach((p, i) => {
+        if (p.style.height !== `${heights[i]}px`) (p.style.height = `${heights[i]}px`), (p.style.flex = "none");
+      });
+      if (crowded) stick(ps, tops, DOWN);
+      else for (const p of ps) p.style.top = "";
+      // The pane to show whole: on the focused branch, or the one last on it here.
+      const here = tids.find((t) => onBranch.has(t)) ?? (tids.includes(lastIn.current.get(col)!) ? lastIn.current.get(col)! : tids[0]);
+      const k = tids.indexOf(here);
+      const st = starts(heights);
+      const want = crowded ? reveal(c.scrollTop, h, st[k], heights[k], tops[k], st[st.length - 1] + heights[heights.length - 1] - h) : 0;
+      // As the focus moves, the active pane's column scrolls at once and the others once the keys pause (each brings whole panes into view, which costs a frame's painting); any other change, at once.
       const sig = tids.map((t, i) => `${t}${pinned[i] ? "^" : ""}`).join();
       const same = laid.current.get(c) === sig;
       laid.current.set(c, sig);
-      if (!all && same && c !== activeCol && ps.some((p, i) => p.hasAttribute("data-tab") !== tab[i])) {
-        later.current = setTimeout(() => {
-          latest.current(true);
-          schedule();
-        }, 150);
-        continue;
+      const moved = shown.current.get(c) !== here;
+      if (Math.abs(c.scrollTop - want) > 1 && !all && same && moved && c !== activeCol) deferred = true;
+      else {
+        if (Math.abs(c.scrollTop - want) > 1) c.scrollTop = want;
+        shown.current.set(c, here);
       }
-      ps.forEach((p, i) => {
-        setAttr(p, "data-tab", tab[i]);
-        if (p.style.height !== `${heights[i]}px`) (p.style.height = `${heights[i]}px`), (p.style.flex = "none");
-      });
     }
+    if (deferred)
+      later.current = setTimeout(() => {
+        latest.current(true);
+        measure();
+        schedule();
+      }, 150);
     // The focused branch's panes, marked without redrawing them.
     for (const [id, p] of paneEls(el)) p.classList.toggle("on-branch", onBranch.has(id));
-    for (const x of placed) if (onBranch.has(x.node.id)) lastIn.current.set(x.col, x.node.id);
+    for (const [col, ps] of cols) for (const x of ps) if (onBranch.has(x.node.id)) lastIn.current.set(col, x.node.id);
   };
 
   /**
-   * Mark how far each column is covered by the next. Any overlap gives the column above a shadow
-   * edge (data-over); once too little of it is left to read its own heading, its panes show as
-   * spines with their titles (data-covered).
+   * Mark how far each item is covered by the next, across the strip and down each crowded column
+   * (stack.ts): an overlapped item gives the one over it a shadow edge (data-over); one with too
+   * little left to read its heading shows its spine or tab (data-covered).
    */
   const measure = () => {
     const el = strip.current;
     if (!el) return;
-    const colEls = el.querySelectorAll<HTMLElement>(":scope > .col");
-    if (!colEls.length) return;
-    const w = colEls[0].offsetWidth;
-    const xs = [...colEls].map((c) => c.getBoundingClientRect().left);
-    colEls.forEach((c, i) => {
-      const visible = i + 1 < xs.length ? xs[i + 1] - xs[i] : w;
-      setAttr(c, "data-covered", visible < w * 0.4);
-      setAttr(colEls[i + 1], "data-over", visible < w - 1);
-    });
+    const colEls = [...el.querySelectorAll<HTMLElement>(":scope > .col")];
+    mark(el, colEls, ACROSS, false, colEls[0]?.querySelector<HTMLElement>(".spine")?.offsetWidth ?? 0);
+    for (const c of colEls) if (c.classList.contains("crowded")) mark(c, [...c.querySelectorAll<HTMLElement>(":scope > .pane")], DOWN, true, TAB);
   };
 
   /**
    * Keep the focus in view. Vertically, the pane holding the focus scrolls to its focused row,
    * selection or link. Horizontally, the strip scrolls as little as it can so that pane's column is
-   * fully visible and, when there is room, so is the column beside it: for a row whose pane is
-   * showing, that pane's; otherwise the one before.
+   * whole and, when there is room, so is the column beside it: for a row whose pane is showing,
+   * that pane's; otherwise the one before. Up and down a column it stays still while the pane looked
+   * at is whole.
    */
   const follow = () => {
     const el = strip.current;
@@ -426,20 +424,18 @@ export function Panes() {
     const colOf = (p: HTMLElement | undefined) => (p ? colEls.indexOf(p.parentElement as HTMLElement) : -1);
     const w = colEls[0].offsetWidth;
     const view = el.clientWidth;
+    const max = el.scrollWidth - view;
     const L = lefts.current;
     const b = colOf(panes[Math.min(panes.length - 1, showing ? at + 1 : at)]);
     if (b < 0) return;
-    // Up and down a column (or within a pane) the strip stays still while the pane looked at is fully in view.
     const here = colOf(panes[at]);
     const was = lastCol.current;
     lastCol.current = here;
-    if (here === was && el.scrollLeft >= (b + 1) * colEls[0].offsetWidth - el.clientWidth - 1 && el.scrollLeft <= b * colEls[0].offsetWidth - (lefts.current[b] ?? 0) + 1) return;
-    let a = b > 0 && (showing || f.grain === "node") ? b - 1 : b;
-    // Column i starts at i·w. It is uncovered while scrollLeft ≤ i·w − its sticky left, and its right edge is in view while scrollLeft ≥ (i+1)·w − view.
-    const lo = (b + 1) * w - view;
-    if (lo > a * w - (L[a] ?? 0)) a = b;
-    const hi = a * w - (L[a] ?? 0);
-    const target = Math.max(0, Math.min(el.scrollWidth - view, Math.min(Math.max(el.scrollLeft, lo), hi)));
+    if (here === was && whole(el.scrollLeft, view, b * w, w, L[b] ?? 0)) return;
+    // Column i starts at i·w: show b whole, and the one before it too when both fit.
+    const a = b > 0 && (showing || f.grain === "node") ? b - 1 : b;
+    const both = reveal(el.scrollLeft, view, a * w, (b + 1 - a) * w, L[a] ?? 0, max);
+    const target = whole(both, view, b * w, w, L[b] ?? 0) && whole(both, view, a * w, w, L[a] ?? 0) ? both : reveal(el.scrollLeft, view, b * w, w, L[b] ?? 0, max);
     if (Math.abs(target - el.scrollLeft) > 1) el.scrollTo({ left: target, behavior: reducedMotion() ? "auto" : "smooth" });
   };
 
@@ -464,7 +460,10 @@ export function Panes() {
     const el = strip.current!;
     const wrap = el.parentElement!;
     const onScroll = (e: Event) => {
-      if (e.target === el) measure();
+      const t = e.target as HTMLElement;
+      if (t === el || t.classList?.contains("col")) measure();
+      // What peeks is placed for where things were: put it back (one waiting to peek still may).
+      if (peeked) hide();
       schedule();
     };
     const onResize = () => {
@@ -474,17 +473,168 @@ export function Panes() {
       measure();
       schedule();
     };
-    // Panes scroll on their own: their scroll events are caught on the way down.
+    // Panes and crowded columns scroll on their own: their scroll events are caught on the way down.
     wrap.addEventListener("scroll", onScroll, { passive: true, capture: true });
     // The strip changes size with the window and when the history panel opens or closes.
     const sizes = new ResizeObserver(onResize);
     sizes.observe(el);
     document.fonts?.ready.then(onResize);
+
+    /*
+     * Peeking: a pane the stacks have covered, wholly or in part (its column across the strip, or
+     * the pane down a crowded column), slides out over its neighbours while the mouse rests on it
+     * (after PEEK_MS, so passing across does not flicker), raised and, if it runs past the column's
+     * foot, lifted into view; nothing else moves. A click makes it the active pane, which uncovers
+     * it for good. Not for touch, the keyboard, or while dragging.
+     */
+    let peeked: HTMLElement | null = null;
+    let pending: HTMLElement | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    function hide() {
+      if (!peeked) return;
+      peeked.removeAttribute("data-peek");
+      peeked.style.transform = "";
+      peeked = null;
+    }
+    function unpeek() {
+      clearTimeout(timer);
+      pending = null;
+      hide();
+    }
+    const peekable = (pane: HTMLElement): HTMLElement | null => {
+      const col = pane.parentElement as HTMLElement;
+      if (col.hasAttribute("data-covered") || (col.nextElementSibling as HTMLElement | null)?.hasAttribute("data-over")) return col;
+      if (!col.classList.contains("crowded")) return null;
+      const r = pane.getBoundingClientRect();
+      const c = col.getBoundingClientRect();
+      if (pane.hasAttribute("data-covered") || (pane.nextElementSibling as HTMLElement | null)?.hasAttribute("data-over") || r.bottom > c.bottom + 1) return pane;
+      return null;
+    };
+    const peek = (it: HTMLElement) => {
+      peeked = it;
+      it.setAttribute("data-peek", "");
+      if (it.classList.contains("pane")) {
+        const r = it.getBoundingClientRect();
+        const c = (it.parentElement as HTMLElement).getBoundingClientRect();
+        const dy = Math.max(c.top - r.top, Math.min(0, c.bottom - r.bottom));
+        if (dy) it.style.transform = `translateY(${Math.round(dy)}px)`;
+      }
+    };
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse" || e.buttons || drag) return;
+      const pane = (e.target as HTMLElement).closest<HTMLElement>(".pane");
+      const it = pane && (pane === peeked || pane.parentElement === peeked ? peeked : peekable(pane));
+      if (it === peeked && it) return;
+      if (it === pending && it) return;
+      unpeek();
+      if (!it) return;
+      pending = it;
+      timer = setTimeout(() => {
+        if (pending !== it) return;
+        pending = null;
+        const pane = it.classList.contains("pane") ? it : it.querySelector<HTMLElement>(".pane");
+        if (pane && peekable(pane)) peek(it);
+      }, PEEK_MS);
+    };
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerleave", unpeek);
+    window.addEventListener("keydown", unpeek, true);
+
+    /*
+     * Dragging a pane up or down its column, by its grip (the band above its title, beside the pin
+     * and the x) or its tab: a line shows where it will go; Esc cancels. The column's order is then
+     * its own (forks.ts `reorder`), kept with the panes.
+     */
+    let drag: { tid: number; col: HTMLElement; y0: number; on: boolean; before: number | null; line: HTMLElement | null } | null = null;
+    let swallow = false;
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      const t = e.target as HTMLElement;
+      if (t.closest("[data-close], [data-pin]")) return;
+      const handle = t.closest<HTMLElement>("[data-grip], .tabline");
+      const pane = handle?.closest<HTMLElement>(".pane");
+      const col = pane?.parentElement as HTMLElement | undefined;
+      if (!handle || !pane || !col || col.children.length < 2) return;
+      drag = { tid: Number(pane.dataset.tid), col, y0: e.clientY, on: false, before: null, line: null };
+      handle.setPointerCapture(e.pointerId);
+    };
+    const onDrag = (e: PointerEvent) => {
+      if (!drag) return;
+      if (!drag.on) {
+        if (Math.abs(e.clientY - drag.y0) < 5) return;
+        drag.on = true;
+        unpeek();
+        wrap.classList.add("dragging");
+        drag.line = document.createElement("div");
+        drag.line.className = "drop-line";
+        wrap.appendChild(drag.line);
+      }
+      const others = [...drag.col.querySelectorAll<HTMLElement>(":scope > .pane")].filter((p) => Number(p.dataset.tid) !== drag!.tid);
+      const c = drag.col.getBoundingClientRect();
+      const tops = others.map((p) => Math.max(c.top, Math.min(c.bottom, p.getBoundingClientRect().top)));
+      const ends = others.map((p, i) => Math.min(tops[i + 1] ?? c.bottom, Math.max(c.top, Math.min(c.bottom, p.getBoundingClientRect().bottom))));
+      const i = others.findIndex((_, k) => e.clientY < (tops[k] + ends[k]) / 2);
+      drag.before = i < 0 ? null : Number(others[i].dataset.tid);
+      const y = i < 0 ? (ends[ends.length - 1] ?? c.top) : tops[i];
+      const box = wrap.getBoundingClientRect();
+      Object.assign(drag.line!.style, { left: `${c.left - box.left}px`, width: `${c.width}px`, top: `${y - box.top - 1}px` });
+    };
+    const end = (keep: boolean) => {
+      if (!drag) return;
+      const d = drag;
+      drag = null;
+      d.line?.remove();
+      wrap.classList.remove("dragging");
+      if (d.on) {
+        swallow = true;
+        setTimeout(() => (swallow = false), 0);
+        if (keep) store.reorderPane(d.tid, d.before);
+      }
+    };
+    const onUp = () => end(true);
+    const onCancel = () => end(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (drag?.on && e.key === "Escape") {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        end(false);
+      }
+    };
+    // The click that ends a drag is not a click on the pane.
+    const onClick = (e: MouseEvent) => {
+      if (!swallow) return;
+      swallow = false;
+      e.stopPropagation();
+      e.preventDefault();
+    };
+    // A press elsewhere puts a peeking pane back; on it, the click goes through to it (and makes it the active pane), and then it goes back.
+    const onPress = (e: PointerEvent) => !(peeked && peeked.contains(e.target as Node)) && unpeek();
+    const afterClick = () => peeked && requestAnimationFrame(unpeek);
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointerdown", onPress);
+    el.addEventListener("click", afterClick);
+    el.addEventListener("pointermove", onDrag);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onCancel);
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("click", onClick, true);
     return () => {
       cancelAnimationFrame(frame.current);
       clearTimeout(later.current);
+      clearTimeout(timer);
       wrap.removeEventListener("scroll", onScroll, { capture: true });
       sizes.disconnect();
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerleave", unpeek);
+      window.removeEventListener("keydown", unpeek, true);
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointerdown", onPress);
+      el.removeEventListener("click", afterClick);
+      el.removeEventListener("pointermove", onDrag);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("click", onClick, true);
     };
   }, []);
 
@@ -549,12 +699,14 @@ function underline(s: HTMLElement, r: DOMRect): number {
   const cs = getComputedStyle(s);
   const fs = parseFloat(cs.fontSize) || 16;
   if (s.matches(".anchor")) return r.bottom - 0.08 * fs - 0.5;
-  let d = descents.get(cs.font);
+  const font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  let d = descents.get(font);
   if (d === undefined) {
     measurer ??= document.createElement("canvas").getContext("2d");
-    if (measurer) measurer.font = cs.font;
-    d = measurer?.measureText("x").fontBoundingBoxDescent ?? 0.25 * fs;
-    descents.set(cs.font, d);
+    if (measurer) measurer.font = font;
+    d = measurer?.measureText("x").fontBoundingBoxDescent ?? 0.3 * fs;
+    // Kept once the face has arrived; measured before, it is the fallback's.
+    if (document.fonts?.check(font) !== false) descents.set(font, d);
   }
   const off = parseFloat(cs.textUnderlineOffset);
   return r.bottom - d + (Number.isFinite(off) ? off : 0.1 * fs) + 0.5;
@@ -596,15 +748,21 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     const pcol = pe?.parentElement;
     const ccol = ce?.parentElement;
     if (!pe || !ce || !pcol || !ccol || pcol.hasAttribute("data-covered") || ccol.hasAttribute("data-covered")) continue;
-    const left = ccol.getBoundingClientRect().left;
-    // Where it arrives: just before the child's title, or its tab's.
+    const ccolBox = ccol.getBoundingClientRect();
+    const left = ccolBox.left;
+    // Where it arrives: just before the child's title, or its tab's; below a crowded column's foot, at the foot.
     const cbox = ce.getBoundingClientRect();
     let ey: number;
-    if (ce.hasAttribute("data-tab")) ey = cbox.top + TAB / 2;
+    let lost = false;
+    if (ce.hasAttribute("data-covered")) ey = cbox.top + TAB / 2;
     else {
       const scroll = ce.querySelector<HTMLElement>(".pane-scroll")!.getBoundingClientRect();
       const tr = ce.querySelector<HTMLElement>(".pane-head h2, .top h1, .wiki-head h2")?.getBoundingClientRect();
       ey = tr && tr.bottom > scroll.top + 4 ? Math.max(scroll.top + 6, tr.top + Math.min(tr.height, 32) / 2) : scroll.top + 14;
+    }
+    if (ey > ccolBox.bottom - 4) {
+      ey = ccolBox.bottom - 4;
+      lost = true;
     }
     // Where it starts: the words, row or link it was opened from. The text's edge: the pane's right padding, or the next column where it covers the pane.
     const pbox = pe.getBoundingClientRect();
@@ -612,12 +770,14 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     let sx = textRight;
     let sy: number;
     let under: { x: number; y: number } | undefined;
-    let lost = false;
-    if (pe.hasAttribute("data-tab")) {
+    if (pe.hasAttribute("data-covered")) {
       sy = pbox.top + TAB / 2;
       lost = true;
     } else {
-      const sc = pe.querySelector<HTMLElement>(".pane-scroll")!.getBoundingClientRect();
+      // What of the pane shows: its own scroll box, less what the pane after it in a crowded column covers, down to the column's foot.
+      const box = pe.querySelector<HTMLElement>(".pane-scroll")!.getBoundingClientRect();
+      const nextTop = pcol.classList.contains("crowded") ? (pe.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top : undefined;
+      const sc = { top: box.top, bottom: Math.min(box.bottom, nextTop ?? Infinity, pcol.getBoundingClientRect().bottom) };
       const cands = pe.querySelectorAll<HTMLElement>(`.${kidClass(refKey(x.node.ref))}`);
       let src: HTMLElement | undefined;
       for (const c of cands) {
@@ -671,7 +831,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
   }
   for (const g of [...lanesUsed.keys()]) if (!gutters.has(g)) lanesUsed.delete(g);
   const fx = (n: number) => Math.round(n * 2) / 2;
-  const out: string[] = [];
+  const out: { key: string; from: number; to: number; lane: number; cls: string; d: string }[] = [];
   edges.sort((a, b) => Number(a.on) - Number(b.on));
   for (const e of edges) {
     const i = lane.get(e)!;
@@ -694,8 +854,25 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
         `C${fx(g)} ${fx(e.ey - sg * r2 * (1 - k))} ${fx(g + r2 - k * r2)} ${fx(e.ey)} ${fx(g + r2)} ${fx(e.ey)}` +
         `H${fx(e.ex)}`;
     }
-    out.push(`<path data-from="${e.from}" data-to="${e.to}" data-lane="${i}" class="${e.on ? "on" : ""}${e.lost ? " lost" : ""}" d="${d}"/>`);
+    out.push({ key: `${e.from}>${e.to}`, from: e.from, to: e.to, lane: i, cls: `${e.on ? "on" : ""}${e.lost ? " lost" : ""}`, d });
   }
-  const html = out.join("");
-  if (svg.innerHTML !== html) svg.innerHTML = html;
+  // Each curve keeps its element, changed only where it changed, so only what moved is painted again.
+  const had = new Map<string, SVGPathElement>();
+  for (const p of svg.querySelectorAll<SVGPathElement>("path")) had.set(p.dataset.key!, p);
+  out.forEach((c, k) => {
+    let p = had.get(c.key);
+    had.delete(c.key);
+    if (!p) {
+      p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      p.dataset.key = c.key;
+      p.dataset.from = String(c.from);
+      p.dataset.to = String(c.to);
+    }
+    if (p.getAttribute("d") !== c.d) p.setAttribute("d", c.d);
+    if (p.getAttribute("class") !== c.cls) p.setAttribute("class", c.cls);
+    if (p.dataset.lane !== String(c.lane)) p.dataset.lane = String(c.lane);
+    // In drawing order: the focused branch's last, on top.
+    if (svg.children[k] !== p) svg.insertBefore(p, svg.children[k] ?? null);
+  });
+  for (const p of had.values()) p.remove();
 }
