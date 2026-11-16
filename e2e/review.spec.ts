@@ -245,11 +245,11 @@ test("Tab then Enter on an article that is still loading go to its first link on
   await keys(page, "Tab");
   expect(await selected(page)).toBe("Hoyle state");
   await keys(page, "Enter");
-  await expect(page.locator(".strip > .pane").last().locator(".wiki-wait")).toBeVisible();
+  await expect(page.locator(".strip .pane").last().locator(".wiki-wait")).toBeVisible();
   await keys(page, "Tab Enter");
   await expect(page.locator(".status .message")).toContainText("still loading");
   // When it arrives, the Tab goes to its first link and the Enter opens that.
-  await expect(page.locator(".strip > .pane").last().locator(".wiki-head h2")).toHaveText("Carbon-12", { timeout: 10_000 });
+  await expect(page.locator(".strip .pane").last().locator(".wiki-head h2")).toHaveText("Carbon-12", { timeout: 10_000 });
 });
 
 test("keypress → paint stays within a frame while suggestions are on screen and scans run after edits", async ({ page }) => {

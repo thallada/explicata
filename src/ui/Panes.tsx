@@ -3,23 +3,26 @@
  * path down from the top node; a link followed from a pane opens its target in the next pane
  * (another document's node, a Wikipedia article, a section of one), replacing what was to the
  * right. Moving back left closes nothing: the panes stay until something else is opened from an
- * earlier pane, or q closes them. Earlier panes stay pinned at the left as narrow spines when later
- * ones slide over them.
+ * earlier pane, or q or a pane's × closes them. Earlier columns stay at the left as narrow spines
+ * when later ones slide over them.
  *
  * A modified open (Shift+Enter, Shift- or Ctrl-click) makes a fork instead: the new pane opens
- * beside what was to the right, and the space right of the pane divides into rows, one per fork,
- * each continuing its own trail (forks.ts). The panes are `store.tree`; its focused branch is
- * `store.trail`, and which pane on it holds the focus is `store.paneAt`. Clicks are handled by the
- * page (App.tsx), exactly as in the column view; a click in another fork first makes it the
- * focused branch.
+ * below what was in the next column. The panes are a forest (forks.ts) and the screen is laid out
+ * by column: column d holds every open pane at depth d, top to bottom in tree order, and divides
+ * its own height among them; when they do not fit, all but the pane on the focused branch (and any
+ * pinned one) fold into one-line tabs. A faint curve runs from what each pane was opened from to
+ * its title. The focused branch is `store.trail`, and the pane on it holding the focus, the active
+ * pane, is `store.paneAt`. Clicks are handled by the page (App.tsx), exactly as in the column
+ * view; a click in a pane off the branch first brings it onto the branch.
  */
 import { Component, type ComponentChildren } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import { docOf, label, sections, staleness, type NodeId } from "../core/model";
-import { leaves } from "./forks";
+import type { Placed } from "./forks";
+import { LANES, LANE_FIRST, LANE_LAST, LANE_PITCH, laneOrder } from "./lanes";
 import { NodeBacklinks, NodeRelated, PaneCtx, TargetRow } from "./Links";
 import { Flags, NodeBody, PendingSections, Row, TitleEditor, TopMatter } from "./Node";
-import { refKey, store, type Aux, type Pane as PaneNode, type PaneRef } from "./store";
+import { kidClass, refKey, store, type Aux, type Back, type Pane as PaneNode, type PaneRef } from "./store";
 import { WikiView } from "./Wiki";
 import { article } from "./wiki";
 
@@ -28,20 +31,24 @@ interface PaneProps {
   p: PaneRef;
   /** The pane it was opened from, the one to its left. */
   parent?: PaneRef;
+  /** Its depth in its tree: its place on the focused branch, when its tree is focused. */
   index: number;
   /** Its children, and which is picked, as a key (redraw when they change). */
   kids: string;
-  /** Off the focused branch: drawn, but the keys are elsewhere; a click brings its fork onto the branch (App.tsx). Only an article pane draws differently (how its article is named). */
+  /** Off the focused branch: drawn, but the keys are elsewhere; a click brings it onto the branch (App.tsx). Only an article pane draws differently (how its article is named). */
   off: boolean;
-  /** In the narrow layout, where only the focused branch is drawn: which fork of how many this pane starts, if it starts one. */
-  forkOf?: [number, number];
   /** The aux focus, when this pane holds it. */
   aux: Aux | null;
+  /** The pane the keys act on. */
   active: boolean;
+  /** The first tree's root: the top node's pane. */
+  root: boolean;
+  /** An orphan's root: a pinned pane whose source has closed. */
+  orphan: boolean;
 }
 
 // `off` is left out: a node pane draws the same on the branch or off it, and moving between forks should redraw only what changed.
-const key = (p: PaneProps) => `${refKey(p.p)}|${p.index}|${p.kids}|${p.active}|${p.forkOf ?? ""}|${JSON.stringify(p.aux)}`;
+const key = (p: PaneProps) => `${refKey(p.p)}|${p.index}|${p.kids}|${p.active}|${!!p.t.pinned}|${p.root}|${p.orphan}|${JSON.stringify(p.aux)}`;
 
 /** Redraws a pane only when something drawn in it changed (see `store.paneDirty`). An article pane is cheap to redraw: its HTML is set once. */
 class Pane extends Component<PaneProps> {
@@ -56,73 +63,108 @@ class Pane extends Component<PaneProps> {
   }
 }
 
-/** The attributes every pane has: which it is, its column, and its place in the tree. */
+/** The attributes every pane has: which it is, its place in its tree, and its id there. */
 const paneAttrs = (props: PaneProps, name: string) => ({
   "data-pane": name,
   "data-pane-index": props.index,
   "data-tid": props.t.id,
-  style: { left: `calc(${props.index} * var(--spine))` },
 });
+const paneClass = (props: PaneProps) => `${props.active ? " active" : ""}${props.t.pinned ? " pinned" : ""}${props.orphan ? " orphaned" : ""}`;
 
-/** In the narrow layout, a pane that starts a fork says so, and how to get to the others. */
-function ForkNote({ of }: { of?: [number, number] }) {
-  if (!of) return null;
+/**
+ * What every pane carries besides its text: its spine (its title set vertically, shown when later
+ * columns cover it), its tab (one line, shown when its column folds it), and, top right, its pin
+ * and its ×. Clicks on them are handled by the page (App.tsx).
+ */
+function Chrome({ props, title, mark }: { props: PaneProps; title: string; mark?: ComponentChildren }) {
+  const tid = props.t.id;
+  const pinned = !!props.t.pinned;
   return (
-    <div class="fork-note">
-      fork {of[0] + 1} of {of[1]} · <kbd>[</kbd> <kbd>]</kbd> for the others
-    </div>
+    <>
+      <div class="spine" data-spine={props.index} title={title}>
+        <span role="button" class="pane-btn close" data-close={tid} title="Close this pane and what was opened from it (q)" aria-label="Close">
+          <svg viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M3 3l6 6M9 3l-6 6" />
+          </svg>
+        </span>
+        <span class="spine-title">
+          {mark}
+          {mark && " "}
+          {title}
+        </span>
+      </div>
+      <div class="tabline" data-spine={props.index} title={title}>
+        {mark}
+        <span class="tabtitle">{title}</span>
+      </div>
+      <div class="pane-ctl">
+        <span role="button" class={`pane-btn pin${pinned ? " on" : ""}`} data-pin={tid} title={pinned ? "Unpin this pane (P)" : "Pin this pane: it stays when what opened it closes, and never folds away (P)"} aria-label={pinned ? "Unpin" : "Pin"}>
+          <svg viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M4 1.5h4M4.6 1.5v3.6L2.8 7.2h6.4L7.4 5.1V1.5M6 7.2V11" />
+          </svg>
+        </span>
+        <span role="button" class="pane-btn close" data-close={tid} title="Close this pane and what was opened from it (q)" aria-label="Close">
+          <svg viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M3 3l6 6M9 3l-6 6" />
+          </svg>
+        </span>
+      </div>
+    </>
   );
 }
 
+/** An orphan says, quietly, that what it was opened from has closed. */
+const Orphaned = ({ on }: { on: boolean }) => (on ? <div class="pane-from orphan-note">opened from a pane since closed</div> : null);
+
 function NodePane(props: PaneProps & { id: NodeId }) {
-  const { id, index, active, t, parent } = props;
+  const { id, active, t, parent } = props;
   const snap = store.snap;
   const n = snap.nodes[id];
   if (!n) return null;
-  const top = id === store.top && index === 0;
+  const top = props.root && id === store.top;
   // A document's pane is a page of its own, headed like one.
   const page = top || docOf(snap, id) === id;
   const kids = sections(snap, id);
   const focused = active && !store.aux && store.focus.node === id;
   const editing = store.edit?.node === id && store.edit.field === "title";
-  const jump = index > 0 && !store.continuesFrom(props.p, parent);
+  const jump = !props.root && !props.orphan && !store.continuesFrom(props.p, parent);
   // Its children open to the right: the picked one's row is marked as showing; other forks' rows as forked.
   const kid = t.kids[t.pick];
   const showing = kid?.ref.kind === "node" && store.continuesFrom(kid.ref, props.p) ? kid.ref.id : undefined;
   const forked = new Set(t.kids.flatMap((k, j) => (j !== t.pick && k.ref.kind === "node" && store.continuesFrom(k.ref, props.p) ? [k.ref.id] : [])));
   return (
     <article
-      class={`pane${top ? " root" : ""}${page && !top ? " doc" : ""}${jump ? " jumped" : ""}${n.kind === "note" ? " note-pane" : ""}${store.preview ? " preview" : ""}`}
+      class={`pane${top ? " root" : ""}${page && !top ? " doc" : ""}${jump ? " jumped" : ""}${n.kind === "note" ? " note-pane" : ""}${store.preview ? " preview" : ""}${paneClass(props)}`}
       {...paneAttrs(props, id)}
     >
-      <div class="spine" data-spine={index} title={label(snap, id)}>
-        <span>{label(snap, id)}</span>
-      </div>
+      <Chrome props={props} title={label(snap, id)} />
       <div class="pane-scroll">
-        <ForkNote of={props.forkOf} />
-        {page ? (
-          <TopMatter id={id} />
-        ) : (
-          <>
-            {jump && <div class="pane-from">{docOf(snap, id) ? snap.nodes[docOf(snap, id)!].title : "the library"}</div>}
-            <header class={`pane-head${focused ? " focused" : ""}`} data-node={id}>
-              {editing ? <TitleEditor id={id} /> : <h2>{n.title || (n.kind === "note" ? label(snap, id) : <i class="untitled">untitled</i>)}</h2>}
-              <Flags id={id} />
-            </header>
-            <NodeBody id={id} />
-          </>
-        )}
-        {kids.length > 0 && (
-          <ul class="outline rows">
-            {kids.map((k) => (
-              <PaneRow key={k} id={k} showing={k === showing} forked={forked.has(k)} active={active} />
-            ))}
-          </ul>
-        )}
-        <PendingSections id={id} />
-        {store.articleUnder(id) ? <WikiView host={`n${id}`} /> : <TargetRow id={id} />}
-        <NodeBacklinks id={id} />
-        <NodeRelated id={id} />
+        <div class="pane-body">
+          <Orphaned on={props.orphan} />
+          {page ? (
+            <TopMatter id={id} />
+          ) : (
+            <>
+              {jump && <div class="pane-from">{docOf(snap, id) ? snap.nodes[docOf(snap, id)!].title : "the library"}</div>}
+              <header class={`pane-head${focused ? " focused" : ""}`} data-node={id}>
+                {editing ? <TitleEditor id={id} /> : <h2>{n.title || (n.kind === "note" ? label(snap, id) : <i class="untitled">untitled</i>)}</h2>}
+                <Flags id={id} />
+              </header>
+              <NodeBody id={id} />
+            </>
+          )}
+          {kids.length > 0 && (
+            <ul class="outline rows">
+              {kids.map((k) => (
+                <PaneRow key={k} id={k} showing={k === showing} forked={forked.has(k)} active={active} />
+              ))}
+            </ul>
+          )}
+          <PendingSections id={id} />
+          {store.articleUnder(id) ? <WikiView host={`n${id}`} /> : <TargetRow id={id} />}
+          <NodeBacklinks id={id} />
+          <NodeRelated id={id} />
+        </div>
       </div>
     </article>
   );
@@ -135,16 +177,14 @@ function WikiPane(props: PaneProps) {
   const sec = p.sec && a.state === "ready" ? a.value.sections.find((x) => x.id === p.sec) : undefined;
   const title = sec ? `${sec.heading} · ${p.title}` : a.state === "ready" ? a.value.title : p.title;
   return (
-    <article class={`pane wiki-pane${p.from ? " jumped" : ""}`} {...paneAttrs(props, `w:${p.title}${p.sec ? `#${p.sec}` : ""}`)}>
-      <div class="spine" data-spine={index} title={`Wikipedia: ${title}`}>
-        <span>
-          <b class="wmark">W</b> {title}
-        </span>
-      </div>
+    <article class={`pane wiki-pane${p.from ? " jumped" : ""}${paneClass(props)}`} {...paneAttrs(props, `w:${p.title}${p.sec ? `#${p.sec}` : ""}`)}>
+      <Chrome props={props} title={title} mark={<b class="wmark">W</b>} />
       <div class="pane-scroll">
-        <ForkNote of={props.forkOf} />
-        {/* On the focused branch an article pane is named by its column; off it, by its place in the tree. */}
-        <WikiView host={props.off ? `f${props.t.id}` : `p${index}`} />
+        <div class="pane-body">
+          <Orphaned on={props.orphan} />
+          {/* On the focused branch an article pane is named by its column; off it, by its place in the tree. */}
+          <WikiView host={props.off ? `f${props.t.id}` : `p${index}`} />
+        </div>
       </div>
     </article>
   );
@@ -160,7 +200,10 @@ function PaneRow({ id, showing, forked, active }: { id: NodeId; showing: boolean
   // While its pane is showing, the title is edited at the head of that pane instead.
   const editing = !showing && store.edit?.node === id && store.edit.field === "title";
   return (
-    <li class={`node d${Math.min(n.depth - (snap.library ? 1 : 0), 6)}${open ? " open" : ""}${focused ? " focused" : ""}${showing ? " showing" : ""}${forked ? " forked" : ""}${st.up || st.down ? " stale" : ""}`} data-node={id}>
+    <li
+      class={`node d${Math.min(n.depth - (snap.library ? 1 : 0), 6)}${open ? " open" : ""}${focused ? " focused" : ""}${showing ? " showing" : ""}${forked ? " forked" : ""}${showing || forked ? ` ${kidClass(`n:${id}`)}` : ""}${st.up || st.down ? " stale" : ""}`}
+      data-node={id}
+    >
       <Row id={id} open={open} leaf={leaf} editing={editing} />
     </li>
   );
@@ -179,70 +222,186 @@ function nearestY(el: Element | null | false) {
   else if (r.bottom > c.bottom - pad) box.scrollTop += Math.min(r.bottom - c.bottom + pad, r.top - c.top - pad);
 }
 
-const setAttr = (el: HTMLElement | undefined, name: string, on: boolean) => {
+const setAttr = (el: Element | undefined, name: string, on: boolean) => {
   if (el && el.hasAttribute(name) !== on) on ? el.setAttribute(name, "") : el.removeAttribute(name);
 };
 
-/** The least height a fork's row gets, on any window; below it the rows scroll. */
-const ROW_FLOOR = 220;
-/** Rows share the strip's height equally down to a third of it each (never below ROW_FLOOR); past that the stack of rows scrolls. */
-const rowMin = (h: number) => Math.max(ROW_FLOOR, Math.floor(h / 3));
-/** Whether forks can be drawn as rows: room for two rows, and for a fork's pane beside the pane it came from. */
-const roomy = (w: number, h: number, pane: number) => h >= 2 * ROW_FLOOR && w >= 2 * pane;
+/** The least height a pane keeps in a column while all its panes fit; below it, the column folds all but one into tabs. */
+export const PANE_MIN = 260;
+/** A folded pane's tab. */
+export const TAB = 30;
 
-const kidsKey = (t: PaneNode) => `${t.pick}:${t.kids.map((k) => refKey(k.ref)).join(",")}`;
+/**
+ * Heights for the panes of one column of height h, from what each needs to show all it holds:
+ * each gets that, or an equal share of what is left, whichever is less; what no pane needs goes to
+ * the one that needs most. So short panes are no taller than their text, and long ones share the rest.
+ */
+export function fill(h: number, needs: number[]): number[] {
+  const out = needs.map(() => 0);
+  const order = needs.map((_, i) => i).sort((a, b) => needs[a] - needs[b]);
+  let rest = h;
+  order.forEach((i, k) => {
+    const share = rest / (order.length - k);
+    out[i] = Math.floor(k === order.length - 1 ? rest : Math.min(needs[i], share));
+    rest -= out[i];
+  });
+  return out;
+}
 
-/** The panes drawn, by their id in the tree. */
+/** The panes drawn, by their id in the forest. */
 const paneEls = (el: HTMLElement) => {
   const m = new Map<number, HTMLElement>();
   for (const e of el.querySelectorAll<HTMLElement>(".pane[data-tid]")) m.set(Number(e.dataset.tid), e);
   return m;
 };
 
+const kidsKey = (t: PaneNode) => `${t.pick}:${t.kids.map((k) => refKey(k.ref)).join(",")}`;
+
+type Spot = Placed<PaneRef, Back>;
+
 export function Panes() {
   store.syncTrail();
-  const tree = store.tree;
   const strip = useRef<HTMLDivElement>(null);
+  const svg = useRef<SVGSVGElement>(null);
   const followed = useRef("");
-  const [room, setRoom] = useState(true);
-  // Forks are drawn as rows when there is room; otherwise only the focused branch is.
-  const rows = room && store.hasForks();
+  /** Per column, the pane last on the focused branch there: the one a folded column keeps open when the branch is elsewhere. */
+  const lastIn = useRef(new Map<number, number>());
+  /** What each pane last needed to show all it holds (a folded pane cannot be measured). */
+  const needs = useRef(new Map<number, number>());
+  /** Each column's sticky left edge, in px, as last set. */
+  const lefts = useRef<number[]>([]);
+  const frame = useRef(0);
+  /** A pending layout of the columns other than the active pane's. */
+  const later = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** Each column's panes when last laid out. */
+  const laid = useRef(new Map<HTMLElement, string>());
+  /** The layout of the latest render (a pending one uses it). */
+  const latest = useRef<(all?: boolean) => void>(() => {});
+  /** The active pane's column when the strip last followed it. */
+  const lastCol = useRef(-1);
+
+  const placed = store.panesPlaced;
+  const branch = store.branchNodes;
+  const onBranch = new Set(branch.map((n) => n.id));
+  const activeId = branch[store.paneAt]?.id;
+  const cols = new Map<number, Spot[]>();
+  for (const x of placed) {
+    const c = cols.get(x.col);
+    if (c) c.push(x);
+    else cols.set(x.col, [x]);
+  }
+  const order = [...cols.keys()].sort((a, b) => a - b);
 
   /**
-   * Mark how far each pane is covered by the next. Any overlap gives the upper pane a shadow edge
-   * (data-over); once too little of the pane is left to read its own heading, it shows as a spine
-   * with its title (data-covered). A pane's forks all start at the same column.
+   * Lay out the columns: each column's sticky left edge (every column before it leaves a spine, or
+   * the whole of a pinned pane's column), and the heights of the panes in each column with several.
+   */
+  const layout = (all = false) => {
+    const el = strip.current;
+    if (!el) return;
+    const colEls = [...el.children].filter((c): c is HTMLElement => c.classList.contains("col"));
+    if (!colEls.length) return;
+    clearTimeout(later.current);
+    const activeCol = activeId === undefined ? null : paneEls(el).get(activeId)?.parentElement;
+    const w = colEls[0].offsetWidth;
+    const spine = colEls[0].querySelector<HTMLElement>(".spine")?.offsetWidth ?? 0;
+    const view = el.clientWidth;
+    const n = colEls.length;
+    // With no scrollbar under the panes (none needed, or one drawn over them) their last bottom edge meets the status line's: one line, not two.
+    setAttr(el, "data-flush", el.offsetHeight - el.clientHeight < 1);
+    let left = 0;
+    lefts.current = colEls.map((c, i) => {
+      // Far enough left that the columns after it can still all be scrolled to.
+      const l = Math.round(Math.min(left, Math.max(i * spine, view - w - (n - 1 - i) * spine)));
+      if (c.style.left !== `${l}px`) c.style.left = `${l}px`;
+      left += c.hasAttribute("data-pinned") ? w : spine;
+      return l;
+    });
+    for (const c of colEls) {
+      const ps = [...c.children] as HTMLElement[];
+      if (ps.length < 2) {
+        for (const p of ps) {
+          setAttr(p, "data-tab", false);
+          if (p.style.height) (p.style.height = ""), (p.style.flex = "");
+        }
+        continue;
+      }
+      const h = c.clientHeight;
+      const col = Number(c.dataset.col);
+      const pad = (() => {
+        const s = ps.find((p) => !p.hasAttribute("data-tab"))?.querySelector<HTMLElement>(".pane-scroll");
+        if (!s) return 60;
+        const cs = getComputedStyle(s);
+        return parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 1;
+      })();
+      const tids = ps.map((p) => Number(p.dataset.tid));
+      const need = ps.map((p, i) => {
+        const body = p.hasAttribute("data-tab") ? null : p.querySelector<HTMLElement>(".pane-body");
+        if (body) needs.current.set(tids[i], body.offsetHeight + pad);
+        return needs.current.get(tids[i]) ?? PANE_MIN;
+      });
+      const pinned = ps.map((p) => p.classList.contains("pinned"));
+      const fits = need.reduce((s, x) => s + Math.min(x, PANE_MIN), 0) <= h;
+      let heights: number[];
+      let tab: boolean[];
+      if (fits) {
+        tab = ps.map(() => false);
+        heights = fill(h, need);
+      } else {
+        // Too many to share the height: the pane on the focused branch (or the one last on it here) keeps it, pinned panes keep their least, the rest fold.
+        const here = tids.find((t) => onBranch.has(t));
+        const keep = here ?? (tids.includes(lastIn.current.get(col)!) ? lastIn.current.get(col)! : tids[0]);
+        tab = tids.map((t, i) => t !== keep && !pinned[i]);
+        const folded = tab.filter(Boolean).length;
+        const kept = tids.map((t, i) => (!tab[i] && t !== keep ? Math.min(need[i], PANE_MIN) : 0));
+        const rest = h - folded * TAB - kept.reduce((s, x) => s + x, 0);
+        heights = tids.map((t, i) => (tab[i] ? TAB : t === keep ? Math.max(PANE_MIN, rest) : kept[i]));
+      }
+      // Folding and unfolding repaints whole panes: as the focus moves, in the active pane's column at once, in the others once the keys pause.
+      const sig = tids.map((t, i) => `${t}${pinned[i] ? "^" : ""}`).join();
+      const same = laid.current.get(c) === sig;
+      laid.current.set(c, sig);
+      if (!all && same && c !== activeCol && ps.some((p, i) => p.hasAttribute("data-tab") !== tab[i])) {
+        later.current = setTimeout(() => {
+          latest.current(true);
+          schedule();
+        }, 150);
+        continue;
+      }
+      ps.forEach((p, i) => {
+        setAttr(p, "data-tab", tab[i]);
+        if (p.style.height !== `${heights[i]}px`) (p.style.height = `${heights[i]}px`), (p.style.flex = "none");
+      });
+    }
+    // The focused branch's panes, marked without redrawing them.
+    for (const [id, p] of paneEls(el)) p.classList.toggle("on-branch", onBranch.has(id));
+    for (const x of placed) if (onBranch.has(x.node.id)) lastIn.current.set(x.col, x.node.id);
+  };
+
+  /**
+   * Mark how far each column is covered by the next. Any overlap gives the column above a shadow
+   * edge (data-over); once too little of it is left to read its own heading, its panes show as
+   * spines with their titles (data-covered).
    */
   const measure = () => {
     const el = strip.current;
-    const t = store.tree;
-    if (!el || !t) return;
-    const els = paneEls(el);
-    const first = els.get(t.id);
-    if (!first) return;
-    const w = first.offsetWidth;
-    const marks: [HTMLElement, number, HTMLElement[]][] = [];
-    const visit = (n: PaneNode) => {
-      const e = els.get(n.id);
-      if (!e) return;
-      const kids = n.kids.flatMap((k) => els.get(k.id) ?? []);
-      const next = els.get(n.kids[n.pick]?.id) ?? kids[0];
-      marks.push([e, next ? next.getBoundingClientRect().left - e.getBoundingClientRect().left : w, kids]);
-      n.kids.forEach(visit);
-    };
-    visit(t);
-    for (const [e, visible, kids] of marks) {
-      setAttr(e, "data-covered", visible < w * 0.4);
-      for (const k of kids) setAttr(k, "data-over", visible < w - 1);
-    }
+    if (!el) return;
+    const colEls = el.querySelectorAll<HTMLElement>(":scope > .col");
+    if (!colEls.length) return;
+    const w = colEls[0].offsetWidth;
+    const xs = [...colEls].map((c) => c.getBoundingClientRect().left);
+    colEls.forEach((c, i) => {
+      const visible = i + 1 < xs.length ? xs[i + 1] - xs[i] : w;
+      setAttr(c, "data-covered", visible < w * 0.4);
+      setAttr(colEls[i + 1], "data-over", visible < w - 1);
+    });
   };
 
   /**
    * Keep the focus in view. Vertically, the pane holding the focus scrolls to its focused row,
-   * selection or link. Horizontally, the strip scrolls as little as it can so that pane is fully
-   * visible and, when there is room, so is the pane beside it: for a row whose pane is showing,
-   * that pane; otherwise the pane before. With forks, the strip also scrolls down or up as little
-   * as it can to show the focused branch's row.
+   * selection or link. Horizontally, the strip scrolls as little as it can so that pane's column is
+   * fully visible and, when there is room, so is the column beside it: for a row whose pane is
+   * showing, that pane's; otherwise the one before.
    */
   const follow = () => {
     const el = strip.current;
@@ -250,7 +409,7 @@ export function Panes() {
     const f = store.focus;
     const at = store.paneAt;
     const nodes = store.branchNodes;
-    const key = `${f.node}|${f.grain}|${f.range?.join()}|${JSON.stringify(store.aux)}|${at}|${nodes.map((n) => n.id).join(",")}|${el.clientWidth}|${el.clientHeight}|${store.mode === "edit"}`;
+    const key = `${f.node}|${f.grain}|${f.range?.join()}|${JSON.stringify(store.aux)}|${at}|${nodes.map((n) => n.id).join(",")}|${el.clientWidth}|${el.clientHeight}|${store.mode === "edit"}|${lefts.current.join(",")}`;
     if (key === followed.current) return;
     followed.current = key;
     const els = paneEls(el);
@@ -263,99 +422,280 @@ export function Panes() {
       const pane = panes[at];
       nearestY(pane?.querySelector(".sel, .wfocus, .node.focused > .row, .wrow.focused > .row, .backlinks li.focused, .target-row.focused, .wiki-head.focused, .pane-head.focused, .focused"));
     }
-    const w = panes[0].offsetWidth;
-    const spine = (panes[0].querySelector(".spine") as HTMLElement | null)?.offsetWidth ?? 0;
+    const colEls = [...el.querySelectorAll<HTMLElement>(":scope > .col")];
+    const colOf = (p: HTMLElement | undefined) => (p ? colEls.indexOf(p.parentElement as HTMLElement) : -1);
+    const w = colEls[0].offsetWidth;
     const view = el.clientWidth;
-    const b = Math.min(panes.length - 1, showing ? at + 1 : at);
+    const L = lefts.current;
+    const b = colOf(panes[Math.min(panes.length - 1, showing ? at + 1 : at)]);
+    if (b < 0) return;
+    // Up and down a column (or within a pane) the strip stays still while the pane looked at is fully in view.
+    const here = colOf(panes[at]);
+    const was = lastCol.current;
+    lastCol.current = here;
+    if (here === was && el.scrollLeft >= (b + 1) * colEls[0].offsetWidth - el.clientWidth - 1 && el.scrollLeft <= b * colEls[0].offsetWidth - (lefts.current[b] ?? 0) + 1) return;
     let a = b > 0 && (showing || f.grain === "node") ? b - 1 : b;
-    // Pane i starts at i·w. It is uncovered while scrollLeft ≤ i·(w − spine), and its right edge is in view while scrollLeft ≥ (i+1)·w − view.
+    // Column i starts at i·w. It is uncovered while scrollLeft ≤ i·w − its sticky left, and its right edge is in view while scrollLeft ≥ (i+1)·w − view.
     const lo = (b + 1) * w - view;
-    if (lo > a * (w - spine)) a = b;
-    const hi = a * (w - spine);
+    if (lo > a * w - (L[a] ?? 0)) a = b;
+    const hi = a * w - (L[a] ?? 0);
     const target = Math.max(0, Math.min(el.scrollWidth - view, Math.min(Math.max(el.scrollLeft, lo), hi)));
-    // The row the branch ends in holds every pane of the branch (a pane with forks stays at the top while its rows scroll).
-    let top = el.scrollTop;
-    const row = panes[panes.length - 1].closest<HTMLElement>(".fork");
-    if (row) {
-      const r = row.getBoundingClientRect();
-      const c = el.getBoundingClientRect().top;
-      if (r.top < c) top += r.top - c;
-      else if (r.bottom > c + el.clientHeight) top += Math.min(r.bottom - c - el.clientHeight, r.top - c);
-    }
-    // Down or up to another row at once: a smooth scroll that way repaints every row's panes on each frame, which costs frames on a slow machine.
-    if (Math.abs(top - el.scrollTop) > 1) el.scrollTop = top;
     if (Math.abs(target - el.scrollLeft) > 1) el.scrollTo({ left: target, behavior: reducedMotion() ? "auto" : "smooth" });
   };
 
-  /** The rows' sizes follow the strip's height; whether there is room for rows at all, its size and a pane's width. */
-  const size = () => {
-    const el = strip.current;
-    if (!el) return;
-    el.style.setProperty("--strip-h", `${el.clientHeight}px`);
-    el.style.setProperty("--row-min", `${rowMin(el.clientHeight)}px`);
-    const pane = el.querySelector<HTMLElement>(".pane")?.offsetWidth ?? 0;
-    setRoom(roomy(el.clientWidth, el.clientHeight, pane));
+  /** Draw the curves on the next frame (after the layout this frame settles). */
+  const schedule = () => {
+    if (!frame.current)
+      frame.current = requestAnimationFrame(() => {
+        frame.current = 0;
+        curves(strip.current, svg.current);
+      });
   };
 
+  latest.current = layout;
   useLayoutEffect(() => {
+    layout();
     follow();
     measure();
+    schedule();
   });
-
-  useLayoutEffect(size, []);
 
   useEffect(() => {
     const el = strip.current!;
-    let frame = 0;
-    const onScroll = () => {
-      if (!frame) frame = requestAnimationFrame(() => ((frame = 0), measure()));
+    const wrap = el.parentElement!;
+    const onScroll = (e: Event) => {
+      if (e.target === el) measure();
+      schedule();
     };
     const onResize = () => {
-      size();
+      latest.current(true);
       followed.current = "";
       follow();
       measure();
+      schedule();
     };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    // The strip changes width with the window and when the history panel opens or closes.
+    // Panes scroll on their own: their scroll events are caught on the way down.
+    wrap.addEventListener("scroll", onScroll, { passive: true, capture: true });
+    // The strip changes size with the window and when the history panel opens or closes.
     const sizes = new ResizeObserver(onResize);
     sizes.observe(el);
+    document.fonts?.ready.then(onResize);
     return () => {
-      cancelAnimationFrame(frame);
-      el.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame.current);
+      clearTimeout(later.current);
+      wrap.removeEventListener("scroll", onScroll, { capture: true });
       sizes.disconnect();
     };
   }, []);
 
-  const onBranch = new Set(store.branchNodes.map((n) => n.id));
-  /**
-   * A pane and what is right of it. A plain trail is a flat run of panes, as before; to the right of
-   * a pane with forks, a stack of rows, one per fork in the order they were opened, each holding
-   * that fork's panes (and perhaps a stack of its own). Without room for rows, only the picked fork.
-   */
-  const draw = (t: PaneNode, depth: number, parent?: PaneRef, forkOf?: [number, number]): ComponentChildren[] => {
-    const off = !onBranch.has(t.id);
-    const active = !off && store.paneAt === depth;
-    const out: ComponentChildren[] = [
-      <Pane key={t.id} t={t} p={t.ref} parent={parent} index={depth} kids={kidsKey(t)} off={off} forkOf={forkOf} active={active} aux={active ? store.aux : null} />,
-    ];
-    if (!t.kids.length) return out;
-    if (t.kids.length === 1 || !rows) return [...out, ...draw(t.kids[t.pick], depth + 1, t.ref, t.kids.length > 1 ? [t.pick, t.kids.length] : undefined)];
-    out.push(
-      <div key={`f${t.id}`} class="forks" style={`--leaves:${leaves(t)}`}>
-        {t.kids.map((k) => (
-          <div key={k.id} class={`fork${onBranch.has(k.id) ? " on" : ""}`} style={`--leaves:${leaves(k)}`}>
-            {draw(k, depth + 1, t.ref)}
-          </div>
-        ))}
-      </div>,
-    );
-    return out;
-  };
-
   return (
-    <div class={`strip${rows ? " forked" : ""}`} ref={strip}>
-      {tree && draw(tree, 0)}
+    <div class="panes">
+      <div class="strip" ref={strip}>
+        {order.map((c) => {
+          const items = cols.get(c)!;
+          return (
+            <div key={c} class={`col${items.length > 1 ? " split" : ""}`} data-col={c} data-pinned={items.some((x) => x.node.pinned) || undefined}>
+              {items.map((x) => {
+                const off = !onBranch.has(x.node.id);
+                const active = x.node.id === activeId;
+                return (
+                  <Pane
+                    key={x.node.id}
+                    t={x.node}
+                    p={x.node.ref}
+                    parent={x.parent?.ref}
+                    index={x.depth}
+                    kids={kidsKey(x.node)}
+                    off={off}
+                    active={active}
+                    aux={active ? store.aux : null}
+                    root={x.ti === 0 && x.depth === 0}
+                    orphan={x.ti > 0 && x.depth === 0}
+                  />
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+      <svg class="curves" ref={svg} aria-hidden="true" />
     </div>
   );
+}
+
+/** One curve, measured: where it leaves its source (y, and x where the lead-out starts), the edge of the source's text, where it arrives, and the gutter it runs down. */
+interface Edge {
+  from: number;
+  to: number;
+  /** The child's column: the gutter, just inside its left edge. */
+  gutter: number;
+  left: number;
+  sx: number;
+  sy: number;
+  /** For words: the right end of their underline, which a short step joins to the lead-out. */
+  under?: { x: number; y: number };
+  textRight: number;
+  ex: number;
+  ey: number;
+  on: boolean;
+  lost: boolean;
+}
+
+/** A font's descent, by its CSS font string: where its baseline sits above the bottom of an inline box. */
+const descents = new Map<string, number>();
+let measurer: CanvasRenderingContext2D | null | undefined;
+/** Where the underline of linked or annotated words runs, given their last line's box: a link's under the baseline by its offset; a note's dotted rule at the box's foot. */
+function underline(s: HTMLElement, r: DOMRect): number {
+  const cs = getComputedStyle(s);
+  const fs = parseFloat(cs.fontSize) || 16;
+  if (s.matches(".anchor")) return r.bottom - 0.08 * fs - 0.5;
+  let d = descents.get(cs.font);
+  if (d === undefined) {
+    measurer ??= document.createElement("canvas").getContext("2d");
+    if (measurer) measurer.font = cs.font;
+    d = measurer?.measureText("x").fontBoundingBoxDescent ?? 0.25 * fs;
+    descents.set(cs.font, d);
+  }
+  const off = parseFloat(cs.textUnderlineOffset);
+  return r.bottom - d + (Number.isFinite(off) ? off : 0.1 * fs) + 0.5;
+}
+
+/** Where a curve arrives, from its column's left edge: just short of the title. */
+const ARRIVE = 36;
+
+/** The lane order last used in each gutter, by the curves' keys. */
+const lanesUsed = new Map<number, string[]>();
+
+/**
+ * The curves: one per pane opened from another, from what it was opened from to its title. A
+ * curve leaves its source sideways, through the gap under the line (an extended
+ * underline, for words) to the edge of the text, turns into a lane of the gutter just inside the
+ * next column, and turns again into the child's title. Curves through one gutter run side by side
+ * in lanes, like a ribbon cable, ordered so they cross as little as they can; past the lanes there
+ * is room for, the rest share the outermost. On the focused branch a curve is drawn in a stronger
+ * ink, last. A source scrolled out of its pane, folded into a tab or under the next column is held
+ * at the pane's edge and the curve dotted; a curve into or out of a column covered down to its
+ * spines is not drawn.
+ */
+function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
+  if (!el || !svg) return;
+  if (!store.settings.curves) {
+    if (svg.firstChild) svg.replaceChildren();
+    return;
+  }
+  const box = svg.getBoundingClientRect();
+  const els = paneEls(el);
+  const colEls = [...el.children] as HTMLElement[];
+  const branch = new Set(store.branchNodes.map((n) => n.id));
+  const edges: Edge[] = [];
+  for (const x of store.panesPlaced) {
+    const parent = x.parent;
+    if (!parent) continue;
+    const pe = els.get(parent.id);
+    const ce = els.get(x.node.id);
+    const pcol = pe?.parentElement;
+    const ccol = ce?.parentElement;
+    if (!pe || !ce || !pcol || !ccol || pcol.hasAttribute("data-covered") || ccol.hasAttribute("data-covered")) continue;
+    const left = ccol.getBoundingClientRect().left;
+    // Where it arrives: just before the child's title, or its tab's.
+    const cbox = ce.getBoundingClientRect();
+    let ey: number;
+    if (ce.hasAttribute("data-tab")) ey = cbox.top + TAB / 2;
+    else {
+      const scroll = ce.querySelector<HTMLElement>(".pane-scroll")!.getBoundingClientRect();
+      const tr = ce.querySelector<HTMLElement>(".pane-head h2, .top h1, .wiki-head h2")?.getBoundingClientRect();
+      ey = tr && tr.bottom > scroll.top + 4 ? Math.max(scroll.top + 6, tr.top + Math.min(tr.height, 32) / 2) : scroll.top + 14;
+    }
+    // Where it starts: the words, row or link it was opened from. The text's edge: the pane's right padding, or the next column where it covers the pane.
+    const pbox = pe.getBoundingClientRect();
+    const textRight = Math.min(pbox.right - 33, left - 2);
+    let sx = textRight;
+    let sy: number;
+    let under: { x: number; y: number } | undefined;
+    let lost = false;
+    if (pe.hasAttribute("data-tab")) {
+      sy = pbox.top + TAB / 2;
+      lost = true;
+    } else {
+      const sc = pe.querySelector<HTMLElement>(".pane-scroll")!.getBoundingClientRect();
+      const cands = pe.querySelectorAll<HTMLElement>(`.${kidClass(refKey(x.node.ref))}`);
+      let src: HTMLElement | undefined;
+      for (const c of cands) {
+        const r = c.getBoundingClientRect();
+        if (r.height && r.bottom > sc.top && r.top < sc.bottom) {
+          src = c;
+          break;
+        }
+      }
+      src ??= cands[0];
+      const head = pe.querySelector<HTMLElement>(".pane-head h2, .top h1, .wiki-head h2");
+      const s = src ?? head;
+      if (!s) continue;
+      const row = s.matches("li") ? s.querySelector<HTMLElement>(":scope > .row") : null;
+      const rects = (row ?? s).getClientRects();
+      const r = rects[rects.length - 1] ?? (row ?? s).getBoundingClientRect();
+      if (row || s === head) {
+        // A row is left from its right end, mid-height.
+        sy = r.top + r.height / 2;
+        sx = Math.min(r.right + 4, textRight);
+      } else {
+        // Words: from just under their last line, in the gap before the next, joined by a short step to the end of their underline.
+        sy = r.bottom + 1;
+        const uy = underline(s, r);
+        const j = Math.max(2, sy - uy);
+        under = { x: r.right, y: uy };
+        sx = r.right + 2 * j;
+      }
+      if (sy < sc.top + 2 || sy > sc.bottom - 2 || sx > textRight + 1) {
+        lost = true;
+        under = undefined;
+        sx = textRight;
+        sy = Math.max(sc.top + 2, Math.min(sc.bottom - 2, sy));
+      }
+    }
+    const gutter = colEls.indexOf(ccol);
+    edges.push({ from: parent.id, to: x.node.id, gutter, left: left - box.left, sx: sx - box.left, sy: sy - box.top, under: under && { x: under.x - box.left, y: under.y - box.top }, textRight: textRight - box.left, ex: left + ARRIVE - box.left, ey: ey - box.top, on: branch.has(x.node.id) && branch.has(parent.id), lost });
+  }
+  // Lanes, gutter by gutter.
+  const lane = new Map<Edge, number>();
+  const gutters = new Map<number, Edge[]>();
+  for (const e of edges) gutters.set(e.gutter, [...(gutters.get(e.gutter) ?? []), e]);
+  for (const [g, es] of gutters) {
+    const keyed = es.map((e) => ({ e, key: `${e.from}>${e.to}`, sy: e.sy, ey: e.ey }));
+    const order = laneOrder(keyed, lanesUsed.get(g));
+    lanesUsed.set(
+      g,
+      order.map((o) => o.key),
+    );
+    order.forEach((o, i) => lane.set(o.e, Math.min(i, LANES - 1)));
+  }
+  for (const g of [...lanesUsed.keys()]) if (!gutters.has(g)) lanesUsed.delete(g);
+  const fx = (n: number) => Math.round(n * 2) / 2;
+  const out: string[] = [];
+  edges.sort((a, b) => Number(a.on) - Number(b.on));
+  for (const e of edges) {
+    const i = lane.get(e)!;
+    // Lane 0 is nearest the panes, the last nearest the column's edge.
+    const g = e.left + LANE_LAST - i * LANE_PITCH;
+    const dy = e.ey - e.sy;
+    let d: string;
+    const join = e.under ? `M${fx(e.under.x)} ${fx(e.under.y)}C${fx((e.under.x + e.sx) / 2)} ${fx(e.under.y)} ${fx((e.under.x + e.sx) / 2)} ${fx(e.sy)} ${fx(e.sx)} ${fx(e.sy)}` : `M${fx(e.sx)} ${fx(e.sy)}`;
+    if (Math.abs(dy) < 1.5) d = `${join}H${fx(e.ex)}`;
+    else {
+      // A lead-out to the lane, a quarter turn, the lane, a quarter turn into the title. Each turn's radius grows by a pitch per lane outwards, so a bundle turning together stays parallel; a turn never starts inside the text.
+      const sg = Math.sign(dy);
+      const r1 = Math.max(1, Math.min(Math.abs(dy) / 2, g - Math.max(e.sx, e.textRight), 8 + (LANE_LAST - LANE_FIRST) - i * LANE_PITCH));
+      const r2 = Math.max(1, Math.min(Math.abs(dy) / 2, e.ex - g - 1));
+      const k = 0.552;
+      d =
+        `${join}H${fx(g - r1)}` +
+        `C${fx(g - r1 + k * r1)} ${fx(e.sy)} ${fx(g)} ${fx(e.sy + sg * r1 * (1 - k))} ${fx(g)} ${fx(e.sy + sg * r1)}` +
+        `V${fx(e.ey - sg * r2)}` +
+        `C${fx(g)} ${fx(e.ey - sg * r2 * (1 - k))} ${fx(g + r2 - k * r2)} ${fx(e.ey)} ${fx(g + r2)} ${fx(e.ey)}` +
+        `H${fx(e.ex)}`;
+    }
+    out.push(`<path data-from="${e.from}" data-to="${e.to}" data-lane="${i}" class="${e.on ? "on" : ""}${e.lost ? " lost" : ""}" d="${d}"/>`);
+  }
+  const html = out.join("");
+  if (svg.innerHTML !== html) svg.innerHTML = html;
 }

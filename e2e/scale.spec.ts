@@ -100,7 +100,7 @@ test("a library of over 5,000 nodes in 100 more documents: keypress → paint an
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto("/");
   await ready(page);
-  await expect(page.locator(".strip > .pane")).toHaveCount(1);
+  await expect(page.locator(".strip .pane")).toHaveCount(1);
   await page.evaluate(() => ((globalThis as any).__ie.samples.length = 0));
   for (let i = 0; i < 40; i++) await paced(page, "j");
   for (let i = 0; i < 6; i++) await paced(page, "l l l j l i j Escape h h h j");

@@ -1,13 +1,17 @@
 /**
- * The panes view's panes as a tree. Each pane may have several children ("forks"), each of which
- * continues its own trail to the right and may fork again. Every node remembers which child is
- * picked; following the picks from the root gives the focused branch, the trail the keys move along
- * (`store.trail`), so there is always exactly one. A plain trail is the tree with one child
- * everywhere.
+ * The panes view's panes as a forest. Each pane may have several children ("forks"), each of which
+ * continues its own trail to the right and may fork again; a pane's column is its depth. The first
+ * tree starts at the top node; the others are orphans: pinned panes that stayed open when a pane
+ * they were opened from closed, each keeping the column it was in.
+ *
+ * Every node remembers which child is picked; following the picks from the root of the focused
+ * tree gives the focused branch, the trail the keys move along (`store.trail`), so there is always
+ * exactly one. A plain trail is one tree with one child everywhere.
  *
  * Pure functions on immutable trees: an operation copies the path it changes and shares the rest,
- * so a tree that did not change is the same object (the store memoises on identity). A node's `id`
- * names the pane for as long as it is open (keys, the hosts of article panes off the branch).
+ * so a forest that did not change is the same object (the store memoises on identity). A node's
+ * `id` names the pane for as long as it is open (keys, curves, the hosts of article panes off the
+ * branch).
  */
 
 export interface Tree<R, S = unknown> {
@@ -16,8 +20,18 @@ export interface Tree<R, S = unknown> {
   /** Which child the branch goes on to (0 with none): the focused one, or the one last focused. */
   pick: number;
   id: number;
-  /** Where the reader was when they last left this fork (to come back to). */
+  /** Where the reader was when they last left this pane by [ or ] (to come back to). */
   seen?: S;
+  /** Pinned: stays open when a pane it was opened from closes, is never replaced by a plain open, and never collapses. */
+  pinned?: boolean;
+  /** On the root of an orphan: the column it stays in. */
+  col?: number;
+}
+
+/** The trees, the first starting at the top node; `at` is the one the focused branch is in. */
+export interface Forest<R, S = unknown> {
+  trees: Tree<R, S>[];
+  at: number;
 }
 
 export type Same<R> = (a: R, b: R) => boolean;
@@ -32,14 +46,26 @@ export function chain<R, S>(refs: R[]): Tree<R, S> | null {
   return t;
 }
 
-/** The nodes of the focused branch, from the root. */
+/** A forest of one tree (none for no refs). */
+export const plain = <R, S>(refs: R[]): Forest<R, S> => {
+  const t = chain<R, S>(refs);
+  return { trees: t ? [t] : [], at: 0 };
+};
+
+/** The column a tree's root is in. */
+export const colOf = (t: Tree<unknown, unknown>) => t.col ?? 0;
+
+/** The focused tree. */
+export const focused = <R, S>(f: Forest<R, S>): Tree<R, S> | null => f.trees[f.at] ?? null;
+
+/** The nodes of a tree's focused branch, from the root. */
 export function path<R, S>(t: Tree<R, S> | null): Tree<R, S>[] {
   const out: Tree<R, S>[] = [];
   for (let n: Tree<R, S> | undefined = t ?? undefined; n; n = n.kids[n.pick]) out.push(n);
   return out;
 }
 
-/** Replace the node at depth i of the focused branch with f(node), copying the path above it. */
+/** Replace the node at depth i of a tree's focused branch with f(node), copying the path above it. */
 function at<R, S>(t: Tree<R, S>, i: number, f: (n: Tree<R, S>) => Tree<R, S>): Tree<R, S> {
   if (i <= 0) return f(t);
   const kid = t.kids[t.pick];
@@ -49,7 +75,7 @@ function at<R, S>(t: Tree<R, S>, i: number, f: (n: Tree<R, S>) => Tree<R, S>): T
   return { ...t, kids };
 }
 
-/** The path of nodes from the root to the node with this id, or null. */
+/** The path of nodes from a tree's root to the node with this id, or null. */
 export function trace<R, S>(t: Tree<R, S> | null, id: number): Tree<R, S>[] | null {
   if (!t) return null;
   if (t.id === id) return [t];
@@ -60,17 +86,34 @@ export function trace<R, S>(t: Tree<R, S> | null, id: number): Tree<R, S>[] | nu
   return null;
 }
 
-/** Every node, depth first, top row first, with its depth (its column). */
-export function all<R, S>(t: Tree<R, S> | null, depth = 0, out: { node: Tree<R, S>; depth: number }[] = []) {
-  if (!t) return out;
-  out.push({ node: t, depth });
-  for (const k of t.kids) all(k, depth + 1, out);
-  return out;
+/** Where a pane is: its tree, and the path to it from that tree's root. */
+export function find<R, S>(f: Forest<R, S>, id: number): { ti: number; path: Tree<R, S>[] } | null {
+  for (let ti = 0; ti < f.trees.length; ti++) {
+    const p = trace(f.trees[ti], id);
+    if (p) return { ti, path: p };
+  }
+  return null;
 }
 
-/** How many leaves (rows at the far right) a subtree has. */
-export function leaves<R, S>(t: Tree<R, S>): number {
-  return t.kids.length ? t.kids.reduce((n, k) => n + leaves(k), 0) : 1;
+export interface Placed<R, S> {
+  node: Tree<R, S>;
+  /** Its depth in its own tree (its place on that tree's branch, when the tree is focused). */
+  depth: number;
+  /** Its column on screen. */
+  col: number;
+  ti: number;
+  parent?: Tree<R, S>;
+}
+
+/** Every pane, tree by tree, depth first, earlier forks first: the order panes stand in a column, top to bottom. */
+export function all<R, S>(f: Forest<R, S>): Placed<R, S>[] {
+  const out: Placed<R, S>[] = [];
+  const go = (node: Tree<R, S>, depth: number, col: number, ti: number, parent?: Tree<R, S>) => {
+    out.push({ node, depth, col, ti, parent });
+    for (const k of node.kids) go(k, depth + 1, col + 1, ti, node);
+  };
+  f.trees.forEach((t, ti) => go(t, 0, colOf(t), ti));
+  return out;
 }
 
 /** Change the node with this id, copying the path to it. */
@@ -85,50 +128,15 @@ export function update<R, S>(t: Tree<R, S>, id: number, f: (n: Tree<R, S>) => Tr
   return changed ? { ...t, kids } : t;
 }
 
-/**
- * Open something to the right of pane i of the focused branch. If it is already open there (as any
- * of the forks) that fork is picked and kept as it is. Otherwise a fork adds a child below the
- * others; a plain open replaces the picked child (and everything right of it), or adds the first.
- */
-export function open<R, S>(t: Tree<R, S>, i: number, ref: R, fork: boolean, same: Same<R>): Tree<R, S> {
-  return at(t, i, (n) => {
-    const k = n.kids.findIndex((c) => same(c.ref, ref));
-    if (k >= 0) return k === n.pick ? n : { ...n, pick: k };
-    if (!n.kids.length) return { ...n, kids: [leaf(ref)], pick: 0 };
-    if (fork) return { ...n, kids: [...n.kids, leaf(ref)], pick: n.kids.length };
-    const kids = n.kids.slice();
-    kids[n.pick] = leaf(ref);
-    return { ...n, kids };
-  });
+/** Change the node with this id, in whichever tree it is. */
+export function updateIn<R, S>(f: Forest<R, S>, id: number, fn: (n: Tree<R, S>) => Tree<R, S>): Forest<R, S> {
+  const hit = find(f, id);
+  if (!hit) return f;
+  const t = update(f.trees[hit.ti], id, fn);
+  return t === f.trees[hit.ti] ? f : { ...f, trees: f.trees.map((x, j) => (j === hit.ti ? t : x)) };
 }
 
-/** Close everything right of pane i of the focused branch, every fork of it included. */
-export function closeRight<R, S>(t: Tree<R, S>, i: number): Tree<R, S> {
-  return at(t, i, (n) => (n.kids.length ? { ...n, kids: [], pick: 0 } : n));
-}
-
-/** Remove a child of a node, picking the one that takes its place (the one below, else the one above). */
-function dropKid<R, S>(n: Tree<R, S>, k: number): Tree<R, S> {
-  const kids = n.kids.filter((_, j) => j !== k);
-  const pick = k < n.pick ? n.pick - 1 : Math.max(0, Math.min(n.pick, kids.length - 1));
-  return { ...n, kids, pick };
-}
-
-/** Close pane i of the focused branch (i ≥ 1) and everything right of it. Its siblings stay. */
-export function closeAt<R, S>(t: Tree<R, S>, i: number): Tree<R, S> {
-  if (i < 1) return t;
-  return at(t, i - 1, (n) => (n.kids.length ? dropKid(n, n.pick) : n));
-}
-
-/** Close the child of pane i of the focused branch that shows this (whichever fork it is). */
-export function closeChild<R, S>(t: Tree<R, S>, i: number, ref: R, same: Same<R>): Tree<R, S> {
-  return at(t, i, (n) => {
-    const k = n.kids.findIndex((c) => same(c.ref, ref));
-    return k < 0 ? n : dropKid(n, k);
-  });
-}
-
-/** Make the node with this id lie on the focused branch (its own picks below it kept). */
+/** Make the node with this id lie on its tree's focused branch (its own picks below it kept). */
 export function select<R, S>(t: Tree<R, S>, id: number): Tree<R, S> | null {
   if (t.id === id) return t;
   for (let k = 0; k < t.kids.length; k++) {
@@ -138,72 +146,196 @@ export function select<R, S>(t: Tree<R, S>, id: number): Tree<R, S> | null {
   return null;
 }
 
-/**
- * The fork above (delta −1) or below (+1) the focused branch, in the order the rows are drawn: from
- * the branch's last pane leftwards, the nearest pane with a sibling in that direction. Returns the
- * tree with that sibling picked and the depth it is at, or null at the top or bottom.
- */
-export function sibling<R, S>(t: Tree<R, S>, delta: number): { tree: Tree<R, S>; depth: number } | null {
-  const p = path(t);
-  for (let d = p.length - 1; d >= 1; d--) {
-    const parent = p[d - 1];
-    const k = parent.pick + delta;
-    if (k >= 0 && k < parent.kids.length) return { tree: at(t, d - 1, (n) => ({ ...n, pick: k })), depth: d };
-  }
-  return null;
+/** Make the pane with this id lie on the focused branch: its tree focused, and picked down to it. */
+export function focus<R, S>(f: Forest<R, S>, id: number): Forest<R, S> {
+  const hit = find(f, id);
+  if (!hit) return f;
+  const t = select(f.trees[hit.ti], id)!;
+  if (t === f.trees[hit.ti] && hit.ti === f.at) return f;
+  return { trees: t === f.trees[hit.ti] ? f.trees : f.trees.map((x, j) => (j === hit.ti ? t : x)), at: hit.ti };
 }
 
-/** Drop every pane whose ref fails `keep` (with everything right of it). Null if the root goes. Unchanged trees are returned as they are. */
-export function prune<R, S>(t: Tree<R, S> | null, keep: (r: R) => boolean): Tree<R, S> | null {
-  if (!t || !keep(t.ref)) return null;
-  let changed = false;
-  // The picked child, or the one that takes its place: as many kept children before it.
-  let pick = 0;
-  const kids: Tree<R, S>[] = [];
-  t.kids.forEach((k, j) => {
-    const p = prune(k, keep);
-    if (p !== k) changed = true;
-    if (p) kids.push(p);
-    if (j === t.pick) pick = kids.length - (p ? 1 : 0);
+/**
+ * What stays open when a pane closes: the pinned panes inside it (topmost first, each with what it
+ * opened), as orphans in the columns they were in. `self`: whether the pane itself may stay.
+ */
+function survivors<R, S>(n: Tree<R, S>, col: number, self: boolean): Tree<R, S>[] {
+  if (self && n.pinned) return [{ ...n, col }];
+  return n.kids.flatMap((k) => survivors(k, col + 1, true));
+}
+
+/** Put a tree in place of tree ti (null removes it), with orphans right after it. The focused tree stays focused. */
+function replace<R, S>(f: Forest<R, S>, ti: number, t: Tree<R, S> | null, orphans: Tree<R, S>[]): Forest<R, S> {
+  if (t === f.trees[ti] && !orphans.length) return f;
+  const trees = [...f.trees.slice(0, ti), ...(t ? [t] : []), ...orphans, ...f.trees.slice(ti + 1)];
+  const was = f.trees[f.at];
+  const at = trees.indexOf(was);
+  return { trees, at: at >= 0 ? at : Math.min(ti, trees.length - 1) };
+}
+
+/** Remove a child of a node, picking the one that takes its place (the one below, else the one above). */
+function dropKid<R, S>(n: Tree<R, S>, k: number): Tree<R, S> {
+  const kids = n.kids.filter((_, j) => j !== k);
+  const pick = k < n.pick ? n.pick - 1 : Math.max(0, Math.min(n.pick, kids.length - 1));
+  return { ...n, kids, pick };
+}
+
+/**
+ * Open something to the right of pane i of the focused branch. If it is already open there (as any
+ * of the forks) that fork is picked and kept as it is. Otherwise a fork adds a child below the
+ * others; a plain open replaces the picked child (and everything right of it), or adds the first.
+ * A pinned child is never replaced: a plain open beside it is a fork. Pinned panes in what is
+ * replaced stay, as orphans.
+ */
+export function open<R, S>(f: Forest<R, S>, i: number, ref: R, fork: boolean, same: Same<R>): Forest<R, S> {
+  const t = focused(f);
+  if (!t) return plain([ref]);
+  const orphans: Tree<R, S>[] = [];
+  const next = at(t, i, (n) => {
+    const k = n.kids.findIndex((c) => same(c.ref, ref));
+    if (k >= 0) return k === n.pick ? n : { ...n, pick: k };
+    if (!n.kids.length) return { ...n, kids: [leaf(ref)], pick: 0 };
+    if (fork || n.kids[n.pick].pinned) return { ...n, kids: [...n.kids, leaf(ref)], pick: n.kids.length };
+    orphans.push(...survivors(n.kids[n.pick], colOf(t) + i + 1, true));
+    const kids = n.kids.slice();
+    kids[n.pick] = leaf(ref);
+    return { ...n, kids };
   });
-  if (!changed) return t;
-  return { ...t, kids, pick: Math.max(0, Math.min(pick, kids.length - 1)) };
+  return replace(f, f.at, next, orphans);
 }
 
 /**
- * Make the focused branch this list of refs, keeping every pane that is already on the way: where a
- * ref is already a child it is picked; where it is not, the picked child is replaced by the rest of
- * the list. Panes right of the list's end close. A different root starts again.
+ * Close a pane and everything opened from it, except pinned panes, which stay where they are as
+ * orphans (with what they opened). The first tree's root never closes. `active` is the pane the keys
+ * act on; returned is the forest, with the active pane on its focused branch, and that pane: the
+ * same one if it is still open, else the closed pane's parent, else (for an orphan's root) the
+ * nearest pane of the tree before it.
  */
-export function withBranch<R, S>(t: Tree<R, S> | null, refs: R[], same: Same<R>): Tree<R, S> | null {
-  if (!refs.length) return null;
-  if (!t || !same(t.ref, refs[0])) return chain(refs);
+export function close<R, S>(f: Forest<R, S>, id: number, active: number): { forest: Forest<R, S>; active: number } {
+  const hit = find(f, id);
+  if (!hit || (hit.ti === 0 && hit.path.length === 1 && !f.trees[0].col)) return { forest: f, active };
+  const t = f.trees[hit.ti];
+  const node = hit.path[hit.path.length - 1];
+  const col = colOf(t) + hit.path.length - 1;
+  const orphans = survivors(node, col, false);
+  let g: Forest<R, S>;
+  let fallback: number;
+  if (hit.path.length === 1) {
+    g = replace(f, hit.ti, null, orphans);
+    const before = g.trees[Math.max(0, hit.ti - 1)];
+    const p = path(before);
+    fallback = p[Math.max(0, Math.min(p.length - 1, col - 1 - colOf(before)))].id;
+  } else {
+    const parent = hit.path[hit.path.length - 2];
+    g = replace(f, hit.ti, update(t, parent.id, (n) => dropKid(n, n.kids.indexOf(node))), orphans);
+    fallback = parent.id;
+  }
+  const still = find(g, active) ? active : fallback;
+  return { forest: focus(g, still), active: still };
+}
+
+/** Pin or unpin a pane. */
+export const pin = <R, S>(f: Forest<R, S>, id: number, on: boolean): Forest<R, S> => updateIn(f, id, (n) => (!!n.pinned === on ? n : { ...n, pinned: on || undefined }));
+
+/** The pane above (−1) or below (+1) this one in its column, or null at the top or bottom. */
+export function besideInColumn<R, S>(f: Forest<R, S>, id: number, delta: number): number | null {
+  const placed = all(f);
+  const me = placed.find((x) => x.node.id === id);
+  if (!me) return null;
+  const col = placed.filter((x) => x.col === me.col);
+  return col[col.indexOf(me) + delta]?.node.id ?? null;
+}
+
+/** Drop every pane whose ref fails `keep` (with everything right of it but pinned panes, which stay as orphans). Unchanged forests are returned as they are. */
+export function prune<R, S>(f: Forest<R, S>, keep: (r: R) => boolean): Forest<R, S> {
+  const go = (t: Tree<R, S>, col: number, out: Tree<R, S>[]): Tree<R, S> | null => {
+    if (!keep(t.ref)) {
+      for (const s of survivors(t, col, false)) {
+        const p = go(s, s.col!, out);
+        if (p) out.push(p);
+      }
+      return null;
+    }
+    let changed = false;
+    // The picked child, or the one that takes its place: as many kept children before it.
+    let pick = 0;
+    const kids: Tree<R, S>[] = [];
+    t.kids.forEach((k, j) => {
+      const p = go(k, col + 1, out);
+      if (p !== k) changed = true;
+      if (p) kids.push(p);
+      if (j === t.pick) pick = kids.length - (p ? 1 : 0);
+    });
+    if (!changed) return t;
+    return { ...t, kids, pick: Math.max(0, Math.min(pick, kids.length - 1)) };
+  };
+  let g = f;
+  for (let ti = f.trees.length - 1; ti >= 0; ti--) {
+    const t = f.trees[ti];
+    const out: Tree<R, S>[] = [];
+    const p = go(t, colOf(t), out);
+    if (p !== t || out.length) g = replace(g, g.trees.indexOf(t), p, out);
+  }
+  return g;
+}
+
+/** Whether the first tree is the one starting at this ref (not missing, not an orphan). */
+export const rooted = <R, S>(f: Forest<R, S>, ref: R, same: Same<R>) => !!f.trees[0] && !f.trees[0].col && same(f.trees[0].ref, ref);
+
+/**
+ * Make the focused branch the first tree's path along this list of refs, keeping every pane that is
+ * already on the way: where a ref is already a child it is picked; where it is not, the picked child
+ * is replaced by the rest of the list (a pinned one is kept beside it). Panes right of the list's
+ * end close, but pinned ones. A different root starts again. Orphans stay; pinned panes in what
+ * closes become orphans.
+ */
+export function withBranch<R, S>(f: Forest<R, S>, refs: R[], same: Same<R>): Forest<R, S> {
+  if (!refs.length) return f;
+  const orphans: Tree<R, S>[] = [];
+  if (!rooted(f, refs[0], same)) {
+    const old = f.trees[0] && !f.trees[0].col ? f.trees[0] : null;
+    if (old) orphans.push(...survivors(old, 0, false));
+    const rest = old ? f.trees.slice(1) : f.trees;
+    return { trees: [chain<R, S>(refs)!, ...orphans, ...rest], at: 0 };
+  }
   const go = (n: Tree<R, S>, i: number): Tree<R, S> => {
-    if (i === refs.length) return n.kids.length ? { ...n, kids: [], pick: 0 } : n;
+    if (i === refs.length) {
+      const kept = n.kids.filter((k) => k.pinned);
+      if (kept.length === n.kids.length) return n;
+      for (const k of n.kids) if (!k.pinned) orphans.push(...survivors(k, i, true));
+      return { ...n, kids: kept, pick: 0 };
+    }
     const k = n.kids.findIndex((c) => same(c.ref, refs[i]));
     if (k < 0) {
       const rest = chain<R, S>(refs.slice(i))!;
-      const kids = n.kids.length ? n.kids.map((c, j) => (j === n.pick ? rest : c)) : [rest];
-      return { ...n, kids, pick: n.kids.length ? n.pick : 0 };
+      if (!n.kids.length) return { ...n, kids: [rest], pick: 0 };
+      if (n.kids[n.pick].pinned) return { ...n, kids: [...n.kids, rest], pick: n.kids.length };
+      orphans.push(...survivors(n.kids[n.pick], i, true));
+      return { ...n, kids: n.kids.map((c, j) => (j === n.pick ? rest : c)) };
     }
     const sub = go(n.kids[k], i + 1);
     return sub === n.kids[k] && k === n.pick ? n : { ...n, kids: n.kids.map((c, j) => (j === k ? sub : c)), pick: k };
   };
-  return go(t, 1);
+  const t = go(f.trees[0], 1);
+  const g = replace(f, 0, t, orphans);
+  return g.at === 0 ? g : { ...g, at: 0 };
 }
 
-/** As stored: refs (made storable by the caller), children and picks; no ids, nothing remembered. */
+/** As stored: refs (made storable by the caller), children, picks, pins and an orphan's column; no ids, nothing remembered. */
 export interface Saved<R> {
   ref: R;
   kids?: Saved<R>[];
   pick?: number;
+  pin?: 1;
+  col?: number;
 }
 
-export function save<R, S, O>(t: Tree<R, S> | null, ref: (r: R) => O): Saved<O> | null {
-  if (!t) return null;
+export function save<R, S, O>(t: Tree<R, S>, ref: (r: R) => O): Saved<O> {
   const out: Saved<O> = { ref: ref(t.ref) };
-  if (t.kids.length) out.kids = t.kids.map((k) => save(k, ref)!);
+  if (t.kids.length) out.kids = t.kids.map((k) => save(k, ref));
   if (t.pick) out.pick = t.pick;
+  if (t.pinned) out.pin = 1;
+  if (t.col) out.col = t.col;
   return out;
 }
 
@@ -213,23 +345,39 @@ export function load<R, S>(o: unknown, ok: (r: unknown) => r is R): Tree<R, S> |
   const s = o as Saved<unknown>;
   const kids = (Array.isArray(s.kids) ? s.kids : []).map((k) => load<R, S>(k, ok)).filter((k): k is Tree<R, S> => !!k);
   const pick = Math.max(0, Math.min(typeof s.pick === "number" ? Math.floor(s.pick) : 0, kids.length - 1));
-  return { ref: s.ref as R, kids, pick, id: ++ids };
+  const t: Tree<R, S> = { ref: s.ref as R, kids, pick, id: ++ids };
+  if (s.pin) t.pinned = true;
+  if (typeof s.col === "number" && s.col >= 1) t.col = Math.floor(s.col);
+  return t;
 }
 
-/** What was stored: the tree, or, from before there were forks, the trail as a tree with one branch. */
-export function restore<R, S>(saved: unknown, trail: unknown[] | undefined, ok: (r: unknown) => r is R): Tree<R, S> | null {
-  return saved ? load<R, S>(saved, ok) : chain<R, S>((trail ?? []).filter(ok));
+/**
+ * What was stored: the forest; from before orphans, one tree; from before forks, the trail as a
+ * tree with one branch. An orphan stored first (its tree's root gone) is dropped.
+ */
+export function restore<R, S>(saved: { forest?: unknown; at?: unknown; forks?: unknown; trail?: unknown[] }, ok: (r: unknown) => r is R): Forest<R, S> {
+  if (Array.isArray(saved.forest)) {
+    const trees = saved.forest.map((o) => load<R, S>(o, ok)).filter((t): t is Tree<R, S> => !!t);
+    const first = trees.findIndex((t) => !t.col);
+    const kept = first < 0 ? trees.filter((t) => t.col) : [trees[first], ...trees.filter((t, j) => j !== first && t.col)];
+    const at = typeof saved.at === "number" ? Math.floor(saved.at) : 0;
+    return { trees: kept, at: at >= 0 && at < kept.length ? at : 0 };
+  }
+  const t = saved.forks ? load<R, S>(saved.forks, ok) : chain<R, S>((saved.trail ?? []).filter(ok));
+  return { trees: t ? [t] : [], at: 0 };
 }
 
-/** Whether a tree is well formed: picks in range, no pane twice among siblings, ids unique. */
-export function valid<R, S>(t: Tree<R, S> | null, same: Same<R>): boolean {
+/** Whether a forest is well formed: picks in range, no pane twice among siblings, ids unique, orphans in a column right of the first, the focused tree there. */
+export function valid<R, S>(f: Forest<R, S>, same: Same<R>): boolean {
   const seen = new Set<number>();
   const ok = (n: Tree<R, S>): boolean => {
     if (seen.has(n.id)) return false;
     seen.add(n.id);
     if (n.pick < 0 || n.pick >= Math.max(1, n.kids.length) || !Number.isInteger(n.pick)) return false;
     for (let a = 0; a < n.kids.length; a++) for (let b = a + 1; b < n.kids.length; b++) if (same(n.kids[a].ref, n.kids[b].ref)) return false;
-    return n.kids.every(ok);
+    return n.kids.every((k) => k.col === undefined && ok(k));
   };
-  return !t || ok(t);
+  if (!f.trees.length) return f.at === 0;
+  if (f.at < 0 || f.at >= f.trees.length) return false;
+  return f.trees.every((t, ti) => (ti === 0 ? !t.col : (t.col ?? 0) >= 1) && ok(t));
 }

@@ -325,14 +325,14 @@ test("the : commands do the same", async ({ page }) => {
 test("the menu works in panes and at phone width", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await open(page, "/doc/infinite-expand");
-  await expect(page.locator(".strip > .pane")).toHaveCount(2); // the library, and the document
+  await expect(page.locator(".strip .pane")).toHaveCount(2); // the library, and the document
   await openByMenu(page, "menu fixture");
   await expect(page.locator(".strip .pane.root h1")).toHaveText("Library");
   await expect(page.locator(".strip .pane.doc h1")).toHaveText("Menu fixture");
   await keys(page, "l l");
-  await expect(page.locator(".strip > .pane")).toHaveCount(3);
+  await expect(page.locator(".strip .pane")).toHaveCount(3);
   await openByMenu(page, "infinispand");
-  await expect(page.locator(".strip > .pane")).toHaveCount(2); // the pane path is the other document's own
+  await expect(page.locator(".strip .pane")).toHaveCount(2); // the pane path is the other document's own
   await expect(page.locator(".strip .pane.doc h1")).toHaveText("Infinispand");
 
   await page.setViewportSize({ width: 390, height: 800 });

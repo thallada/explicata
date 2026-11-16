@@ -36,7 +36,7 @@ import { remoteLLM } from "./remote";
 import { Session } from "./session";
 import { refreshAfterCalls } from "./usage";
 import { Linker, type AutoMode, type JobState, type Sugg } from "./linker";
-import { all, chain, closeAt, closeChild, closeRight, open as openIn, path, prune, restore as restoreTree, save as saveTree, select, sibling, trace, update, withBranch, type Tree } from "./forks";
+import { all, besideInColumn, close as closeIn, focus as focusIn, focused, open as openIn, path, pin as pinIn, prune, restore as restoreForest, rooted, save as saveTree, updateIn, withBranch, type Forest, type Placed, type Tree } from "./forks";
 import { stripMarks, type Mark } from "../core/marks";
 import { SEED_SLUG } from "../core/seed";
 
@@ -62,8 +62,14 @@ export interface Back {
   aux: Aux | null;
   pane: number;
 }
-/** A pane in the tree of forks; `seen` is where the reader was when they last left its fork. */
+/** A pane in the forest of forks; `seen` is where the reader was when they last left it by [ or ]. */
 export type Pane = Tree<PaneRef, Back>;
+/** The DOM class that marks, in a pane, what a child pane of it was opened from (a row, a link, words): by what the child shows. */
+export const kidClass = (key: string) => {
+  let h = 5381;
+  for (let i = 0; i < key.length; i++) h = ((h * 33) ^ key.charCodeAt(i)) >>> 0;
+  return `k${h.toString(36)}`;
+};
 /** Whether two panes show the same thing (a node, or an article or one of its sections). */
 export const sameRef = (a: PaneRef, b: PaneRef): boolean =>
   a.kind === b.kind && (a.kind === "node" ? a.id === (b as { id: NodeId }).id : a.title === (b as { title: string }).title && a.sec === (b as { sec?: number }).sec);
@@ -223,7 +229,7 @@ class Store {
   branchFrom: Commit | null = null;
   /** A note being previewed on hover, and where to draw it. */
   popup: { note: NodeId; x: number; top: number; bottom: number } | null = null;
-  settings: { auto: boolean; speculate: boolean; view: View; autolink: AutoMode } = { auto: true, speculate: false, view: "auto", autolink: "suggest", ...lsGet("ie:settings", {}) };
+  settings: { auto: boolean; speculate: boolean; view: View; autolink: AutoMode; curves: boolean } = { auto: true, speculate: false, view: "auto", autolink: "suggest", curves: true, ...lsGet("ie:settings", {}) };
   /** Link discovery: scans after writes, suggestions, Related, the background job. */
   links = new Linker({
     doc: () => this.doc,
@@ -244,19 +250,28 @@ class Store {
   /** Replicas of pre-library documents whose edits never reached the server. */
   oldReplicas: OldReplica[] = [];
 
-  /** The panes as a tree of forks; its focused branch is `trail`, and `paneAt` is the pane on it that holds the focus. */
-  tree: Pane | null = null;
+  /** The panes as a forest of forks (forks.ts); its focused branch is `trail`, and `paneAt` is the pane on it that holds the focus: the active pane. */
+  forest: Forest<PaneRef, Back> = { trees: [], at: 0 };
   paneAt = 0;
+  /** The focused tree. */
+  get tree(): Pane | null {
+    return focused(this.forest);
+  }
   /** Set while a modified open (Shift+Enter, Shift-, Ctrl- or middle-click) runs: it opens a fork beside what is there. */
   forking = false;
   private toldForks = false;
-  private memo: { tree: Pane | null; nodes: Pane[]; trail: PaneRef[]; index?: Map<number, { node: Pane; depth: number }>; ids?: Set<NodeId> } = { tree: null, nodes: [], trail: [] };
+  private memo: { forest: Forest<PaneRef, Back> | null; nodes: Pane[]; trail: PaneRef[]; placed?: Placed<PaneRef, Back>[]; index?: Map<number, Placed<PaneRef, Back>>; ids?: Set<NodeId> } = { forest: null, nodes: [], trail: [] };
   private get branch() {
-    if (this.memo.tree !== this.tree) {
+    if (this.memo.forest !== this.forest) {
       const nodes = path(this.tree);
-      this.memo = { tree: this.tree, nodes, trail: nodes.map((n) => n.ref) };
+      this.memo = { forest: this.forest, nodes, trail: nodes.map((n) => n.ref) };
     }
     return this.memo;
+  }
+  /** Every pane, with its column, in the order panes stand in a column. */
+  get panesPlaced(): Placed<PaneRef, Back>[] {
+    const m = this.branch;
+    return (m.placed ??= all(this.forest));
   }
   /** The focused branch: the panes the keys move along, left to right. */
   get trail(): PaneRef[] {
@@ -438,59 +453,37 @@ class Store {
     return p.sec !== undefined && (q.kind === "wiki" ? q.title === p.title : this.targetOf(q.id)?.kind === "wiki");
   }
 
-  /** Pane i of the focused branch holds a focus (see holdsIn). */
+  /** Pane i of the focused branch holds a focus (see holdsIn); a continuation's head only while it is the active pane. */
   private holds(i: number, f: Focus): boolean {
-    return this.holdsIn(this.trail[i], this.trail[i - 1], i === 0, `p${i}`, f);
+    return this.holdsIn(this.trail[i], this.trail[i - 1], i === 0 || i === this.paneAt, `p${i}`, f);
   }
 
   /**
    * Whether a pane (p, opened from q; host: how its article is named) holds a focus: its node's
    * text (a selection, a note in it), one of its rows, or its head when it is not a continuation (a
-   * continuation's node is focused as the row it was opened from, in the pane before).
+   * continuation's node is focused as the row it was opened from, in the pane before), or when
+   * `head` says it may (the first pane, or the active pane, landed on by [ ] or a click).
    */
-  private holdsIn(p: PaneRef | undefined, q: PaneRef | undefined, first: boolean, host: string, f: Focus): boolean {
+  private holdsIn(p: PaneRef | undefined, q: PaneRef | undefined, head: boolean, host: string, f: Focus): boolean {
     const s = this.snap;
     const n = s.nodes[f.node];
     // An annotation is held by the pane showing its article.
     if (p && n && inArticles(s, f.node)) return this.shows(p.kind === "wiki" ? host : `n${p.id}`, f.node);
     if (!p || p.kind !== "node" || !n) return false;
     if (f.grain !== "node" || n.kind === "note") return ownerSection(s, f.node) === p.id || f.node === p.id;
-    if (f.node === p.id) return first || !this.continuesFrom(p, q);
+    if (f.node === p.id) return head || !this.continuesFrom(p, q);
     return n.parent === p.id;
   }
 
-  /** A pane off the focused branch that holds a focus: the tree with it on the branch, and its column. */
-  private forkHolding(f: Focus): { tree: Pane; depth: number } | null {
-    const t = this.tree;
-    if (!t) return null;
+  /** A pane off the focused branch that holds a focus: the forest with it on the branch, and its depth. */
+  private forkHolding(f: Focus): { forest: Forest<PaneRef, Back>; depth: number } | null {
     const on = new Set(this.branchNodes.map((n) => n.id));
-    const find = (n: Pane, q: PaneRef | undefined, d: number): { id: number; depth: number } | null => {
-      if (!on.has(n.id) && this.holdsIn(n.ref, q, d === 0, `f${n.id}`, f)) return { id: n.id, depth: d };
-      for (const k of n.kids) {
-        const hit = find(k, n.ref, d + 1);
-        if (hit) return hit;
-      }
-      return null;
-    };
-    const hit = find(t, undefined, 0);
-    return hit ? { tree: select(t, hit.id)!, depth: hit.depth } : null;
+    const hit = this.panesPlaced.find((x) => !on.has(x.node.id) && this.holdsIn(x.node.ref, x.parent?.ref, x.depth === 0, `f${x.node.id}`, f));
+    return hit ? { forest: focusIn(this.forest, hit.node.id), depth: hit.depth } : null;
   }
 
-  /**
-   * Change the tree. When the focused branch leaves a fork that stays open, the fork remembers
-   * where the reader was in it, for [ and ] to come back to.
-   */
-  private setTree(next: Pane | null, remember = true) {
-    const old = this.branchNodes;
-    if (next && remember && old.length) {
-      const now = path(next);
-      const d = old.findIndex((n, k) => now[k]?.id !== n.id);
-      if (d > 0 && trace(next, old[d].id)) {
-        const here = this.backHere();
-        next = update(next, old[d].id, (n) => ({ ...n, seen: here }));
-      }
-    }
-    this.tree = next;
+  private setForest(next: Forest<PaneRef, Back>) {
+    this.forest = next;
   }
 
   /** The panes as a plain trail down to the focus (open sections on the way). */
@@ -508,9 +501,9 @@ class Store {
   syncTrail() {
     if (!this.panes || !this.session) return;
     const s = this.snap;
-    let t = prune(this.tree, (p) => p.kind === "wiki" || !!s.nodes[p.id]);
-    if (!t || t.ref.kind !== "node" || t.ref.id !== this.top) t = chain(this.pathRefs());
-    if (t !== this.tree) this.setTree(t, false);
+    let f = prune(this.forest, (p) => p.kind === "wiki" || !!s.nodes[p.id]);
+    if (!rooted(f, { kind: "node", id: this.top }, sameRef)) f = withBranch(f, this.pathRefs(), sameRef);
+    if (f !== this.forest) this.setForest(f);
     this.paneAt = Math.max(0, Math.min(this.paneAt, this.trail.length - 1));
     if (this.aux) return;
     const n = this.trail.length;
@@ -518,22 +511,22 @@ class Store {
     for (const i of order) if (i >= 0 && i < n && this.holds(i, this.focus)) return void (this.paneAt = i);
     const fork = this.forkHolding(this.focus);
     if (fork) {
-      this.setTree(fork.tree, false);
+      this.setForest(fork.forest);
       this.paneAt = fork.depth;
       return;
     }
-    this.setTree(withBranch(this.tree, this.pathRefs(), sameRef), false);
+    this.setForest(withBranch(this.forest, this.pathRefs(), sameRef));
     const at = this.trail.findIndex((_, i) => this.holds(i, this.focus));
     this.paneAt = at >= 0 ? at : this.trail.length - 1;
   }
 
   /**
    * Open something to the right of pane i. If it is already open there, as any fork, that fork is
-   * focused. Otherwise a plain open replaces what was to the right; a fork (`forking`) opens it
-   * beside that, as a new row below. Returns the pane it is in.
+   * focused. Otherwise a plain open replaces what was to the right (a pinned pane stays beside it);
+   * a fork (`forking`) opens it beside that, below in the next column. Returns the pane it is in.
    */
   openPane(i: number, ref: PaneRef): number {
-    this.setTree(this.tree ? openIn(this.tree, i, ref, this.forking, sameRef) : chain([ref]));
+    this.setForest(openIn(this.forest, i, ref, this.forking, sameRef));
     this.saveView();
     this.emit();
     return Math.min(i + 1, this.trail.length - 1);
@@ -541,10 +534,9 @@ class Store {
 
   /** Close the pane that shows this node to the right of pane i (whichever fork it is). */
   closeRow(i: number, id: NodeId) {
-    if (!this.tree) return;
-    this.setTree(closeChild(this.tree, i, { kind: "node", id }, sameRef));
-    this.saveView();
-    this.emit();
+    const kid = this.branchNodes[i]?.kids.find((k) => k.ref.kind === "node" && k.ref.id === id);
+    if (!kid) return;
+    this.closePane(kid.id);
   }
 
   /** Run an open with or without a fork. In the column a fork is a plain open, and the status line says so once. */
@@ -562,33 +554,28 @@ class Store {
     }
   }
 
-  /** The tree's panes by id, with their columns. */
-  forkNode(id: number): { node: Pane; depth: number } | undefined {
+  /** A pane of the forest by its id: its node, depth in its tree, column, tree and parent. */
+  forkNode(id: number): Placed<PaneRef, Back> | undefined {
     const m = this.branch;
-    if (!m.index) m.index = new Map(all(this.tree).map((x) => [x.node.id, x]));
+    if (!m.index) m.index = new Map(this.panesPlaced.map((x) => [x.node.id, x]));
     return m.index.get(id);
   }
 
-  /** Whether any pane in the tree shows this node. */
+  /** Whether any pane shows this node. */
   private paneShows(id: NodeId): boolean {
     const m = this.branch;
-    if (!m.ids) m.ids = new Set(all(this.tree).flatMap((x) => (x.node.ref.kind === "node" ? [x.node.ref.id] : [])));
+    if (!m.ids) m.ids = new Set(this.panesPlaced.flatMap((x) => (x.node.ref.kind === "node" ? [x.node.ref.id] : [])));
     return m.ids.has(id);
   }
 
-  /** Whether some pane has forks. */
-  hasForks(): boolean {
-    return all(this.tree).some((x) => x.node.kids.length > 1);
-  }
-
   /**
-   * For a pane with forks: its children by what they show (refKey), each true if it is the picked
-   * one. Null for a pane with one child or none, which marks nothing new (its row is marked as before).
+   * For a pane with children: its children by what they show (refKey), each with whether it is the
+   * picked one and whether there are several (forks, marked as such).
    */
-  forkMarks(tid: number | undefined): Map<string, boolean> | null {
+  forkMarks(tid: number | undefined): Map<string, { picked: boolean; many: boolean }> | null {
     const n = tid === undefined ? undefined : this.forkNode(tid)?.node;
-    if (!n || n.kids.length < 2) return null;
-    return new Map(n.kids.map((k, j) => [refKey(k.ref), j === n.pick]));
+    if (!n || !n.kids.length) return null;
+    return new Map(n.kids.map((k, j) => [refKey(k.ref), { picked: j === n.pick, many: n.kids.length > 1 }]));
   }
 
   /** A link's target by the key of the pane it opens (refKey); none for a web page or a node that is gone. */
@@ -599,16 +586,16 @@ class Store {
     return id ? `n:${id}` : undefined;
   }
 
-  /** How a child is marked in the pane it was opened from: "showing" (the picked child), "forked" (another fork), or not open. */
-  kidMark(tid: number | undefined, match: (r: PaneRef) => boolean): "showing" | "forked" | undefined {
+  /** How a child is marked in the pane it was opened from: "showing" (the picked child), "forked" (another fork), or not open; with the class that names it. */
+  kidMark(tid: number | undefined, match: (r: PaneRef) => boolean): string | undefined {
     const n = tid === undefined ? undefined : this.forkNode(tid)?.node;
     const k = n ? n.kids.findIndex((c) => match(c.ref)) : -1;
-    return k < 0 ? undefined : k === n!.pick ? "showing" : "forked";
+    return k < 0 ? undefined : `${k === n!.pick ? "showing" : "forked"} ${kidClass(refKey(n!.kids[k].ref))}`;
   }
 
   /**
-   * Put the focus on pane c of the focused branch: on its node (for a continuation, that is the row
-   * it was opened from, in the pane before), or on an article's head.
+   * Put the focus on pane c of the focused branch, making it the active pane: on its node (its head;
+   * a continuation's too, while it is active), or on an article's head.
    */
   land(c: number) {
     const p = this.trail[c];
@@ -618,30 +605,34 @@ class Store {
     else this.setFocus(this.focus, { kind: "wiki", host: `p${c}`, row: { t: "head" } });
   }
 
-  /** A click in a pane off the focused branch: its fork becomes the focused branch, with the focus on that pane. */
+  /** A click in a pane off the focused branch (or a tab): that pane comes onto the focused branch, with the focus on it. */
   enterFork(id: number) {
+    const f = focusIn(this.forest, id);
     const hit = this.forkNode(id);
-    const t = this.tree && select(this.tree, id);
-    if (!hit || !t || t === this.tree) return;
-    this.setTree(t);
+    if (!hit || f === this.forest) return;
+    this.setForest(f);
     this.land(hit.depth);
   }
 
   /**
-   * [ and ]: the fork above or below, in the order the rows are drawn (the nearest pane, from the
-   * branch's end leftwards, that has another fork that way). The focus goes back where it was in
-   * that fork, or to its pane nearest the column the reader was in.
+   * [ and ]: the pane above or below the active one in its column (whichever fork or tree it is in).
+   * The focus goes back where it was when that pane was last left this way, or to the pane's head.
    */
   focusFork(delta: number) {
     if (!this.panes) return this.say("Forks are side by side in the panes view (v); one column shows one page.");
     this.syncTrail();
-    const s = this.tree && sibling(this.tree, delta);
-    if (!s) return this.say(this.hasForks() ? `No fork ${delta < 0 ? "above" : "below"} this one.` : "No forks open. Shift+Enter, or a Shift- or Ctrl-click, opens one beside the pane to the right.");
-    const col = this.paneAt + (this.showingFocus() ? 1 : 0);
-    this.setTree(s.tree);
-    const b = this.branchNodes[s.depth].seen;
-    if (b && b.pane >= s.depth && b.pane < this.trail.length && this.snap.nodes[b.focus.node] && (b.aux ? this.auxValid(b.aux) : this.holds(b.pane, b.focus))) return this.restore(b);
-    this.land(Math.max(s.depth, Math.min(col, this.trail.length - 1)));
+    const here = this.branchNodes[this.paneAt];
+    const next = here && besideInColumn(this.forest, here.id, delta);
+    if (next === null || next === undefined) {
+      const alone = here && besideInColumn(this.forest, here.id, -delta) === null;
+      return this.say(alone ? "This is the only pane in its column. Shift+Enter, or a Shift- or Ctrl-click, opens a fork below the pane to the right." : `No pane ${delta < 0 ? "above" : "below"} this one in its column.`);
+    }
+    const seen = this.backHere();
+    this.setForest(focusIn(updateIn(this.forest, here.id, (n) => ({ ...n, seen })), next));
+    const hit = this.forkNode(next)!;
+    const b = hit.node.seen;
+    if (b && b.pane === hit.depth && this.snap.nodes[b.focus.node] && (b.aux ? this.auxValid(b.aux) : this.holds(b.pane, b.focus))) return this.restore(b);
+    this.land(hit.depth);
   }
 
   /** Whether the focus is a row whose pane is open next to it (so that pane is the one the reader is looking at). */
@@ -651,34 +642,53 @@ class Store {
   }
 
   /**
-   * q, on the pane the reader is looking at (for a row, the pane it shows): close the panes to its
-   * right, every fork among them. With none there, close it and step left; in a fork, that closes
-   * the whole fork (from where it branched off to its end), and the others stay.
+   * q (on the active pane) or a pane's ×: close the pane and everything opened from it, except
+   * pinned panes, which stay where they are. If the focus was in what closed, it goes back to where
+   * the pane was opened from (its row, its link, the article section) in the pane before.
    */
-  closePane() {
-    const showing = this.showingFocus();
-    const i = this.paneAt + (showing ? 1 : 0);
-    if (!this.tree) return;
-    if (i + 1 < this.trail.length) {
-      this.setTree(closeRight(this.tree, i));
-      this.saveView();
+  closePane(id = this.branchNodes[this.paneAt]?.id) {
+    const hit = id === undefined ? undefined : this.forkNode(id);
+    if (!hit) return;
+    if (hit.ti === 0 && hit.depth === 0) return this.say("The first pane stays; h or Esc at its top steps out of it.");
+    const active = this.branchNodes[this.paneAt];
+    const wasAt = this.paneAt;
+    const r = closeIn(this.forest, hit.node.id, active.id);
+    this.setForest(r.forest);
+    this.saveView();
+    const now = this.forkNode(r.active)!;
+    this.paneAt = now.depth;
+    if (r.active === active.id) {
+      // Still open; an article pane that became an orphan's root is named by its new place.
+      const a = this.aux;
+      if (now.depth !== wasAt && a?.kind === "wiki" && a.host === `p${wasAt}`) this.aux = { ...a, host: `p${now.depth}` };
       return this.emit();
     }
-    // The nearest pane to the left with forks: the fork the reader is in starts right of it.
-    const nodes = this.branchNodes;
-    let j = i - 1;
-    while (j >= 0 && nodes[j].kids.length < 2) j--;
-    const k = j >= 0 ? j + 1 : i;
-    if (k === 0) return this.say("The first pane stays; h or Esc at its top steps out of it.");
-    const from = this.trail[k].from;
-    this.setTree(closeAt(this.tree, k));
+    if (hit.parent && r.active === hit.parent.id) return this.toSource(hit.node.ref, now.depth);
+    this.land(now.depth);
+  }
+
+  /** Back in pane i to where a pane (shown by ref, opened from pane i) was opened from: the jump's place, the row it continues, or the article's section row. */
+  private toSource(ref: PaneRef, i: number) {
+    const q = this.trail[i];
+    if (ref.from && ref.from.pane === i) return this.restore(ref.from);
+    this.paneAt = i;
+    if (ref.kind === "node" && q?.kind === "node" && this.continuesFrom(ref, q) && this.snap.nodes[ref.id]) return this.setFocus({ node: ref.id, grain: "node" });
+    if (ref.kind === "wiki" && ref.sec !== undefined && q) {
+      const host = q.kind === "wiki" ? `p${i}` : `n${q.id}`;
+      return this.setFocus(q.kind === "node" ? { node: q.id, grain: "node" } : this.focus, { kind: "wiki", host, row: { t: "sec", id: ref.sec } });
+    }
+    this.land(i);
+  }
+
+  /** P (on the active pane) or a pane's pin: pin or unpin it. */
+  togglePanePin(id = this.branchNodes[this.paneAt]?.id) {
+    if (!this.panes) return this.say("Panes are pinned in the panes view (v).");
+    const hit = id === undefined ? undefined : this.forkNode(id);
+    if (!hit) return;
+    const on = !hit.node.pinned;
+    this.setForest(pinIn(this.forest, hit.node.id, on));
     this.saveView();
-    if (showing && k === i) return this.emit();
-    this.paneAt = k - 1;
-    if (from && from.pane < k) return this.restore(from);
-    const p = this.trail[k - 1];
-    if (p.kind === "node") this.setFocus({ node: p.id, grain: "node" });
-    else this.setFocus(this.focus, { kind: "wiki", host: `p${k - 1}`, row: { t: "head" } });
+    this.say(on ? "Pinned: this pane stays open when what it was opened from closes, and never folds away. P again unpins it." : "Unpinned.");
   }
 
   /** Go back to where a jump was made from. */
@@ -1148,12 +1158,12 @@ class Store {
   }
   private restoreView() {
     const s = this.doc.snap();
-    const v = lsGet<{ open: NodeId[]; focus: Focus | null; hoist: NodeId | null; forks?: unknown; trail?: PaneRef[]; paneAt?: number }>(this.viewKey(), { open: [], focus: null, hoist: null });
+    const v = lsGet<{ open: NodeId[]; focus: Focus | null; hoist: NodeId | null; forest?: unknown; at?: number; forks?: unknown; trail?: PaneRef[]; paneAt?: number }>(this.viewKey(), { open: [], focus: null, hoist: null });
     this.open = new Set(v.open.filter((id) => s.nodes[id]));
     this.hoist = v.hoist && s.nodes[v.hoist] ? v.hoist : null;
     this.focus = v.focus && s.nodes[v.focus.node] ? v.focus : { node: this.top, grain: "node" };
-    // The tree of forks; a view saved before there were forks has only its trail, which loads as one branch.
-    this.tree = prune(restoreTree<PaneRef, Back>(v.forks, v.trail, isPaneRef), (p) => p.kind === "wiki" || !!s.nodes[p.id]);
+    // The forest of forks; a view saved before orphans has one tree, and before forks only its trail, which loads as one branch.
+    this.forest = prune(restoreForest<PaneRef, Back>(v, isPaneRef), (p) => p.kind === "wiki" || !!s.nodes[p.id]);
     this.paneAt = Math.min(v.paneAt ?? 0, Math.max(0, this.trail.length - 1));
     this.aux = null;
     this.repairView();
@@ -1161,7 +1171,7 @@ class Store {
   saveView() {
     const bare = (p: PaneRef): PaneRef => ({ ...p, from: undefined });
     // The trail too, for a build from before forks.
-    lsSet(this.viewKey(), { open: [...this.open], focus: this.focus, hoist: this.hoist, forks: saveTree(this.tree, bare), trail: this.trail.map(bare), paneAt: this.paneAt });
+    lsSet(this.viewKey(), { open: [...this.open], focus: this.focus, hoist: this.hoist, forest: this.forest.trees.map((t) => saveTree(t, bare)), at: this.forest.at, trail: this.trail.map(bare), paneAt: this.paneAt });
   }
   /** Keep focus on something that exists and is on screen. */
   private repairView() {
@@ -1254,11 +1264,11 @@ class Store {
       this.aux = null;
       // A pane in another fork that shows it brings that fork onto the branch.
       const at = this.trail.findIndex((p) => p.kind === "node" && p.id === found.node);
-      const fork = at < 0 && this.panes ? all(this.tree).find((x) => x.node.ref.kind === "node" && x.node.ref.id === found.node) : undefined;
-      if (fork && this.tree) {
-        this.setTree(select(this.tree, fork.node.id), false);
+      const fork = at < 0 && this.panes ? this.panesPlaced.find((x) => x.node.ref.kind === "node" && x.node.ref.id === found.node) : undefined;
+      if (fork) {
+        this.setForest(focusIn(this.forest, fork.node.id));
         this.paneAt = fork.depth;
-      } else if (this.panes && at < 0) this.setTree(withBranch(this.tree, this.pathRefs(), sameRef), false);
+      } else if (this.panes && at < 0) this.setForest(withBranch(this.forest, this.pathRefs(), sameRef));
       else if (at >= 0) this.paneAt = at;
     }
     this.repairView();
@@ -1411,7 +1421,9 @@ class Store {
         const next = this.trail[i + 1];
         if (next?.kind === "node" && next.id === f.node && this.continues(i + 1)) {
           const rows = this.paneRows(i + 1);
+          // Into its first row; with none, onto its head, which makes it the active pane.
           if (rows[0]) this.focusRow(rows[0], i + 1);
+          else this.land(i + 1);
           return;
         }
         this.open.add(f.node);
@@ -1463,7 +1475,11 @@ class Store {
       this.syncTrail();
       const i = this.paneAt;
       const p = this.trail[i];
-      if (p?.kind === "node" && p.id !== f.node) return this.setFocus({ node: p.id, grain: "node" });
+      // From a row to its pane's node: for a continuation, that is its row in the pane before.
+      if (p?.kind === "node" && (p.id !== f.node || (i > 0 && this.continues(i)))) {
+        if (i > 0 && this.continues(i)) this.paneAt = i - 1;
+        return this.setFocus({ node: p.id, grain: "node" });
+      }
       if (i > 0) {
         const from = this.trail[i].from;
         if (from && from.pane < i) return this.restore(from);
@@ -1484,7 +1500,7 @@ class Store {
     this.syncTrail();
     const p = this.trail[this.paneAt];
     if (open && p?.kind === "node" && this.snap.nodes[id]?.parent === p.id && this.snap.nodes[id].kind === "section") this.openPane(this.paneAt, { kind: "node", id });
-    else if (!open && this.tree) this.setTree(closeChild(this.tree, this.paneAt, { kind: "node", id }, sameRef));
+    else if (!open) this.closeRow(this.paneAt, id);
   }
 
   setOpen(id: NodeId, open: boolean) {
@@ -1501,6 +1517,8 @@ class Store {
   toggle(id = this.focus.node) {
     if (id === this.top) return this.toggleFold(id);
     if (this.listing(id)) return this.openDoc(id);
+    // The head of a pane other than the first: Enter steps into its rows, as l does.
+    if (this.panes && this.paneAt > 0 && this.paneHead(id)) return this.into();
     // In panes, a row whose pane is open as a fork that is not the focused one, or any row opened as a fork, opens (focuses) its pane rather than closing it.
     if (this.panes) {
       this.syncTrail();
@@ -2102,6 +2120,7 @@ class Store {
       },
       auto: () => this.set("auto", arg !== "off"),
       speculate: () => this.set("speculate", arg !== "off"),
+      curves: () => (this.set("curves", arg !== "off"), this.emit()),
       view: () => (["auto", "column", "panes"].includes(arg) ? this.setView(arg as View) : this.say(`/view auto, column or panes (now ${this.settings.view}, showing ${this.panes ? "panes" : "column"})`)),
       resolve: () => this.resolveAll(),
       new: () => (arg ? this.newDoc(arg) : this.openMenu("new")),
@@ -2705,7 +2724,7 @@ class Store {
     this.setView(this.panes ? "column" : "panes");
   }
 
-  private set(key: "auto" | "speculate", on: boolean) {
+  private set(key: "auto" | "speculate" | "curves", on: boolean) {
     this.settings = { ...this.settings, [key]: on };
     lsSet("ie:settings", this.settings);
     this.say(`${key} ${on ? "on" : "off"}`);

@@ -214,7 +214,7 @@ export function WikiView({ host }: { host: string }) {
   const v = art.value;
   const sec = h.sec ? v.sections.find((x) => x.id === h.sec) : undefined;
   // A section open as a pane to the right is marked: the picked child "showing", another fork "forked".
-  const showing = (id: number) => (store.panes ? store.kidMark(tid, (r) => r.kind === "wiki" && r.title === h.title && r.sec === id) : undefined);
+  const showing = (id: number): string | undefined => (store.panes ? store.kidMark(tid, (r) => r.kind === "wiki" && r.title === h.title && r.sec === id) : undefined);
   return (
     <section class={`wiki${embedded ? " embedded" : ""}`} data-host={host}>
       <Head title={v.title} sub={sec?.heading} focused={at({ t: "head" })} />
@@ -229,7 +229,7 @@ export function WikiView({ host }: { host: string }) {
   );
 }
 
-function Rows(props: { article: Article; host: string; lang: string; parent: number; nested: boolean; at: (r: WRow) => boolean; showing: (id: number) => "showing" | "forked" | undefined }) {
+function Rows(props: { article: Article; host: string; lang: string; parent: number; nested: boolean; at: (r: WRow) => boolean; showing: (id: number) => string | undefined }) {
   const { article: v, host, lang, parent, nested, at, showing } = props;
   const kids = sectionsUnder(v, parent);
   if (!kids.length) return null;

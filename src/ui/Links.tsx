@@ -9,7 +9,7 @@ import { ownerSection, resolveNode } from "../core/links";
 import { docOf, isLink, label, type NodeId } from "../core/model";
 import { describeTarget, hostOf, parseTarget, validateRef, wikiTitle, type Ref } from "../core/ref";
 import { clip, plain } from "../core/text";
-import { sameAux, store, type Aux } from "./store";
+import { kidClass, sameAux, store, type Aux } from "./store";
 import type { Sugg } from "./linker";
 import { suggest, summary, wikiConfig, type Attribution as Attr, type Suggestion } from "./wiki";
 
@@ -144,14 +144,18 @@ export function TargetRow({ id }: { id: NodeId }) {
 export const PaneCtx = createContext<number | undefined>(undefined);
 
 /**
- * In a pane with forks, what marks the words, rows and links its forks were opened from: each open
- * child is "forked", the focused one "forked picked". By the keys a pane's child goes by (refKey).
+ * In a pane with children, what marks the words, rows and links they were opened from: with forks,
+ * each open child is "forked", the focused one "forked picked"; always, a class named after the
+ * child (kidClass), which the curves start from. By the keys a pane's child goes by (refKey).
  */
 export function useForkMark(): ((...keys: (string | undefined)[]) => string) | null {
   const marks = store.forkMarks(useContext(PaneCtx));
   if (!marks) return null;
   return (...keys) => {
-    for (const k of keys) if (k && marks.has(k)) return marks.get(k) ? "forked picked" : "forked";
+    for (const k of keys) {
+      const m = k && marks.get(k);
+      if (m) return `${m.many ? (m.picked ? "forked picked " : "forked ") : ""}${kidClass(k!)}`;
+    }
     return "";
   };
 }

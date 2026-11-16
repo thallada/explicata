@@ -223,6 +223,45 @@ const FIXTURES: Record<string, Fixture> = {
       },
     ],
   },
+  Eukaryote: {
+    id: 1_200_120,
+    description: "Domain of life whose cells have nuclei",
+    lead: [
+      `The <b>eukaryotes</b> are organisms whose cells have a membrane-bound nucleus.[ref] They include all animals, plants, fungi and many single-celled organisms, the protists, and with the [[Bacteria|bacteria]] and the [[Archaea|archaea]] they make up the three domains of life. Eukaryotic cells also contain other membrane-bound compartments, such as [[Mitochondrion|mitochondria]] and the Golgi apparatus, and are typically much larger than those of prokaryotes.`,
+      `Eukaryotes probably emerged within the archaea, and the leading theory holds that the first eukaryotic cell arose when an archaeon took in a bacterium that became the mitochondrion.[ref] All living eukaryotes descend from a single last common ancestor, which already had most of the features that distinguish them.`,
+    ],
+    sections: [
+      {
+        heading: "Cell features",
+        body: [
+          `Eukaryotic cells are on average about ten thousand times the volume of prokaryotic cells. Their DNA is organised into several linear chromosomes inside the nucleus, and a cytoskeleton of protein filaments gives the cell its shape and lets it move material from place to place.`,
+          `Most eukaryotes reproduce sexually at some stage of their life cycle, by meiosis and the fusion of gametes, although many single-celled species also divide asexually.`,
+        ],
+      },
+      {
+        heading: "Origin",
+        body: [
+          `The timing of the origin of eukaryotes is uncertain: the oldest fossils accepted as eukaryotic are about 1.6 billion years old. Comparisons of genes place their nearest living relatives among the Asgard archaea, discovered in deep-sea sediments in 2015.`,
+        ],
+      },
+    ],
+  },
+  Bacteria: {
+    id: 1_200_121,
+    description: "Domain of prokaryotic microorganisms",
+    lead: [
+      `<b>Bacteria</b> are ubiquitous, mostly free-living organisms often consisting of one biological cell.[ref] They constitute a large domain of prokaryotic microorganisms. Typically a few micrometres in length, bacteria were among the first life forms to appear on Earth, and are present in most of its habitats, from soil and water to acidic hot springs and the deep biosphere.`,
+      `Bacteria play a vital role in many stages of the nutrient cycle, by recycling nutrients and fixing nitrogen from the atmosphere. Most have not been characterised, and many species cannot be grown in the laboratory. Their study is known as bacteriology, a branch of microbiology.`,
+    ],
+    sections: [
+      {
+        heading: "Structure",
+        body: [
+          `A bacterial cell is surrounded by a membrane and, in most species, a cell wall. Its DNA lies in the cytoplasm, usually as a single circular chromosome, with no nucleus around it. Many bacteria swim by turning a flagellum.`,
+        ],
+      },
+    ],
+  },
   "Hoyle state": {
     id: 1_200_108,
     description: "Excited state of the carbon-12 nucleus",

@@ -7,12 +7,12 @@
 import { expect, test, type Page } from "@playwright/test";
 import { command, idle, jump, keys, seedLinks, selected, settle, state } from "./helpers";
 
-const panes = (page: Page) => page.locator(".strip > .pane");
+const panes = (page: Page) => page.locator(".strip .pane");
 
 async function wide(page: Page, path = "/doc/fixed-points") {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto(path);
-  await page.waitForSelector(".strip > .pane");
+  await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
 }
 async function column(page: Page, path: string) {

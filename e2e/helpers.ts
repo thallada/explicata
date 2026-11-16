@@ -3,7 +3,7 @@
  * exposes as globalThis.__ie, waiting for it to settle, and the links written into the shared
  * library over the op API, as an outside agent would (every kind of target, a note that also links,
  * a cross-document node link, two documents mentioning one article, a link and a note on the same
- * words; the articles are the mock
+ * words, links on the screenshot's cells; the articles are the mock
  * Wikipedia's fixtures in server/wikiMock.ts).
  */
 import { writeFileSync } from "node:fs";
@@ -88,6 +88,7 @@ export async function seedLinks(request: APIRequestContext) {
   const separate = find(s, "octopus-minds", "A separate experiment");
   const ancestor = find(s, "octopus-minds", "A separate experiment", "The common ancestor");
   const programs = find(s, "what-a-proof-is", "Proof assistants", "Proofs as programs");
+  const kinds = find(s, "the-eukaryotic-cell", "Two kinds of cell");
   const ops = [
     { op: "create", parent: recursion, kind: "note", quote: "fixed-point combinator", ref: W("Fixed-point combinator") },
     { op: "update", id: noteOn(s, recursion, "lambda calculus"), ref: W("Lambda calculus") },
@@ -101,6 +102,8 @@ export async function seedLinks(request: APIRequestContext) {
     { op: "create", parent: ancestor, kind: "note", quote: "The camera-like eye", ref: W("Cephalopod") },
     { op: "create", parent: programs, kind: "note", quote: "a function turning proofs", ref: W("Lambda calculus") },
     { op: "create", parent: programs, kind: "note", quote: "Several of the leading systems", ref: { kind: "node", id: recursion, doc: "fixed-points", path: ["Recursion without names"] } },
+    { op: "create", parent: kinds, kind: "note", quote: "Eukaryotes", ref: W("Eukaryote") },
+    { op: "create", parent: kinds, kind: "note", quote: "Bacteria", ref: W("Bacteria") },
   ];
   const res = await request.post("/api/ops", { data: { author: "linker", message: "Seed links for the link tests", ops } });
   if (!res.ok()) throw new Error(`seeding links failed: ${res.status()} ${await res.text()}`);

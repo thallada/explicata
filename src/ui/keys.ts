@@ -15,9 +15,10 @@ export const HELP: [string, [string, string][]][] = [
       ["/", "jump to a section by name, in any document"],
       ["z", "hoist: make this node the whole page (again, or h or Esc at its top, to step out)"],
       ["v", "view: one column ↔ panes side by side (in panes, j k move among siblings)"],
-      ["q", "in panes: close the panes right of the one being read, every fork among them; with none, close that one, or in a fork the whole fork. Moving left never closes anything"],
-      ["Shift+Enter", "in panes: open a fork: what Enter opens goes in a new row beside the pane to the right instead of replacing it (Shift-, Ctrl- or Cmd-click, or a middle click, does the same). With nothing open to the right it is a plain Enter; on something already open as a fork, it focuses that fork"],
-      ["[ ]", "in panes: the fork above / below (back where you were in it, or its pane nearest your column)"],
+      ["q", "in panes: close the active pane (the one under the heavy rule, whatever it shows) and every pane opened from it, except pinned ones; the focus goes back to where it was opened from. A pane's × does the same. Moving left never closes anything"],
+      ["P", "in panes: pin or unpin the active pane (or its pin, top right). A pinned pane stays where it is when a pane it came from closes, is never replaced by a plain open, and never folds into a tab or a spine"],
+      ["Shift+Enter", "in panes: open a fork: what Enter opens goes in the next column below what is open there, instead of replacing it (Shift-, Ctrl- or Cmd-click, or a middle click, does the same). With nothing open to the right it is a plain Enter; on something already open as a fork, it focuses that fork"],
+      ["[ ]", "in panes: the pane above / below in the same column, whichever fork it belongs to (back where you were in it, or at its head); at the top or bottom of the column nothing moves. A faint curve runs from where each pane was opened to its title"],
     ],
   ],
   [
@@ -112,6 +113,7 @@ export const HELP: [string, [string, string][]][] = [
       ["/auto on|off", "reconcile automatically after edits"],
       ["/speculate on|off", "start writing the focused sentence's expansion early"],
       ["/view mode", "page layout: auto, column or panes; auto shows panes on windows 1600 px wide or more"],
+      ["/curves on|off", "in panes: the faint curves from where each pane was opened to it"],
       ["/user name", "set the name on your commits"],
       ["/new title", "new blank document"],
       ["/open name", "open a document by title or id"],
@@ -497,6 +499,9 @@ function commonKey(k: string, hooks: KeyHooks): boolean {
       return true;
     case "q":
       if (store.panes) store.closePane();
+      return true;
+    case "P":
+      store.togglePanePin();
       return true;
     case "[":
     case "]":

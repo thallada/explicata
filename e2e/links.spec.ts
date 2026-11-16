@@ -10,7 +10,7 @@ import { command, focusedTitle, jump, keys, seedLinks, selected, settle, state, 
 /** The panes' titles, left to right: a node's title, or W:article for a Wikipedia pane. */
 const trail = (page: Page) =>
   state(page, (s) => s.trail.map((p: any) => (p.kind === "node" ? s.snap.nodes[p.id].title || s.snap.nodes[p.id].anchors[0]?.text : `W:${p.title}${p.sec ? `#${p.sec}` : ""}`)));
-const panes = (page: Page) => page.locator(".strip > .pane");
+const panes = (page: Page) => page.locator(".strip .pane");
 
 /** Tab through the focused section's marked spans until the selection is these words. */
 async function tabTo(page: Page, words: string) {
@@ -30,7 +30,7 @@ async function column(page: Page, path = "/doc/fixed-points") {
 async function wide(page: Page, path = "/doc/fixed-points") {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto(path);
-  await page.waitForSelector(".strip > .pane");
+  await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
 }
 /** Open a section in panes and select the first marked span in its text. */
@@ -174,7 +174,7 @@ test("panes: Tab and Enter open an article in the next pane; its sections open a
   for (let i = 0; i < 4 && (await state(page, (s) => s.selectedText())) !== "Alonzo Church"; i++) await keys(page, "Tab");
   await keys(page, "Enter");
   await expect(panes(page).last().locator(".wiki-head h2")).toHaveText("Alonzo Church");
-  const spine = page.locator(".wiki-pane[data-covered] .spine").first();
+  const spine = page.locator(".col[data-covered] .wiki-pane .spine").first();
   await expect(spine.locator(".wmark")).toHaveText("W");
   expect(await spine.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(await page.locator(".pane.root .spine").evaluate((el) => getComputedStyle(el).backgroundColor));
 });

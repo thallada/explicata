@@ -512,6 +512,9 @@ export function App() {
   const click = (e: MouseEvent) => {
     if (store.mode === "edit") return;
     const target = e.target as HTMLElement;
+    // A pane's × and pin act on that pane, wherever the focus is.
+    const ctl = target.closest<HTMLElement>("[data-close], [data-pin]");
+    if (ctl) return ctl.dataset.close ? store.closePane(Number(ctl.dataset.close)) : store.togglePanePin(Number(ctl.dataset.pin));
     const paneEl = target.closest<HTMLElement>("[data-pane-index]");
     const paneIndex = paneEl ? Number(paneEl.dataset.paneIndex) : store.paneAt;
     // A pane in another fork: that fork becomes the focused branch first, then the click does what it would there.
@@ -647,7 +650,10 @@ export function App() {
       if (hit) return store.go(at.id, "sentence", hit);
     }
     const node = target.closest<HTMLElement>("[data-node]");
-    if (node) store.go(node.dataset.node as NodeId);
+    if (!node) return;
+    // A pane's head makes that pane the active one.
+    if (panes && paneEl && node.matches(".pane-head, .top")) store.paneAt = paneIndex;
+    store.go(node.dataset.node as NodeId);
   };
 
   const onOver = (e: MouseEvent) => {
