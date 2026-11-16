@@ -22,6 +22,15 @@ export const HELP: [string, [string, string][]][] = [
       ["[ ]", "in panes: the pane above / below in the same column (back where you were in it, or at its head); at the top or bottom nothing moves. A crowded column stacks its panes as the strip stacks columns, covered to a tab; resting the mouse on a covered pane peeks it out; its grip or tab drags it up or down. A faint curve runs from where each pane was opened to its title"],    ],
   ],
   [
+    "Mouse and touch",
+    [
+      ["", "a click on a sentence selects it, and a bar over it offers expand · define · why · example · challenge · ask · link, each with its key (on a phone, at the foot of the screen, × puts it away); a drag selects words, a double click a word"],
+      ["", "right-click (a long press on a phone) on words, a row, a link, a note or a pane: what can be done with it, Copy first. Shift+right-click is the browser's own menu"],
+      ["", "⋯ by a row, a pane's pin, a page's byline or a note (shown when pointed at): the same menu. A stale flag, clicked, offers what to do about it"],
+      ["", "the top bar: undo, redo, and menu: documents, jump, history, links, layout and settings. A key named in the status line or a panel's head is a button that presses it"],
+    ],
+  ],
+  [
     "Links",
     [
       ["", "W marks a Wikipedia link, § another note in the library, ↗ a web page; a dotted underline is a note, both together a note that also links"],

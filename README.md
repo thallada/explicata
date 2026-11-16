@@ -75,6 +75,23 @@ Press `?` for every key. The short version:
   works too). From the command bar: `/new`, `/open`, `/rename`, `/duplicate`, `/export`,
   `/import`. All of these are ordinary edits of the library, made in the browser's replica.
 - Edits are saved as they are made; the top bar says `saved` once the server has them all.
+- **With a mouse or a finger.** Everything a reader needs is reachable without the keys, and each
+  control names its key, so the mouse teaches the keyboard. A click on a sentence selects it and a
+  small bar over it offers `expand e · define d · why y · example x · challenge c · ask :` and
+  `link w`, with `⋯` for the rest (Copy, Related sections, select less or more); a drag selects
+  words, a double click a word; it works the same in an article's text, without link. A right-click
+  on words, a row, a link, a note or a pane opens what can be done with it, Copy first (Shift+right-
+  click is the browser's own menu); so does the `⋯` beside a row, a pane's pin, a page's byline or a
+  note, shown only when pointed at, and a stale flag. The top bar, which stays at the top, has
+  `undo`, `redo` when there is something to redo, and `menu` (documents, jump, history, links,
+  layout and settings). Keys named in the status line or a panel's head are buttons. On a phone the
+  bar sits at the foot of the screen and menus rise from it. Every item acts by pressing its key
+  (`src/ui/press.ts`), so a click and a key cannot do different things. The first visit says, once,
+  in the status line, that a click on a sentence offers actions and `?` lists the keys. Left to the
+  keys: stepping by grain (`j` `k` `i`; a click or a drag goes straight there), `Tab` from mark to
+  mark, `[` `]` up and down a column (a click on a pane does it), and the commands typed at `:`
+  that no menu lists (`/branch`, `/switch`, `/merge`, `/user`, `/link`, …), which the menu's
+  Command line… opens for typing.
 - On a window 1600 px wide or more the page opens as panes side by side, after Andy Matuschak's
   notes: the library, the open document, its open sections. `v` switches between panes and the
   single column, `/view auto|column|panes` sets it.
@@ -219,7 +236,9 @@ What is sent where:
   `wikiRoutes.ts`, `wikiMock.ts`), local embeddings (`embed.ts`), link discovery (`links/`), and
   migrates data from older layouts (`migrate.ts`).
 - **`src/ui/`** The browser's replica of the library (`session.ts`, kept in IndexedDB), the store
-  and keymap, and the page. The panes view's panes are a forest of forks (`forks.ts`, pure functions;
+  and keymap, and the page. The mouse acts through the keymap: `actions.ts` builds what the
+  selection bar and the menus offer for each kind of target, every item pressing its key
+  (`press.ts`); `Mouse.tsx` draws the one menu, the bar and the key hints. The panes view's panes are a forest of forks (`forks.ts`, pure functions;
   the store's `trail` is its focused branch); `stack.ts` is the stacking shared by the strip and its
   columns, `lanes.ts` orders the curves' lanes.
 

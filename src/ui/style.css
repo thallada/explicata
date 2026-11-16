@@ -755,6 +755,8 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
   background: var(--bg); box-shadow: 0 0 0 100vmax var(--bg); clip-path: inset(0 -100vmax);
 }
 .view-panes .docbar { position: relative; box-shadow: none; clip-path: none; background: none; }
+/* What the keys bring into view is not left under it. */
+html { scroll-padding-top: 48px; }
 .docbar .tools { margin-left: auto; display: flex; align-items: baseline; gap: 1.1em; }
 .docbar .tool { font: inherit; color: var(--dim); background: none; border: 0; padding: 0; cursor: pointer; letter-spacing: 0.02em; }
 .docbar .tool:hover, .docbar .tool[aria-expanded="true"] { color: var(--fg); text-decoration: underline 1px dotted; text-underline-offset: 0.2em; }

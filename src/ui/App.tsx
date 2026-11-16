@@ -167,7 +167,8 @@ function Help() {
         <h2>Keys</h2>
         <p class="lede">
           Focus is a node and a grain. Start on a section, press <kbd>i</kbd> to move by sentence, <kbd>i</kbd> again by word, and <kbd>e</kbd> on
-          anything to go deeper. Text with a dotted underline already has an expansion; anything else is written on request.
+          anything to go deeper. Text with a dotted underline already has an expansion; anything else is written on request. With a mouse, click a
+          sentence; every menu names the key that does the same.
         </p>
         <div class="cols">
           {HELP.map(([head, rows]) => (
@@ -336,7 +337,8 @@ function AgentPanel() {
     <div class="agent-panel" data-agent={run.running ? "running" : "done"}>
       <div class="agent-head">
         <span class="agent-label">editor</span>
-        {run.running ? "researching on the web · Esc stops" : "done · Esc closes"}
+        {run.running ? "researching on the web · " : "done · "}
+        <Key k="Escape" what={run.running ? "stop" : "close"} />
       </div>
       <ol class="agent-steps">
         {all.length > steps.length && <li class="agent-more">{all.length - steps.length} earlier steps</li>}
@@ -374,6 +376,9 @@ function StatusLine() {
   const sugg = selecting && store.focusedSuggestion();
   const commentary = selecting && store.commentaryAt(f.range);
   const noteHere = selecting && store.noteAt(f.range);
+  // Reviewing suggestions: where the review is, and its keys as buttons.
+  const reviewing: Hint | null =
+    store.mode === "review" && store.status.startsWith("review ") ? [store.status.split(" · y link")[0], ["y", "link"], ["n", "decline"], ["s", "skip"], ["Y", "link all"], ["Escape", "stop"]] : null;
   const hint: Hint = store.aux
     ? store.aux.kind === "wiki"
       ? store.inArticleText
@@ -404,7 +409,7 @@ function StatusLine() {
     <footer class="status">
       <span class={`grain ${store.aux ? "aux" : f.grain}`}>{store.preview ? "history" : store.mode === "review" ? "review" : store.aux ? (store.aux.kind === "wiki" ? "article" : store.aux.kind === "back" ? "linked" : "target") : f.grain}</span>
       <span class="path">{path}</span>
-      <span class="message">{store.status || (hint.length ? <Hints hint={hint} /> : <FirstRun />)}</span>
+      <span class="message">{reviewing ? <Hints hint={reviewing} /> : store.status || (hint.length ? <Hints hint={hint} /> : <FirstRun />)}</span>
       <span class="right">
         {store.links.job?.state === "running" && (
           <span class="job" title={store.jobText(store.links.job)}>
