@@ -1,6 +1,7 @@
 # Wikipedia and local semantic search
 
-The findings and decisions behind `server/wiki.ts`, `server/embed.ts` and `server/links/`. Sources
+The findings and decisions behind `server/wiki.ts`, `server/embed.ts` and `server/links/` (the model
+reviewer that judges what the scanner finds is §9). Sources
 were read on 14 November 2026. The Wikimedia rate limits are new this year and its own page calls
 them "subject to experimentation and change", so check the links again before relying on the
 numbers.
@@ -301,9 +302,9 @@ labeller did not list); "linear chromosomes" → *Linear chromosome* (label: *Ch
 "complex traits" → *Complex traits* (a genetics article for an ordinary phrase); "Asgard archaea"
 → *Asgard archaea* (label: *Asgard (archaea)*; arguably right); "northern hemisphere" →
 *Northern Hemisphere* (well known, not listed). With 32 decisions the precision estimate is
-loose, but it is under 0.95, so the default is now **`/autolink suggest`**: nothing is written
+loose, but it is under 0.95, so the default became **`/autolink suggest`**: nothing is written
 without the writer's say; `/autolink on` is an opt-in. The rule was not tuned against the fresh
-set.
+set. (The default is now `/autolink review`, §9: a model judges each candidate first.)
 
 Representative decisions of the first rule (tuning sample unless marked):
 
@@ -331,3 +332,53 @@ library: 3.8 s in the evaluation script; in the server on a first start, 318 sec
 the worker thread, while `/api/state` kept answering in about 1 ms. A bulk pass over the owner's ~600 nodes should take
 about 10,000 phrases → ~200 lookups plus ~1 sense or search per node, ~800 requests: ~85 min
 without a contact, ~14 min with one (estimated from the sample, not run).
+
+## 9. The model reviewer
+
+The scanner over-generates on purpose (§5), and its `suggest` tier is right about half the time
+(0.58 on the fresh set). A one-off model reviewer, run outside the app over a bulk pass of the
+owner's library, accepted about 64 % of `auto` and 17 % of `suggest` candidates, and its errors were
+the scanner's known blind spots: a parent linked to its own child or sibling, a second mention of
+something linked nearby, everyday words and household names, a fragment of a longer name, the wrong
+sense or the wrong person of the same name, a library section matched on its title alone, and the
+document's own quoted prompt. That reviewer is now built in (`server/links/review.ts`), and
+**`/autolink review`** is the default whenever a model is configured.
+
+**Flow.** After a scan (an edit saved, `/linkdoc`, `/linkall`) the candidates nobody has judged
+go to the configured model in batches of up to 60, grouped by document and section. Each proposal
+carries its sentence, the section's title and path, the target's title and short description (and
+the first sentence of its summary when the cache has one, never a new request), and for a library
+target how it stands to the section (subsection, parent, sibling, elsewhere in the document,
+another document); each document heading lists what is already linked in it, and each section
+heading what is linked there. The model has no tools; it returns, by structured output, a verdict
+(link or not) and a reason of at most twelve words per proposal. The system prompt names each
+blind spot above as a reason to reject. Verdicts are stored with the suggestion in
+`IE_DATA/links/pending.json`, keyed by node, phrase and target rather than by offsets, so a
+suggestion found again by a later scan keeps its verdict and is never sent twice. Rejected phrases
+are skipped by later scans of that node, as declined ones are.
+
+**Applying.** The approved links are handed once to the page that asked (a scan's answer, or a
+job's list fetched with `claim=1` when it ends), which makes them in its own replica as one commit
+by "reviewer", tagged `review`, so history shows them and `u` takes them back. Undone, they are
+offered as suggestions again. A person's decisions (`y`, `n`, a removed link) are recorded in the
+library as before (a link, or the phrase in the node's `nolink`) and on the server, so the links
+list can say who decided.
+
+**Cost.** A node scanned after an edit costs at most 2 calls (`SCAN_CALLS`), almost always 1, and
+none when nothing new was found. A document or library job costs ⌈N / 60⌉ calls for N new
+candidates, at most `IE_REVIEW_CALLS` (default 50, so 3,000 candidates); the status line counts
+them, and a second run asks nothing about what the first judged. Every call uses the configured
+model (`IE_MODEL`) at effort `low`: the app has no per-task model setting, and none was added.
+
+**Falling back.** With no model (`IE_LLM=off`), when a call fails (a limit reached, the network
+gone), or when a job reaches its cap, nothing unreviewed is applied: what is left stays pending, is
+drawn as suggestions and listed under *pending*, and the status line says why ("Not reviewed (the
+reviewer failed: …)").
+
+**Earlier data.** The pending file keeps the shape it had; entries written before verdicts existed
+read as pending. Declines already in nodes (`nolink:`) are listed as rejected; those whose target
+was not kept show the phrase alone. Links already in the text are listed as linked, with no reason.
+
+**Not measured.** The built-in reviewer has not been scored against the labelled sets
+(`scripts/linkEval.ts`); the 64 % and 17 % above are the one-off reviewer's acceptance rates on the
+owner's library, not precision. The tests use a mock whose verdicts follow a fixed rule.

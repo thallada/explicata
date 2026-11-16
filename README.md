@@ -41,6 +41,7 @@ use on their own machine.
 | `IE_WIKI_CONTACT` | unset | An email address, an `https://` URL or `User:Name` for the User-Agent of Wikipedia requests. Without it requests are spaced 6.5 s apart (the page says so once, the first time it is slow); with it, 1 s. Nothing else about you is sent. |
 | `IE_WEB` | `on` when a model is configured | `off` takes web search and fetch away from the editor agent, whatever the page asks. |
 | `IE_WEB_SEARCHES`, `IE_WEB_FETCHES` | `5`, `5` | Searches and page reads one request to the editor may make. |
+| `IE_REVIEW_CALLS` | `50` | Model calls the link reviewer may make in one `/linkdoc` or `/linkall` (each call judges up to 60 links). What is left past the cap waits for you. |
 | `IE_EMBED` | on | Local embeddings for link discovery (bge-small, loaded on first use in a worker thread, about 560 MB of memory). `off`: links are found by text alone. `fake`: hashed words, no download (the tests). |
 | `IE_EMBED_MODEL` | `Xenova/bge-small-en-v1.5` | Downloaded once into `IE_DATA/models/`. `Snowflake/snowflake-arctic-embed-xs` is a drop-in alternative. |
 | `IE_EMBED_THREADS` | `4` | ONNX threads for the embedding model. |
@@ -161,7 +162,7 @@ Press `?` for every key. The short version:
   preformatted blocks are shown but cannot be selected; a formula is selected whole.
 - To link by hand, select words (`i`, widen with `H` `L`) and press `w`: the picker offers library
   sections and notes, Wikipedia articles and, for a pasted address, the web page. `w` on a link
-  retargets it, `D` removes it; `:/link target` and `:/unlink` do the same.
+  retargets it, `D` removes it (for good: see below); `:/link target` and `:/unlink` do the same.
 - A link to a deleted node stays in the text, marked broken, with the document and section titles
   it pointed to, so undoing the delete finds it again.
 
@@ -171,22 +172,42 @@ Press `?` for every key. The short version:
   in the background: phrases that are another section's title, sections of other documents close in
   meaning, and Wikipedia articles, each checked against the text. These scans ask Wikipedia only
   after anything a person is waiting for.
-- What is found is **suggested** (a faint dashed underline). `Tab` reaches suggestions; `y` links
-  one, `n` declines it (remembered in the node, on every replica). `S` reviews a document's
-  suggestions one by one. `/autolink on` also makes the surest at once, as one commit (`u` takes it
-  back); it is opt-in because that tier measured 0.84 precision on unseen documents.
-  `/autolink off` scans nothing by itself.
+- What is found is **reviewed by the model** (`/autolink review`, the default when a model is
+  configured): it judges every candidate as a careful Wikipedia editor would, and the links it
+  approves are made at once, as one commit by "reviewer" (`u` takes it back; history shows it). What
+  it rejects is kept, with its one-line reason, and not looked for again. The model gets no tools,
+  only the candidates: each phrase's sentence, its section's title and path, and the target's title
+  and description (or first sentence); many candidates go in one call, and nothing judged is sent
+  twice. Without a model (`IE_LLM=off`), or when a call fails or a job reaches its cap
+  (`IE_REVIEW_CALLS`), nothing unreviewed is linked: the candidates are suggested instead, and the
+  status line says why.
+- A **suggestion** has a faint dashed underline. `Tab` reaches suggestions; `y` links one, `n`
+  declines it (remembered in the node, on every replica). `/autolink suggest` leaves every
+  candidate to you; `/autolink on` makes the scanner's surest links unreviewed (they measured 0.84
+  precision on unseen documents); `/autolink off` scans nothing by itself.
+- `S` opens the **links list** of the document, beside the text: every link found or made, what
+  was rejected and what waits, each with who decided (the reviewer or you) and the reviewer's
+  reason. `1` `2` `3` (or a click) show or hide linked · rejected · pending, with their counts;
+  rejected is hidden at first. `j` `k` move, and the row's words are selected in the text; `y`
+  links a row, also one the reviewer rejected; `n` declines one, or removes a link for good (its
+  words are declined so it is not made again); `Y` links every pending row shown; `Enter` goes to
+  the words; `Esc` closes. Declines made before determinations were kept show as the phrase alone.
+- `D` on a link, or **Remove the link** in its right-click menu, removes it and declines its words in
+  that node, so neither the scanner nor the reviewer puts it back (`:/unlink` does the same, and on a
+  note that also links keeps the note's text).
 - In the body editor `[[` opens a completer (library titles, then Wikipedia). A bare `[[term]]`
   left in the text is looked up on save.
 - Under the node being read, **Related** lists sections of other documents close in meaning.
   `1`–`5` with words selected links them to that row; on the node, goes there.
 - `/linkdoc` and `/linkall` scan the document or the library in the background, with progress in
-  the status line (`/linkcancel` stops).
+  the status line, the reviewer's calls counted against the cap (`/linkcancel` stops; what was
+  reviewed is kept, and what was approved is linked).
 - A model writing a note or sections is given a few nearby library nodes and may mark phrases
   `[[phrase]]`; the marks never show and each is checked before it becomes a link. The editor
   agent has a `suggest_links` tool.
 
-How the rule was tuned and measured: [docs/wikipedia.md](docs/wikipedia.md).
+How the rule was tuned and measured, and how the reviewer is asked and what it costs:
+[docs/wikipedia.md](docs/wikipedia.md) (§8, §9).
 
 ### Web research
 
@@ -233,14 +254,15 @@ What is sent where:
   after an edit (a resolver decides how far up), resolve conflicts, and the editor agent, which
   works on a fork and merges back. A prompt carries the focused node's document only.
 - **`src/core/ref.ts`, `src/core/links.ts`** Targets, the backlinks index, finding a node target
-  again, and `applyLinks`, which links a batch of spans in one commit.
+  again, `applyLinks`, which links a batch of spans in one commit, and the phrase key a decline
+  records.
 - **`src/core/article.ts`, `src/ui/articleText.ts`** Notes on Wikipedia articles: the article
   nodes, anchors and finding them again in a new revision; an article's HTML as text to select in.
 - **`src/core/format.ts`, `seed.ts`, `library.ts`** The text format, writing a parsed tree into the
   library, and the document operations and addresses.
 - **`server/`** Relays updates between replicas and persists them (`library.ts`), proxies model
   calls (`claude.ts`, `subscription.ts`, `usage.ts`, `web.ts`), Wikipedia (`wiki.ts`, `wikiHtml.ts`,
-  `wikiRoutes.ts`, `wikiMock.ts`), local embeddings (`embed.ts`), link discovery (`links/`), and
+  `wikiRoutes.ts`, `wikiMock.ts`), local embeddings (`embed.ts`), link discovery and its model reviewer (`links/`), and
   migrates data from older layouts (`migrate.ts`).
 - **`src/ui/`** The browser's replica of the library (`session.ts`, kept in IndexedDB), the store
   and keymap, and the page. The mouse acts through the keymap: `actions.ts` builds what the
@@ -256,7 +278,7 @@ On disk:
 ```
 IE_DATA/library/<branch>.loro      the library, one Loro snapshot per branch
 IE_DATA/library.json               starter documents already imported
-IE_DATA/links/pending.json         link suggestions waiting for a writer (derived)
+IE_DATA/links/pending.json         link suggestions, the reviewer's verdicts and your decisions (derived)
 IE_DATA/vectors/nodes.*            the library's sections as vectors (derived)
 IE_DATA/wiki-cache/                Wikipedia answers (derived)
 IE_DATA/models/                    the embedding model
@@ -345,10 +367,11 @@ same tree.
 | `GET /api/docs/<slug>/export[/<branch>]` | the text format; header `x-skipped` counts what was left out |
 | `GET /api/docs/<slug>/tree[/<branch>]`, `POST /api/docs/<slug>/ops[/<branch>]` | one document's subtree with its conflicts; ops as above |
 | `GET /api/wiki/…` | Wikipedia through the server's cache: `summary`, `article` (`&full=1` for every section), `section`, `senses`, `suggest`, `search`, `lookup` (server/wikiRoutes.ts) |
-| `POST /api/links/scan` `{ node }` | scan a node and record what is found as pending |
-| `GET /api/links/pending?doc=<slug>&tier=auto\|suggest` | pending suggestions with the context a reviewer needs |
+| `POST /api/links/scan` `{ node, review? }` | scan a node and record what is found as pending; with `review`, the model reviewer judges what is new, and the approved links are handed back to be made |
+| `GET /api/links/pending?doc=<slug>&tier=auto\|suggest&all=1&claim=1` | pending suggestions with the context a reviewer needs; `all` with every determination; `claim` hands out the approved links no page has made |
 | `POST /api/links/accept` / `reject` `{ ids, author? }` | link them in one commit, or record them as declined |
-| `POST` / `GET` / `DELETE /api/links/jobs` `{ scope: "doc" \| "library", doc? }` | a background scan: start, progress, cancel |
+| `POST /api/links/decide` `{ ids, link, by }` | record a person's decision made in their own replica |
+| `POST` / `GET` / `DELETE /api/links/jobs` `{ scope: "doc" \| "library", doc?, review? }` | a background scan (reviewed, with `review`): start, progress, cancel |
 | `GET /api/links/related?node=`, `/nearby?node=`, `/status` | the Related list, the nearby list a model is given, the scanner's state |
 | `GET /api/state`, `/api/usage`, `/api/events`, `/api/branch/<b>`, `POST /api/sync/<b>`, `POST /api/llm/…` | what the page uses |
 
