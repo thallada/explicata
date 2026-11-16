@@ -30,7 +30,9 @@ test("/research shows its searches and pages, writes a section, and links its cl
   const panel = page.locator(".agent-panel");
   await expect(panel).toBeVisible();
   await expect(panel).toHaveAttribute("data-agent", "running");
-  await expect(panel.locator(".agent-head")).toContainText("Esc stops");
+  await expect(panel.locator(".agent-head")).toContainText("researching on the web");
+  // Esc stops it, and says so as a button that presses Esc.
+  await expect(panel.locator('.agent-head .key[data-key="Escape"]')).toHaveCount(1);
   await expect(panel.locator(".agent-steps")).toContainText("searched “how tides work”: 3 results");
   await expect(panel.locator(".agent-steps")).toContainText("read “How tides work” · example.org");
   await expect(panel).toHaveAttribute("data-agent", "done");
