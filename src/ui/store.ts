@@ -126,6 +126,9 @@ export interface Menu {
 }
 /** Page layout: one column with a margin, or panes side by side. Auto picks panes on wide windows. */
 export type View = "auto" | "column" | "panes";
+/** Where a fork's colour shows in the panes view: along its curves and title rules, across its panes' tops, down their left edges, or nowhere. */
+export type Colors = "line" | "top" | "edge" | "off";
+const COLORS: Colors[] = ["line", "top", "edge", "off"];
 /** The narrowest window, in CSS px, on which `auto` chooses panes. */
 export const PANES_MIN_WIDTH = 1600;
 
@@ -231,7 +234,7 @@ class Store {
   branchFrom: Commit | null = null;
   /** A note being previewed on hover, and where to draw it. */
   popup: { note: NodeId; x: number; top: number; bottom: number } | null = null;
-  settings: { auto: boolean; speculate: boolean; view: View; autolink: AutoMode; curves: boolean } = { auto: true, speculate: false, view: "auto", autolink: "suggest", curves: true, ...lsGet("ie:settings", {}) };
+  settings: { auto: boolean; speculate: boolean; view: View; autolink: AutoMode; curves: boolean; colors: Colors } = { auto: true, speculate: false, view: "auto", autolink: "suggest", curves: true, colors: "line", ...lsGet("ie:settings", {}) };
   /** Link discovery: scans after writes, suggestions, Related, the background job. */
   links = new Linker({
     doc: () => this.doc,
@@ -2179,6 +2182,7 @@ class Store {
       auto: () => this.set("auto", arg !== "off"),
       speculate: () => this.set("speculate", arg !== "off"),
       curves: () => (this.set("curves", arg !== "off"), this.emit()),
+      colors: () => this.setColors(arg),
       view: () => (["auto", "column", "panes"].includes(arg) ? this.setView(arg as View) : this.say(`/view auto, column or panes (now ${this.settings.view}, showing ${this.panes ? "panes" : "column"})`)),
       resolve: () => this.resolveAll(),
       new: () => (arg ? this.newDoc(arg) : this.openMenu("new")),
@@ -2962,6 +2966,15 @@ class Store {
     this.settings = { ...this.settings, autolink: arg as AutoMode };
     lsSet("ie:settings", this.settings);
     this.say(arg === "on" ? "autolink on: sure links are made at once (u undoes); the rest are suggested" : arg === "suggest" ? "autolink suggest: links are only suggested; y takes one, S reviews them" : "autolink off: nothing is scanned automatically");
+  }
+
+  /** /colors: where each fork's colour shows in the panes view. */
+  setColors(arg: string) {
+    const c = COLORS.find((x) => x === arg);
+    if (!c) return this.say(`/colors line|top|edge|off (now ${this.settings.colors}): each fork's colour along its curves and title rules, across its panes' tops, down their left edges, or none`);
+    this.settings = { ...this.settings, colors: c };
+    lsSet("ie:settings", this.settings);
+    this.say(c === "off" ? "colors off: forks in plain ink" : `colors ${c}`);
   }
 
   /** /linkdoc, /linkall: scan in the background on the server; progress shows in the status line. */

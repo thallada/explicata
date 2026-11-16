@@ -56,7 +56,7 @@ export function DocBar() {
           onClick={(e) => {
             e.stopPropagation();
             const s = store.settings;
-            showMenu(topEntries({ view: s.view, autolink: s.autolink, auto: s.auto, speculate: s.speculate, curves: s.curves, panes: store.panes, doc: !!store.currentDoc, canRedo: store.canRedo() }, act), e.currentTarget as HTMLElement);
+            showMenu(topEntries({ view: s.view, autolink: s.autolink, auto: s.auto, speculate: s.speculate, curves: s.curves, colors: s.colors, panes: store.panes, doc: !!store.currentDoc, canRedo: store.canRedo() }, act), e.currentTarget as HTMLElement);
           }}
         >
           menu<span class="chev" />

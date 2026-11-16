@@ -21,7 +21,7 @@ const find = (es: Entry[], label: string) => items(es).find((i) => i.label === l
 
 const node = (more: Partial<NodeCtx> = {}): NodeCtx => ({ title: "Training", text: "Training\n\nIt is trained.", note: false, locked: false, target: false, library: false, doc: false, generating: true, ...more });
 const sel = (more: Partial<SelCtx> = {}): SelCtx => ({ text: "a probability for each possible next piece", article: false, panes: false, ...more });
-const top = (more: Partial<TopCtx> = {}): TopCtx => ({ view: "auto", autolink: "suggest", auto: true, speculate: false, curves: true, panes: false, doc: true, canRedo: false, ...more });
+const top = (more: Partial<TopCtx> = {}): TopCtx => ({ view: "auto", autolink: "suggest", auto: true, speculate: false, curves: true, colors: "line", panes: false, doc: true, canRedo: false, ...more });
 
 /** Every key the page's handler takes, read from keys.ts: an item's key must be one of them. */
 const handled = new Set([...readFileSync(new URL("../src/ui/keys.ts", import.meta.url), "utf8").matchAll(/case "([^"]+)":/g)].map((m) => m[1]));
@@ -134,6 +134,10 @@ describe("actions", () => {
     expect(calls).toEqual(["command /view panes", "command /auto off", "command /speculate on"]);
     expect(labels(es)).not.toContain("Curves between panes");
     expect(labels(topEntries(top({ panes: true }), act))).toContain("Curves between panes");
+    const colors = topEntries(top({ panes: true }), act).find((e) => e.t === "choices" && e.label === "Fork colours") as Extract<Entry, { t: "choices" }>;
+    expect(colors.options.map((o) => `${o.label}${o.on ? "*" : ""}`)).toEqual(["line*", "top", "edge", "off"]);
+    colors.options[3].run();
+    expect(calls.at(-1)).toBe("command /colors off");
     expect(labels(topEntries(top({ doc: false }), act))).not.toContain("Review suggested links");
   });
 

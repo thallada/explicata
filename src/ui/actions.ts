@@ -229,6 +229,8 @@ export interface TopCtx {
   auto: boolean;
   speculate: boolean;
   curves: boolean;
+  /** Where each fork's colour shows in the panes view (`/colors`). */
+  colors: "line" | "top" | "edge" | "off";
   panes: boolean;
   /** A document is open (its links can be looked for and reviewed). */
   doc: boolean;
@@ -255,6 +257,7 @@ export function topEntries(c: TopCtx, act: Act): Entry[] {
     setting("Reconcile after edits", "auto", c.auto),
     setting("Write ahead while reading", "speculate", c.speculate),
     c.panes && setting("Curves between panes", "curves", c.curves),
+    c.panes && { t: "choices", label: "Fork colours", options: (["line", "top", "edge", "off"] as const).map((v): Choice => ({ label: v, on: c.colors === v, run: () => act.command(`/colors ${v}`) })) },
     SEP,
     key(act, "Command line…", ":"),
     key(act, "Keys and help", "?"),

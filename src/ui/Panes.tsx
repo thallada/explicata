@@ -48,7 +48,7 @@ interface PaneProps {
 }
 
 // `off` is left out: a node pane draws the same on the branch or off it, and moving between forks should redraw only what changed.
-const key = (p: PaneProps) => `${refKey(p.p)}|${p.index}|${p.kids}|${p.active}|${!!p.t.pinned}|${p.root}|${p.orphan}|${JSON.stringify(p.aux)}`;
+const key = (p: PaneProps) => `${refKey(p.p)}|${p.t.hue}|${p.index}|${p.kids}|${p.active}|${!!p.t.pinned}|${p.root}|${p.orphan}|${JSON.stringify(p.aux)}`;
 
 /** Redraws a pane only when something drawn in it changed (see `store.paneDirty`). An article pane is cheap to redraw: its HTML is set once. */
 class Pane extends Component<PaneProps> {
@@ -63,11 +63,12 @@ class Pane extends Component<PaneProps> {
   }
 }
 
-/** The attributes every pane has: which it is, its place in its tree, and its id there. */
+/** The attributes every pane has: which it is, its place in its tree, its id there, and its branch's colour (forks.ts; style.css draws it). */
 const paneAttrs = (props: PaneProps, name: string) => ({
   "data-pane": name,
   "data-pane-index": props.index,
   "data-tid": props.t.id,
+  "data-hue": props.t.hue,
 });
 const paneClass = (props: PaneProps) => `${props.active ? " active" : ""}${props.t.pinned ? " pinned" : ""}${props.orphan ? " orphaned" : ""}`;
 
@@ -650,7 +651,7 @@ export function Panes() {
   }, []);
 
   return (
-    <div class="panes">
+    <div class="panes" data-colors={store.settings.colors}>
       <div class="strip" ref={strip}>
         {order.map((c) => {
           const items = cols.get(c)!;
@@ -700,6 +701,8 @@ interface Edge {
   ey: number;
   on: boolean;
   lost: boolean;
+  /** The child's branch colour (forks.ts). */
+  hue?: number;
 }
 
 /** A font's descent, by its CSS font string: where its baseline sits above the bottom of an inline box. */
@@ -750,6 +753,8 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
   const els = paneEls(el);
   const colEls = [...el.children] as HTMLElement[];
   const branch = new Set(store.branchNodes.map((n) => n.id));
+  // Coloured lines: a curve runs on into the rule under its pane's title (or its tab's), one line.
+  const ruled = store.settings.colors === "line";
   const edges: Edge[] = [];
   for (const x of store.panesPlaced) {
     const parent = x.parent;
@@ -764,12 +769,17 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     // Where it arrives: just before the child's title, or its tab's; below a crowded column's foot, at the foot.
     const cbox = ce.getBoundingClientRect();
     let ey: number;
+    let ex = left + ARRIVE;
     let lost = false;
-    if (ce.hasAttribute("data-covered")) ey = cbox.top + TAB / 2;
+    if (ce.hasAttribute("data-covered")) ey = ruled ? cbox.top + TAB - 0.5 : cbox.top + TAB / 2;
     else {
       const scroll = ce.querySelector<HTMLElement>(".pane-scroll")!.getBoundingClientRect();
-      const tr = ce.querySelector<HTMLElement>(".pane-head h2, .top h1, .wiki-head h2")?.getBoundingClientRect();
+      const t = ce.querySelector<HTMLElement>(".pane-head h2, .top h1, .wiki-head h2");
+      const tr = t?.getBoundingClientRect();
       ey = tr && tr.bottom > scroll.top + 4 ? Math.max(scroll.top + 6, tr.top + Math.min(tr.height, 32) / 2) : scroll.top + 14;
+      // The rule: a page title's own underline, a heading's under its head.
+      const rr = ruled && t ? (t.matches("h1") ? tr : t.parentElement?.getBoundingClientRect()) : undefined;
+      if (rr && rr.bottom > scroll.top + 4 && rr.bottom < scroll.bottom) (ey = rr.bottom - 0.5), (ex = Math.max(left + ARRIVE, rr.left));
     }
     if (ey > ccolBox.bottom - 4) {
       ey = ccolBox.bottom - 4;
@@ -825,7 +835,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
       }
     }
     const gutter = colEls.indexOf(ccol);
-    edges.push({ from: parent.id, to: x.node.id, gutter, left: left - box.left, sx: sx - box.left, sy: sy - box.top, under: under && { x: under.x - box.left, y: under.y - box.top }, textRight: textRight - box.left, ex: left + ARRIVE - box.left, ey: ey - box.top, on: branch.has(x.node.id) && branch.has(parent.id), lost });
+    edges.push({ from: parent.id, to: x.node.id, gutter, left: left - box.left, sx: sx - box.left, sy: sy - box.top, under: under && { x: under.x - box.left, y: under.y - box.top }, textRight: textRight - box.left, ex: ex - box.left, ey: ey - box.top, on: branch.has(x.node.id) && branch.has(parent.id), lost, hue: x.node.hue });
   }
   // Lanes, gutter by gutter.
   const lane = new Map<Edge, number>();
@@ -842,7 +852,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
   }
   for (const g of [...lanesUsed.keys()]) if (!gutters.has(g)) lanesUsed.delete(g);
   const fx = (n: number) => Math.round(n * 2) / 2;
-  const out: { key: string; from: number; to: number; lane: number; cls: string; d: string }[] = [];
+  const out: { key: string; from: number; to: number; lane: number; cls: string; d: string; hue: string }[] = [];
   edges.sort((a, b) => Number(a.on) - Number(b.on));
   for (const e of edges) {
     const i = lane.get(e)!;
@@ -865,7 +875,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
         `C${fx(g)} ${fx(e.ey - sg * r2 * (1 - k))} ${fx(g + r2 - k * r2)} ${fx(e.ey)} ${fx(g + r2)} ${fx(e.ey)}` +
         `H${fx(e.ex)}`;
     }
-    out.push({ key: `${e.from}>${e.to}`, from: e.from, to: e.to, lane: i, cls: `${e.on ? "on" : ""}${e.lost ? " lost" : ""}`, d });
+    out.push({ key: `${e.from}>${e.to}`, from: e.from, to: e.to, lane: i, cls: `${e.on ? "on" : ""}${e.lost ? " lost" : ""}`, d, hue: e.hue === undefined ? "" : String(e.hue) });
   }
   // Each curve keeps its element, changed only where it changed, so only what moved is painted again.
   const had = new Map<string, SVGPathElement>();
@@ -882,6 +892,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     if (p.getAttribute("d") !== c.d) p.setAttribute("d", c.d);
     if (p.getAttribute("class") !== c.cls) p.setAttribute("class", c.cls);
     if (p.dataset.lane !== String(c.lane)) p.dataset.lane = String(c.lane);
+    if ((p.dataset.hue ?? "") !== c.hue) c.hue ? (p.dataset.hue = c.hue) : delete p.dataset.hue;
     // In drawing order: the focused branch's last, on top.
     if (svg.children[k] !== p) svg.insertBefore(p, svg.children[k] ?? null);
   });

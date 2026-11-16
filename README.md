@@ -115,6 +115,13 @@ Press `?` for every key. The short version:
 - **Curves.** A faint curve runs from the words, row or link each pane was opened from (joined to
   their underline) to its title; the focused branch's is drawn stronger. Curves down one gutter run
   side by side, ordered to cross as little as they can. `/curves off` hides them.
+- **Fork colours.** Each fork has a colour of its own, quiet and the same lightness for all: a
+  pane opened as the first from its pane goes on in that pane's colour, any other starts the next
+  of seven, so a plain trail is one colour and the first trail plain ink. The colour runs along the
+  curve into the rule under the pane's title (a tab's foot, a dash on a spine), at full strength on
+  the focused branch; a pane keeps its colour while it is open, through a reorder, or as an orphan.
+  `/colors line|top|edge|off` (or the menu) puts it there, in a band across each pane's top, down
+  its left edge, or nowhere.
 - **The active pane**, where the keys act, has a heavy rule across its top; the rest of the focused
   branch, a hairline. `q` closes it and every pane opened from it (whatever it shows: a section, a
   note, an article); each pane's x does the same for that pane. `P`, or a pane's pin, pins it: a

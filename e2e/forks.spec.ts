@@ -300,13 +300,12 @@ test("a curve per open edge, from where each pane was opened to its title; it fo
   expect(start.y).toBeLessThan(link.y + link.height);
   await nearIn(kinds.locator(".node.forked > .row", { hasText: "Simple cells" }), edge("Two kinds of cell", "Simple cells")[0].a);
   const title = (t: string) => pane(page, t).locator(".wiki-head h2, .pane-head h2").first();
+  // Each runs on into the rule under its pane's title: one line.
   for (const t of ["Eukaryote", "Simple cells", "Complex cells"]) {
     const end = edge("Two kinds of cell", t)[0].b;
-    const r = (await title(t).boundingBox())!;
-    expect(end.x).toBeLessThanOrEqual(r.x + 2);
-    expect(end.x, t).toBeGreaterThan(r.x - 30);
-    expect(end.y).toBeGreaterThan(r.y - 4);
-    expect(end.y).toBeLessThan(r.y + r.height + 4);
+    const r = (await pane(page, t).locator(".wiki-head, .pane-head").first().boundingBox())!;
+    expect(Math.abs(end.x - r.x), t).toBeLessThan(2);
+    expect(Math.abs(end.y - (r.y + r.height - 0.5)), t).toBeLessThan(1.5);
   }
   await near('.wiki-pane .wiki-text a[data-wiki="Bacteria"]', edge("Eukaryote", "Bacteria")[0].a);
   // The focused branch (Two kinds of cell → Complex cells) in its own ink; the others not.
