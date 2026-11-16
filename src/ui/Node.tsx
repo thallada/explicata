@@ -168,7 +168,7 @@ export function NoteView({ v, inNote }: { v: VNote; inNote: boolean }) {
   const meta = (lens || stale || (v.id && snap.nodes[v.id].pinned)) && (
     <span class="meta">
       {lens}
-      {v.id && snap.nodes[v.id].pinned ? " · pinned" : ""}
+      {v.id && snap.nodes[v.id].pinned ? " · locked" : ""}
       {stale ? " · stale" : ""}
     </span>
   );
@@ -354,7 +354,7 @@ export function Flags({ id }: { id: NodeId }) {
     conflict && "conflict",
     st.up && "sections changed",
     st.down && "parent changed",
-    n.pinned && n.parent && "pinned",
+    n.pinned && n.parent && "locked",
   ].filter(Boolean) as string[];
   if (!flags.length) return null;
   return <span class={`flags${st.up || st.down || conflict ? " attn" : ""}`}>{flags.join(" · ")}</span>;

@@ -63,7 +63,8 @@ Press `?` for every key. The short version:
   two gets an inline gloss, a sentence a margin note, several sentences an inset passage, a node
   child sections.
 - `c` edits, `r` renames, `a` adds, `D` deletes, `u` undoes (the last edit made in this tab,
-  wherever it was). On a node, `:` hands an instruction to the editor agent; `Esc` stops it.
+  wherever it was). `p` locks a node: the model never rewrites a locked node (your own edits lock
+  it). Locking is not pinning: a pin (`P`) keeps a pane open in the panes view. On a node, `:` hands an instruction to the editor agent; `Esc` stops it.
 - `g` opens history: commits, branches, conflicts. `f` shows only what touched the current
   document; `r` reverts the current document to a commit, leaving the rest of the library alone.
 - The library is the first page. `l` or `Enter` opens a document in place; `h` or `Esc` at its top
@@ -196,8 +197,9 @@ What is sent where:
   writer: the keyboard, the editor agent and `POST /api/ops`.
 - **Staleness is computed, not stored.** Each node remembers a hash of the children and of the
   parent text it was last reconciled with; a mismatch makes it stale in that direction. A person's
-  edits pin a node: flagged when stale, never rewritten. The library and its documents are not
-  reconciled with each other.
+  edits lock a node: flagged when stale (LOCKED beside it), never rewritten. `p` locks or unlocks
+  one by hand; the flag keeps its old name, `pinned`, in the data and the op API, so existing
+  libraries keep their locks. The library and its documents are not reconciled with each other.
 - **Snapshots are patched, not rebuilt**: a change re-reads only the nodes it wrote, so an edit
   costs what it touches, whatever the size of the library.
 - **`src/core/repo.ts`** Every commit records the SHA-256 of the tree, so any checkout can be

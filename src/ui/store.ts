@@ -1925,11 +1925,12 @@ class Store {
     this.emit();
   }
 
-  togglePin() {
+  /** p: lock or unlock a node. A locked node is never rewritten by a model (stored as `pinned`, its old name). */
+  toggleLock() {
     if (!this.writable()) return;
     const n = this.snap.nodes[this.focus.node];
-    this.apply([{ op: "update", id: n.id, pinned: !n.pinned }], `${n.pinned ? "Unpin" : "Pin"} “${clip(label(this.snap, n.id), 40)}”`);
-    this.say(n.pinned ? "Unpinned: the model may rewrite this node." : "Pinned: the model will not rewrite this node.");
+    this.apply([{ op: "update", id: n.id, pinned: !n.pinned }], `${n.pinned ? "Unlock" : "Lock"} “${clip(label(this.snap, n.id), 40)}”`);
+    this.say(n.pinned ? "Unlocked: the model may rewrite this node." : "Locked: the model will not rewrite this node.");
   }
 
   /** b: accept a stale node as it stands. */
@@ -1948,7 +1949,7 @@ class Store {
     const id = this.focus.node;
     if (!this.generating) return this.say("No model configured.");
     if (!isStale(s, id)) return this.say("This node is not stale.");
-    if (s.nodes[id].pinned) return this.say("Pinned nodes are not rewritten. p unpins; b accepts it as it stands.");
+    if (s.nodes[id].pinned) return this.say("Locked nodes are not rewritten. p unlocks; b accepts it as it stands.");
     const doc = this.doc;
     void this.enqueue(`reconciling “${clip(label(s, id), 30)}”`, async () => {
       if (await reconcile(this.llm, doc, id, undefined, undefined, this.writeHooks())) this.status = "";
@@ -2507,7 +2508,7 @@ class Store {
 
   /** Why a key that works on a node does nothing on Wikipedia's text, for the status line; null for a key that does work there. */
   articleRefuses(k: string, selecting: boolean): string | null {
-    const own = "Wikipedia's text is shown as it is: it cannot be edited, renamed, moved, pinned, reconciled or rewritten here. Annotations on it can: i selects words, e d y x c writes one.";
+    const own = "Wikipedia's text is shown as it is: it cannot be edited, renamed, moved, locked, reconciled or rewritten here. Annotations on it can: i selects words, e d y x c writes one.";
     if (["r", "a", "A", "J", "K", ">", "<", "p", "R", "b", "o", "O", "z"].includes(k) && !(selecting && (k === "J" || k === "K"))) return own;
     if (k === "c" && !selecting) return "Wikipedia's text cannot be edited here. Select words (i) and press c to challenge them, or e d y x to annotate them.";
     if (["e", "d", "y", "x"].includes(k) && !selecting) return "Select words first: i, then e d y x c or :. An article itself is never deepened or rewritten.";

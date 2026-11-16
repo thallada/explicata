@@ -92,7 +92,7 @@ describe("cascade", () => {
     doc.apply(sections(doc.snap(), part).map((id) => ({ op: "bless" as const, id })), "Accept");
     doc.apply([{ op: "update", id: a, body: "Leaf A changed again." }], "Human edit");
     const events = await cascade(llm, doc, a, "edit");
-    expect(events.map((e) => e.kind)).toEqual(["decide", "pinned"]);
+    expect(events.map((e) => e.kind)).toEqual(["decide", "locked"]);
     expect(doc.snap().nodes[part].body).toBe("A human wrote this summary.");
     expect(staleness(doc.snap(), part).up).toBe(true);
   });

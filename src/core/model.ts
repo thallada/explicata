@@ -41,7 +41,7 @@ export interface NodeSnap {
   title: string;
   body: string;
   by: Actor;
-  /** Pinned nodes are flagged when stale but never rewritten by a model. Human edits pin. */
+  /** Locked: flagged when stale but never rewritten by a model. Human edits lock. (Stored as `pinned`, its old name, so existing libraries keep their flags.) */
   pinned: boolean;
   form?: Form;
   lens?: string;

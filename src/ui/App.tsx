@@ -391,7 +391,7 @@ function StatusLine() {
           : "Enter open/enter · e toggle · D delete note · w link it"
         : `e expand${store.generating ? "" : " (no model)"} · d define · y why · x example · c challenge · : ask · w link`
       : st.up || st.down
-        ? `stale · ${n.pinned ? "b accept · p unpin" : "R reconcile · b accept"}`
+        ? `stale · ${n.pinned ? "b accept · p unlock" : "R reconcile · b accept"}`
         : "";
   return (
     <footer class="status">

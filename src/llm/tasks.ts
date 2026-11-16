@@ -243,7 +243,7 @@ export async function reconcile(llm: LLM, doc: Doc, id: NodeId, onText: OnText =
 }
 
 export interface CascadeEvent {
-  kind: "decide" | "rewrite" | "keep" | "pinned" | "revise";
+  kind: "decide" | "rewrite" | "keep" | "locked" | "revise";
   node: NodeId;
   text: string;
 }
@@ -278,7 +278,7 @@ export async function cascade(
     let i = 0;
     for (; i < levels; i++) {
       if (doc.snap().nodes[chain[i]]?.pinned) {
-        emit({ kind: "pinned", node: chain[i], text: "pinned: flagged, not rewritten" });
+        emit({ kind: "locked", node: chain[i], text: "locked: flagged, not rewritten" });
         break;
       }
       if (await regenUp(llm, doc, chain[i], noop, opts.signal, opts.hooks)) emit({ kind: "rewrite", node: chain[i], text: "re-summarised" });
@@ -297,7 +297,7 @@ export async function cascade(
       snap = doc.snap();
       if (!snap.nodes[c] || !staleness(snap, c).down || !rendered(c)) continue;
       if (snap.nodes[c].pinned) {
-        emit({ kind: "pinned", node: c, text: "pinned: flagged, not rewritten" });
+        emit({ kind: "locked", node: c, text: "locked: flagged, not rewritten" });
         continue;
       }
       if (await regenDown(llm, doc, c, noop, opts.signal, opts.hooks)) {

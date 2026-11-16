@@ -57,7 +57,7 @@ export const HELP: [string, [string, string][]][] = [
       ["D", "delete (no confirmation; u undoes)"],
       ["J K", "move down / up among siblings"],
       ["> <", "indent / outdent (a document's sections can be moved into another this way, or over HTTP)"],
-      ["p", "pin or unpin: pinned nodes are never rewritten by the model"],
+      ["p", "lock or unlock: a locked node is never rewritten by the model (your own edits lock it). Not the same as P, which pins a pane"],
       ["f", "on a note: cycle its form (inline · margin · inset)"],
       [":", "on a node: tell the editor agent what to change"],
       ["u U", "undo / redo: the last edit made in this tab, in whichever document it was"],
@@ -465,7 +465,7 @@ export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
       store.indent(-1);
       break;
     case "p":
-      store.togglePin();
+      store.toggleLock();
       break;
     case "f":
       store.cycleForm();
