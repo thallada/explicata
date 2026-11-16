@@ -36,6 +36,7 @@ use on their own machine.
 | `IE_LIBRARY` | `library` | Starter documents, each imported once. |
 | `IE_USER` | your login name | The name on commits the server makes for you (the page lets you change yours with `/user`). |
 | `IE_WIKI` | `live` | `mock`: built-in test articles, no network (the browser tests); `off`: every `/api/wiki/*` route answers 503. |
+| `IE_HOSTS` | (none) | Extra host names the dev server answers to, comma-separated. `localhost` and `*.ts.net` (Tailscale) are always allowed. |
 | `IE_WIKI_LANG` | `en` | Which Wikipedia. |
 | `IE_WIKI_CONTACT` | unset | An email address, an `https://` URL or `User:Name` for the User-Agent of Wikipedia requests. Without it requests are spaced 6.5 s apart (the page says so once, the first time it is slow); with it, 1 s. Nothing else about you is sent. |
 | `IE_WEB` | `on` when a model is configured | `off` takes web search and fetch away from the editor agent, whatever the page asks. |

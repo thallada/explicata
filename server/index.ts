@@ -38,6 +38,9 @@ import { linkRoutes } from "./links/routes";
 import { Linker } from "./links/scan";
 
 const PORT = Number(process.env.PORT ?? 4747);
+// Host names the dev server answers to besides localhost. Tailscale names are allowed so that
+// `tailscale serve` works; IE_HOSTS adds more (comma-separated; a leading dot matches subdomains).
+const ALLOWED_HOSTS = [".ts.net", ...(process.env.IE_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean)];
 const DATA = dataDir();
 const PROD = process.env.IE_PROD === "1";
 const MODEL = process.env.IE_MODEL ?? "claude-opus-5-5";
@@ -446,7 +449,7 @@ function serveStatic(res: ServerResponse, path: string) {
 
 const vite = PROD
   ? null
-  : await (await import("vite")).createServer({ root, server: { middlewareMode: true, hmr: { port: PORT + 1 } }, appType: "spa" });
+  : await (await import("vite")).createServer({ root, server: { middlewareMode: true, hmr: { port: PORT + 1 }, allowedHosts: ALLOWED_HOSTS }, appType: "spa" });
 
 createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://x");
