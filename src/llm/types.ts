@@ -19,7 +19,7 @@ export interface Req {
   maxTokens?: number;
 }
 
-export type SchemaName = "cascade" | "resolve" | "contradictions";
+export type SchemaName = "cascade" | "resolve" | "contradictions" | "review";
 
 export interface JsonReq extends Req {
   schema: SchemaName;
@@ -88,4 +88,9 @@ export interface Resolutions {
 
 export interface Contradictions {
   contradictions: { node: string; other: string; explanation: string; text: string }[];
+}
+
+/** The link reviewer's verdicts (server/links/review.ts): one per proposal, by its id. */
+export interface LinkVerdicts {
+  verdicts: { id: string; link: boolean; reason: string }[];
 }

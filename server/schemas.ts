@@ -8,4 +8,13 @@ export const schemas: Record<SchemaName, z.ZodType> = {
   contradictions: z.object({
     contradictions: z.array(z.object({ node: z.string(), other: z.string(), explanation: z.string(), text: z.string() })),
   }),
+  review: z.object({
+    verdicts: z.array(
+      z.object({
+        id: z.string().describe("The proposal's id, as given."),
+        link: z.boolean().describe("true: make the link; false: leave the words unlinked."),
+        reason: z.string().describe("Why, in at most twelve words, for a person reading a list."),
+      }),
+    ),
+  }),
 };

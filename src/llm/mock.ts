@@ -4,7 +4,7 @@
  * It reads the structured `vars` of a request rather than the prose prompt.
  */
 import { clip } from "../core/text";
-import type { CascadeDecision, Contradictions, JsonReq, LLM, Req, Resolutions, Turn, TurnReq } from "./types";
+import type { CascadeDecision, Contradictions, JsonReq, LinkVerdicts, LLM, Req, Resolutions, Turn, TurnReq } from "./types";
 import { webOf } from "./web";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -47,8 +47,21 @@ function mockJson(req: JsonReq): unknown {
     }
     case "contradictions":
       return { contradictions: [] } satisfies Contradictions;
+    case "review": {
+      // The link reviewer, so a test knows each verdict in advance (mockLinks). A proposal whose
+      // words or sentence say "mockfail" makes the whole call fail, as a real one may (a limit
+      // reached, the network gone).
+      const props: { id: string; quote: string; sentence: string }[] = JSON.parse(v.proposals ?? "[]");
+      if (props.some((p) => /mockfail/i.test(`${p.quote} ${p.sentence}`))) throw new Error("mock reviewer: the call failed");
+      return {
+        verdicts: props.map((p) => ({ id: p.id, link: mockLinks(p.quote), reason: mockLinks(p.quote) ? "mock: a name or a term a reader may look up" : "mock: one ordinary word needs no link" })),
+      } satisfies LinkVerdicts;
+    }
   }
 }
+
+/** The mock link reviewer's rule: a name or a term of several words is linked; a single lower-case word is not. */
+export const mockLinks = (quote: string) => /[A-Z0-9]/.test(quote) || /\s/.test(quote.trim());
 
 // ---- web research, without a network ----
 

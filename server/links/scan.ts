@@ -19,10 +19,10 @@
  */
 import { inArticles } from "../../src/core/article";
 import { docOf, notesOf, sections, ancestors as ancestorsOf, descendants, type Doc, type NodeId, type Snap } from "../../src/core/model";
-import { nodeRef } from "../../src/core/links";
+import { nodeRef, targetKey } from "../../src/core/links";
 import type { Mark } from "../../src/core/marks";
 import type { Nearby } from "../../src/llm/prompts";
-import { wikiKey, type Ref } from "../../src/core/ref";
+import type { Ref } from "../../src/core/ref";
 import { digest, overlaps, paragraphs, plain, type Range } from "../../src/core/text";
 import { VectorIndex, dot, tokenize, type Embedder } from "../embed";
 import type { CallOpts, LookupItem, WikiClient } from "../wiki";
@@ -50,6 +50,28 @@ export interface Suggestion {
   title: string;
   description: string | null;
   kind: Kind;
+  /**
+   * Determinations, kept with the suggestion in the pending store (server/links/pending.ts): the
+   * model reviewer's verdict, a person's decision, and when an approved link was handed out to be
+   * made. A scan never sets these; the store carries them from one scan of the node to the next.
+   */
+  review?: Verdict;
+  decided?: Decision;
+  applied?: number;
+}
+
+/** The model reviewer's verdict on a suggestion, with its one-line reason. */
+export interface Verdict {
+  link: boolean;
+  reason: string;
+  at: number;
+}
+
+/** A person's decision on a suggestion: linked or declined, by whom. */
+export interface Decision {
+  link: boolean;
+  by: string;
+  at: number;
 }
 
 export interface Related {
@@ -333,7 +355,6 @@ function docTexts(snap: Snap, doc: NodeId): { id: NodeId; text: string }[] {
   return out;
 }
 
-const refKey = (r: Ref) => (r.kind === "wiki" ? wikiKey(r.lang, r.title) : r.kind === "node" ? `node:${r.id}` : r.url);
 const stripParen = (t: string) => t.replace(/\s*\([^)]*\)\s*$/, "");
 
 export class Linker {
@@ -373,7 +394,7 @@ export class Linker {
     cands = cands.filter((c) => !plainNotes.some(([s, e]) => overlaps([s, e], [c.start, c.end]) && !(s === c.start && e === c.end)));
     if (input.within?.length) cands = cands.filter((c) => c.kind === "forced" || input.within!.some((r) => overlaps(r, [c.start, c.end])));
     // Targets already linked in this node: first mention means they are not offered again.
-    const linkedHere = new Set(n ? notesOf(snap, input.node).map((c) => snap.nodes[c].ref).filter((r): r is Ref => !!r).map(refKey) : []);
+    const linkedHere = new Set(n ? notesOf(snap, input.node).map((c) => snap.nodes[c].ref).filter((r): r is Ref => !!r).map(targetKey) : []);
 
     // Centrality: in the document's title, or in many of its sections.
     const doc = docId && snap.nodes[docId] ? docTexts(snap, docId) : [];
@@ -541,9 +562,9 @@ export class Linker {
     judged.sort((a, b) => a.h.c.start - b.h.c.start);
     const firstOf = new Map<string, number>();
     for (const x of judged) {
-      for (const k of [refKey(x.h.target), `p:${x.h.c.key}`]) if (!firstOf.has(k)) firstOf.set(k, x.h.c.start);
+      for (const k of [targetKey(x.h.target), `p:${x.h.c.key}`]) if (!firstOf.has(k)) firstOf.set(k, x.h.c.start);
     }
-    const firsts = judged.filter((x) => x.h.c.kind === "forced" || (firstOf.get(refKey(x.h.target)) === x.h.c.start && firstOf.get(`p:${x.h.c.key}`) === x.h.c.start && !linkedHere.has(refKey(x.h.target))));
+    const firsts = judged.filter((x) => x.h.c.kind === "forced" || (firstOf.get(targetKey(x.h.target)) === x.h.c.start && firstOf.get(`p:${x.h.c.key}`) === x.h.c.start && !linkedHere.has(targetKey(x.h.target))));
     const rankOf = (x: (typeof firsts)[number]) => (x.h.c.kind === "forced" ? 2 : x.j.tier === "auto" ? 1 : 0);
     firsts.sort((a, b) => rankOf(b) - rankOf(a) || b.j.score - a.j.score || b.h.c.words - a.h.c.words);
     const paras = paragraphs(text);
@@ -555,7 +576,7 @@ export class Linker {
     for (const x of firsts) {
       const r: Range = [x.h.c.start, x.h.c.end];
       if (chosen.some((y) => overlaps(r, [y.h.c.start, y.h.c.end]))) continue;
-      const tk = refKey(x.h.target);
+      const tk = targetKey(x.h.target);
       if (used.has(tk)) continue;
       const p = paraOf(r[0]);
       if (x.h.c.kind !== "forced" && (perPara.get(p) ?? 0) >= t.perParagraph) continue;
@@ -579,7 +600,7 @@ export class Linker {
     const suggestions = chosen
       .sort((a, b) => a.h.c.start - b.h.c.start)
       .map(({ h, j }): Suggestion => ({
-        id: digest(`${input.node}\u0000${h.c.start}\u0000${h.c.end}\u0000${refKey(h.target)}`),
+        id: digest(`${input.node}\u0000${h.c.start}\u0000${h.c.end}\u0000${targetKey(h.target)}`),
         node: input.node,
         range: [h.c.start, h.c.end],
         quote: h.c.text,

@@ -34,6 +34,7 @@ import { embedder } from "./embed";
 import { Jobs } from "./links/jobs";
 import { NodeIndex } from "./links/nodeIndex";
 import { PendingStore } from "./links/pending";
+import { JOB_CALLS, Reviewer } from "./links/review";
 import { linkRoutes } from "./links/routes";
 import { Linker } from "./links/scan";
 
@@ -127,6 +128,9 @@ let linker: Linker | null = null;
 const getLinker = () => (linker ??= new Linker({ doc: () => store.main, wiki: wikiClient, embedder: embed, index: nodeIndex }));
 const pending = new PendingStore(join(DATA, "links", "pending.json"));
 process.on("exit", () => pending.flush());
+// The link reviewer asks the configured model (no tools, structured verdicts); IE_REVIEW_CALLS caps a background job's calls.
+const reviewer = new Reviewer({ llm: () => llm, wiki: wikiClient, pending, snap: () => store.main.snap() });
+const reviewCalls = Math.max(1, Number(process.env.IE_REVIEW_CALLS) || JOB_CALLS);
 const jobs = new Jobs({
   snap: () => store.main.snap(),
   linker: getLinker,
@@ -134,8 +138,10 @@ const jobs = new Jobs({
   index: nodeIndex,
   pending,
   announce: (state) => announce({ linkJob: state }),
+  reviewer,
+  reviewCalls,
 });
-const handleLinks = linkRoutes({ main: () => store.main, linker: getLinker, index: nodeIndex, pending, jobs, embedder: embed, wrote: () => wrote("main") });
+const handleLinks = linkRoutes({ main: () => store.main, linker: getLinker, index: nodeIndex, pending, jobs, embedder: embed, reviewer, wrote: () => wrote("main") });
 
 // ---- live notifications ----
 
