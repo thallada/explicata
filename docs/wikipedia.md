@@ -218,6 +218,13 @@ senses 14 d, suggest and search 1 d), `articles/` (7 d). Vectors: `<IE_DATA>/vec
 and `.f32`. An expired entry is still served, marked `stale`, when the network is down. The
 variables that configure all this are in the README.
 
+Notes on articles (src/core/article.ts) rely on this cache and add nothing to it: an article is
+re-read through `article?full=1`, whose answer always carries `revisionId` (and `pageId`), as
+every `section` answer does (a `summary` may not). A note records the revision it was made
+against; when the cached copy expires (7 d) and Wikipedia has a newer revision, the note is found
+again in it, or shown as detached with a link to the old revision. The browser keeps articles in
+memory for the page's life only, never in IndexedDB.
+
 ## 8. Link discovery as built
 
 `server/links/` (README "Links found for you" says what the writer sees). A scan of one node:

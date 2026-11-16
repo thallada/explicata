@@ -56,7 +56,7 @@ test.afterEach(({ page }) => settle(page));
 test("the library is the first page: its documents are its sections, and opening one needs no closing step", async ({ page }) => {
   await open(page, "/");
   await expect(page.locator(".top h1")).toHaveText("Library");
-  const docs = await state(page, (s) => s.snap.nodes[s.snap.root].children.length);
+  const docs = await state(page, (s) => s.snap.nodes[s.snap.root].children.filter((c: string) => !s.snap.nodes[c].articles).length);
   await expect(page.locator("article > .outline > .node")).toHaveCount(docs);
   await expect(page.locator("article > .outline > .node.open")).toHaveCount(0);
   await keys(page, "j Enter"); // the first document's row: it opens in place of the list
@@ -81,7 +81,7 @@ test("m opens the menu, in library order, and the title in the top bar opens it 
   await expect(panel.locator(".doc.current")).toContainText("Infinispand");
   await expect(panel.locator(".doc.current")).toContainText(/open · (saved|saving…)/);
   const listed = await panel.locator(".doc .title").allTextContents();
-  expect(listed).toEqual(await state(page, (s) => s.snap.nodes[s.snap.root].children.map((c: string) => s.snap.nodes[c].title)));
+  expect(listed).toEqual(await state(page, (s) => s.snap.nodes[s.snap.root].children.filter((c: string) => !s.snap.nodes[c].articles).map((c: string) => s.snap.nodes[c].title)));
   await keys(page, "Escape Escape");
   await expect(panel).toHaveCount(0);
   await page.locator(".docbar .doc-title").click();
@@ -234,7 +234,7 @@ test("create, rename and duplicate from the menu", async ({ page }) => {
   await expect(page).toHaveURL(/\/doc\/scratch-copy$/);
   // The copy sits after the original in the library, and is one commit in its history.
   expect(await state(page, (s) => s.commits()[0].message)).toBe("Duplicate “Scratch pad, renamed” as “Scratch copy”");
-  const order = await state(page, (s) => s.snap.nodes[s.snap.root].children.map((c: string) => s.snap.nodes[c].slug));
+  const order = await state(page, (s) => s.snap.nodes[s.snap.root].children.filter((c: string) => !s.snap.nodes[c].articles).map((c: string) => s.snap.nodes[c].slug));
   expect(order.indexOf("scratch-copy")).toBe(order.indexOf("scratch-pad") + 1);
 });
 

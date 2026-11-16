@@ -96,6 +96,17 @@ Press `?` for every key. The short version:
   line.
 - Under an open node, **Linked from** lists what links to it; under an article, **Mentioned in**
   lists the library's nodes that link to it.
+- **Notes on an article.** In an article's text the keys are a node's: `i` selects a sentence, then
+  a word, `j` `k` `H` `L` move and widen, `Tab` walks links and notes, and `e` `d` `y` `x` `c` `:`
+  write a note on the words, which is a note like any other (`Enter` steps into it; `c`, `D`, `f`,
+  `u`, `:` the editor). Wikipedia's text itself cannot be edited: keys that would edit it say why not. The notes
+  belong to the article, so they show wherever it is opened. The library keeps a node per annotated
+  article in a container that is not a document (not listed, never scanned for links, never
+  reconciled); the article text stays in the server's cache. Each note records its section, its
+  words, a little text either side and the revision; in a later revision it is found again (its
+  section first, then anywhere, then ignoring case and punctuation), and if its words are gone it
+  is listed at the top of its section as detached, with a link to the old revision. Tables and
+  preformatted blocks are shown but cannot be selected; a formula is selected whole.
 - To link by hand, select words (`i`, widen with `H` `L`) and press `w`: the picker offers library
   sections and notes, Wikipedia articles and, for a pasted address, the web page. `w` on a link
   retargets it, `D` removes it; `:/link target` and `:/unlink` do the same.
@@ -170,6 +181,8 @@ What is sent where:
   works on a fork and merges back. A prompt carries the focused node's document only.
 - **`src/core/ref.ts`, `src/core/links.ts`** Targets, the backlinks index, finding a node target
   again, and `applyLinks`, which links a batch of spans in one commit.
+- **`src/core/article.ts`, `src/ui/articleText.ts`** Notes on Wikipedia articles: the article
+  nodes, anchors and finding them again in a new revision; an article's HTML as text to select in.
 - **`src/core/format.ts`, `seed.ts`, `library.ts`** The text format, writing a parsed tree into the
   library, and the document operations and addresses.
 - **`server/`** Relays updates between replicas and persists them (`library.ts`), proxies model

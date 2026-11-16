@@ -9,7 +9,9 @@
  * attributes survives, and every link either names an article (data-wiki) or opens a new tab.
  */
 import type { Attribution, FullArticle as Article, Sense, Summary, TitleSuggestion as Suggestion } from "../../server/wiki";
+import type { SectionText } from "../core/article";
 import { wikiKey, wikiTitle } from "../core/ref";
+import { buildText, type ArticleText } from "./articleText";
 
 export type { Article, Attribution, Suggestion };
 type WikiSection = Article["sections"][number];
@@ -196,17 +198,37 @@ export function cleanHtml(html: string): string {
   return out;
 }
 
-/** The article links in a piece of article HTML, in reading order: what Tab cycles through. */
-const linkLists = new Map<string, { title: string; text: string }[]>();
-export function wikiLinks(html: string): { title: string; text: string }[] {
-  let out = linkLists.get(html);
+/** A piece of article HTML as text to select in (articleText.ts). Remembered per string. */
+const texts = new Map<string, ArticleText>();
+export function articleText(html: string): ArticleText {
+  let out = texts.get(html);
   if (out) return out;
-  const doc = new DOMParser().parseFromString(`<body>${cleanHtml(html)}</body>`, "text/html");
-  out = [...doc.querySelectorAll("a[data-wiki]")].map((a) => ({ title: a.getAttribute("data-wiki")!, text: a.textContent ?? "" }));
-  if (linkLists.size > 400) linkLists.delete(linkLists.keys().next().value as string);
-  linkLists.set(html, out);
+  out = buildText(new DOMParser().parseFromString(`<body>${cleanHtml(html)}</body>`, "text/html").body);
+  if (texts.size > 400) texts.delete(texts.keys().next().value as string);
+  texts.set(html, out);
   return out;
 }
+
+/** The headings down to a section (0: the lead, []): how an annotation names where it is. */
+export function sectionPath(a: Article, id: number): string[] {
+  const out: string[] = [];
+  for (let s = a.sections.find((x) => x.id === id); s; s = a.sections.find((x) => x.id === s!.parent)) out.unshift(s.heading);
+  return out;
+}
+
+/** Every section's text with its headings, the lead first: what annotations are found again in. Remembered per article. */
+const sectionLists = new WeakMap<Article, { ids: number[]; secs: SectionText[] }>();
+export function sectionTexts(a: Article): { ids: number[]; secs: SectionText[] } {
+  let out = sectionLists.get(a);
+  if (!out) {
+    out = { ids: [0, ...a.sections.map((s) => s.id)], secs: [{ path: [], text: articleText(a.lead).text }, ...a.sections.map((s) => ({ path: sectionPath(a, s.id), text: articleText(s.html).text }))] };
+    sectionLists.set(a, out);
+  }
+  return out;
+}
+
+/** The address of a past revision of an article. */
+export const revisionUrl = (title: string, rev: number, lang = config.lang) => `https://${lang}.wikipedia.org/w/index.php?title=${encodeURIComponent(wikiTitle(title).replace(/ /g, "_"))}&oldid=${rev}`;
 
 /**
  * The sections under one (0: the top level) that have something to show: the sanitiser empties

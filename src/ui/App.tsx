@@ -8,7 +8,7 @@ import { DocBar, DocsPanel } from "./Menu";
 import { LinkCard, LinkPicker, NodeBacklinks, NodeRelated, TargetRow } from "./Links";
 import { NodeBody, Outline, PendingSections, TopMatter } from "./Node";
 import { Panes } from "./Panes";
-import { PANES_MIN_WIDTH, store, type Aux } from "./store";
+import { PANES_MIN_WIDTH, store, type Aux, type WRow } from "./store";
 import { WikiPage, WikiView } from "./Wiki";
 import { Usage } from "./Usage";
 
@@ -235,7 +235,8 @@ function CommandBar({ prefill }: { prefill: string }) {
   const f = store.focus;
   const snap = store.snap;
   const n = snap.nodes[f.node];
-  const about = f.grain !== "node" && f.range ? `ask about “${clip(plain(n.body.slice(f.range[0], f.range[1])), 48)}”` : `tell the editor · ${clip(label(snap, f.node), 40)}`;
+  const words = store.selectedText();
+  const about = words !== null ? `ask about “${clip(plain(words), 48)}”` : `tell the editor · ${clip(label(snap, f.node), 40)}`;
   return (
     <div class="command">
       <span class="prompt">{about}</span>
@@ -247,7 +248,7 @@ function CommandBar({ prefill }: { prefill: string }) {
           }
         }}
         defaultValue={prefill}
-        placeholder={f.grain !== "node" ? "why? · example · how does this fail? …" : "add a section on… · tighten this · /branch name · /merge name"}
+        placeholder={words !== null ? "why? · example · how does this fail? …" : "add a section on… · tighten this · /branch name · /merge name"}
         onKeyDown={(e) => {
           e.stopPropagation();
           if (e.key === "Escape") {
@@ -367,7 +368,13 @@ function StatusLine() {
   const selecting = f.grain !== "node";
   const hint = store.aux
     ? store.aux.kind === "wiki"
-      ? `Wikipedia · j k rows · l open · h back · Tab links${store.aux.link !== undefined ? " · Enter opens this link" : ""} · W on wikipedia.org${store.panes ? " · q close" : ""}`
+      ? store.inArticleText
+        ? store.articleNoteHere()
+          ? "Enter open/enter the note · e toggle · D delete note · Tab next"
+          : store.auxLink(store.aux)
+            ? `Enter opens “${clip(store.auxLink(store.aux)!.title, 40)}” · e d y x c annotate · W on wikipedia.org`
+            : `e expand${store.generating ? "" : " (no model)"} · d define · y why · x example · c challenge · : ask · Esc widen`
+        : `Wikipedia · j k rows · l open · h back · i select words · Tab links and notes · W on wikipedia.org${store.panes ? " · q close" : ""}`
       : store.aux.kind === "target" ? "Enter opens what this is about"
       : "Enter goes to the linking note"
     : store.preview
@@ -408,6 +415,13 @@ function StatusLine() {
 }
 
 // ---- the app ----
+
+/** The offset in its text of a DOM position inside a piece marked with data-o. */
+function locateIn(node: Node, offset: number): number | null {
+  const el = node instanceof Element ? node : node.parentElement;
+  const piece = el?.closest<HTMLElement>("[data-o]");
+  return piece ? Number(piece.dataset.o) + (node instanceof Text ? offset : 0) : null;
+}
 
 /** Map a DOM position inside a body to (node, offset). */
 function locate(node: Node | null, offset: number): { id: NodeId; at: number } | null {
@@ -545,6 +559,24 @@ export function App() {
       return store.setFocus(store.focus, { kind: "wiki", host, row: { t: "head" } });
     }
     const selection = window.getSelection();
+    // In an article's text: a drag selects words, an annotation's words open it, a click selects the sentence.
+    const wtext = target.closest<HTMLElement>("[data-wtext]");
+    if (host && wtext && !target.closest("[data-node]")) {
+      store.paneAt = paneIndex;
+      const row = (wtext.dataset.wtext === "head" ? { t: "head" } : { t: "sec", id: Number(wtext.dataset.wtext) }) as WRow;
+      const at = (n: Node | null, o: number) => (n && wtext.contains(n) ? locateIn(n, o) : null);
+      const a = selection && !selection.isCollapsed ? at(selection.anchorNode, selection.anchorOffset) : null;
+      const b = selection && !selection.isCollapsed ? at(selection.focusNode, selection.focusOffset) : null;
+      if (a !== null && b !== null && a !== b) {
+        selection!.removeAllRanges();
+        return store.selectInArticle(host, row, [Math.min(a, b), Math.max(a, b)], "word");
+      }
+      const note = target.closest<HTMLElement>("[data-note]")?.dataset.note as NodeId | undefined;
+      if (note) return store.toggleAnnotation(host, row, note);
+      const o = selection ? at(selection.anchorNode, selection.anchorOffset) : null;
+      if (o !== null) return store.selectInArticle(host, row, [o, o], "sentence");
+      return;
+    }
     // A drag selection inside one body becomes the focus range.
     if (selection && !selection.isCollapsed) {
       const a = locate(selection.anchorNode, selection.anchorOffset);

@@ -20,11 +20,13 @@ import {
 } from "../core/repo";
 import { clip, formFor, plain, rangeAt, sentences, slugify, words, type Form, type Range } from "../core/text";
 import { applyLinks, linkIndex, nodeRef, ownerSection, resolveNode } from "../core/links";
-import { describeTarget, formatTarget, hostOf, parseTargetLoose, type Ref } from "../core/ref";
-import { article as wikiArticle, cachedExtract, sectionsUnder, configureWiki, sensesOf as wikiSenses, wikiLinks, wikiUrl, type WikiConfig } from "./wiki";
+import { annotationsOf, articleNodes, inArticles, makeAnchor, reanchor, type ArticleKey } from "../core/article";
+import { describeTarget, formatTarget, hostOf, parseTargetLoose, wikiKey, type Ref } from "../core/ref";
+import { article as wikiArticle, articleText, cachedExtract, sectionPath, sectionsUnder, sectionTexts, configureWiki, revisionUrl, sensesOf as wikiSenses, wikiUrl, type Article, type WikiConfig } from "./wiki";
+import type { ArticleText } from "./articleText";
 import { LENSES } from "../llm/prompts";
 import {
-  cascade, commitExpansion, deepen, reconcile, resolveConflicts, runAgent, scanContradictions, streamExpansion,
+  cascade, commitArticleNote, commitExpansion, deepen, reconcile, resolveConflicts, runAgent, scanContradictions, streamArticleNote, streamExpansion,
   type AgentEvent, type ExpansionRequest, type WriteHooks,
 } from "../llm/tasks";
 import type { LLM } from "../llm/types";
@@ -62,13 +64,14 @@ export interface Back {
 /** A row of a Wikipedia view: its head (the lead), a section, a sense of a disambiguation page, a "Mentioned in" entry. */
 export type WRow = { t: "head" } | { t: "sec"; id: number } | { t: "sense"; i: number } | { t: "back"; i: number };
 /**
- * Focus on something that is not a library node: a row or a link in a Wikipedia view (`host` says
- * which: `p<i>` the article in pane i, `n<id>` the article under a node in its pane, `col` the
- * article page of the column), a node's target, or a "Linked from" row. The node focus stays
- * where it was, so leaving the aux focus returns to it.
+ * Focus on something that is not a library node: a row of a Wikipedia view (`host` says which:
+ * `p<i>` the article in pane i, `n<id>` the article under a node, `col` the article page of the
+ * column), or words in the text that row shows (a grain and a range, as in a node's body: a
+ * sentence, words, a link or an annotation's words), a node's target, or a "Linked from" row. The
+ * node focus stays where it was, so leaving the aux focus returns to it.
  */
 export type Aux =
-  | { kind: "wiki"; host: string; row: WRow; link?: number }
+  | { kind: "wiki"; host: string; row: WRow; grain?: "sentence" | "word"; range?: Range }
   | { kind: "target"; of: NodeId }
   | { kind: "back"; of: NodeId; index: number };
 /** A row in a pane or in the column: a section, or an aux row. */
@@ -114,6 +117,8 @@ export interface Pending {
   node: NodeId;
   kind: "note" | "sections" | "rewrite";
   range?: Range;
+  /** A note being written on words of an article: which article (its key) and section. */
+  art?: { key: string; sec: number };
   form?: Form;
   lens?: string;
   text: string;
@@ -155,6 +160,21 @@ const lsSet = (k: string, v: unknown) => {
     /* storage may be unavailable; the app works without it */
   }
 };
+
+/** Article text an aux focus is in (Store.auxSpot). */
+export interface Spot {
+  at: ArticleText;
+  /** The section's id; 0 the lead. */
+  sec: number;
+  article: Article;
+  lang: string;
+  host: string;
+}
+/** An article's annotations found again in the revision at hand (Store.annotations). */
+export interface Placements {
+  at: Map<NodeId, { sec: number; range: Range }>;
+  detached: { id: NodeId; sec: number | null }[];
+}
 
 /** Lower-cased title and body, remembered per node entry, for searching a large library on every keystroke. */
 const lowered = new WeakMap<object, [string, string]>();
@@ -394,6 +414,8 @@ class Store {
     const p = this.trail[i];
     const s = this.snap;
     const n = s.nodes[f.node];
+    // An annotation is held by the pane showing its article.
+    if (p && n && inArticles(s, f.node)) return this.shows(p.kind === "wiki" ? `p${i}` : `n${p.id}`, f.node);
     if (!p || p.kind !== "node" || !n) return false;
     if (f.grain !== "node" || n.kind === "note") return ownerSection(s, f.node) === p.id || f.node === p.id;
     if (f.node === p.id) return i === 0 || !this.continues(i);
@@ -943,9 +965,11 @@ class Store {
     const s = this.snap;
     if (this.hoist && !s.nodes[this.hoist]) this.hoist = null;
     if (!s.nodes[this.focus.node]) this.focus = { node: this.top, grain: "node" };
+    // An annotation is on screen only with its article; with none showing it, back to the top.
+    if (inArticles(s, this.focus.node) && !this.hostOf(this.focus.node)) this.focus = { node: this.top, grain: "node" };
     const n = s.nodes[this.focus.node];
     if (this.focus.range && this.focus.range[1] > n.body.length) this.focus = { node: n.id, grain: "node" };
-    if (!this.rendered(this.focus.node)) this.reveal(this.focus.node);
+    if (!this.rendered(this.focus.node) && !inArticles(s, n.id)) this.reveal(this.focus.node);
     if (this.aux && !this.auxValid(this.aux)) this.aux = null;
     this.syncTrail();
   }
@@ -960,6 +984,8 @@ class Store {
     if (!this.panes && this.colWiki) return `/w/${this.colWiki.lang}/${encodeURIComponent(this.colWiki.title.replace(/ /g, "_"))}`;
     const s = this.snap;
     if (!this.panes && isLibraryRoot(s, this.top)) return "/";
+    // An annotation has no address of its own: the address stays on what shows its article.
+    if (inArticles(s, this.focus.node)) return location.pathname;
     return address(s, this.focus.node);
   }
 
@@ -1003,7 +1029,8 @@ class Store {
       this.colWiki = null;
       this.aux = null;
     }
-    const found = w ? ({ node: s.root } as const) : resolve(s, path);
+    const named = w ? ({ node: s.root } as const) : resolve(s, path);
+    const found = "node" in named && inArticles(s, named.node) ? ({ node: s.root } as const) : named;
     if ("missing" in found) {
       this.say(`There is no ${found.missing.replace(/^no /, "")} here. Showing the library.`);
       this.hoist = null;
@@ -1054,7 +1081,8 @@ class Store {
    */
   reveal(id: NodeId) {
     const s = this.snap;
-    if (!s.nodes[id]) return;
+    // An annotation is shown with its article, wherever that is; the Wikipedia container is never a page.
+    if (!s.nodes[id] || inArticles(s, id)) return;
     const chain = ancestors(s, id);
     const under = this.hoist && (id === this.hoist || chain.includes(this.hoist));
     if (!this.panes) {
@@ -1118,12 +1146,14 @@ class Store {
     const s = this.snap;
     const f = this.focus;
     const n = s.nodes[f.node];
-    if (!this.aux && (f.grain === "sentence" || f.grain === "word")) {
-      const units = f.grain === "sentence" ? sentences(n.body) : words(n.body);
+    const sel = this.selecting();
+    if (sel && sel.grain !== "node") {
+      const units = sel.grain === "sentence" ? sentences(sel.text) : words(sel.text);
       if (!units.length) return;
-      const i = Math.max(0, Math.min(units.length - 1, rangeAt(units, f.range?.[0] ?? 0) + delta));
-      return this.setFocus({ ...f, range: units[i] });
+      const i = Math.max(0, Math.min(units.length - 1, rangeAt(units, sel.range?.[0] ?? 0) + delta));
+      return sel.set(sel.grain, units[i]);
     }
+    if (n.wanchor && !this.aux) return this.moveAnnotation(n.id, delta);
     if (n.kind === "note" && !this.aux && !this.paneHead(n.id) && n.id !== this.top) {
       // Among the open notes of the same parent, in the order their anchors appear.
       const sibs = notesOf(s, n.parent!).filter((id) => this.open.has(id)).sort((a, b) => (s.nodes[a].anchors[0]?.start ?? 0) - (s.nodes[b].anchors[0]?.start ?? 0));
@@ -1149,21 +1179,20 @@ class Store {
 
   /** Grow or shrink the selection by one unit at its far end. */
   extend(delta: number) {
-    const f = this.focus;
-    if (f.grain === "node" || !f.range) return;
-    const body = this.snap.nodes[f.node].body;
-    const units = f.grain === "sentence" ? sentences(body) : words(body);
-    const last = rangeAt(units, f.range[1] - 1);
-    const first = rangeAt(units, f.range[0]);
+    const sel = this.selecting();
+    if (!sel || sel.grain === "node" || !sel.range) return;
+    const units = sel.grain === "sentence" ? sentences(sel.text) : words(sel.text);
+    const last = rangeAt(units, sel.range[1] - 1);
+    const first = rangeAt(units, sel.range[0]);
     const target = Math.max(first, Math.min(units.length - 1, last + delta));
-    this.setFocus({ ...f, range: [f.range[0], units[target][1]] });
+    sel.set(sel.grain, [sel.range[0], units[target][1]]);
   }
 
   /** l: open, or step into the first child. On a selection: step into the note anchored there. */
   into() {
     const s = this.snap;
     const f = this.focus;
-    if (f.grain !== "node") return this.move(1);
+    if (f.grain !== "node" || this.inArticleText) return this.move(1);
     if (this.listing(f.node)) return this.openDoc(f.node);
     if (this.panes && (s.nodes[f.node].kind === "section" || this.paneHead(f.node))) {
       this.syncTrail();
@@ -1194,6 +1223,7 @@ class Store {
 
   /** Enter on a selection: open the note anchored there, step into it if it is open, or ask for one. */
   enterOrExpand() {
+    if (this.inArticleText) return this.enterArticle();
     // Words with a note and a target (the note's own, or a link's on the same words) open as one
     // page: the note's text above, the article (or target) beneath.
     const both = this.commentaryAt(this.focus.range);
@@ -1214,7 +1244,8 @@ class Store {
     const s = this.snap;
     const f = this.focus;
     const n = s.nodes[f.node];
-    if (f.grain !== "node") return this.move(-1);
+    if (f.grain !== "node" || this.inArticleText) return this.move(-1);
+    if (n.wanchor) return this.leaveAnnotation(n.id);
     if (n.kind === "note" && !this.paneHead(n.id) && n.id !== this.top) {
       const a = n.anchors[0];
       return this.setFocus({ node: n.parent!, grain: a ? "word" : "node", range: a ? [a.start, a.end] : undefined });
@@ -1291,6 +1322,21 @@ class Store {
     const s = this.snap;
     const f = this.focus;
     const n = s.nodes[f.node];
+    const a = this.aux;
+    if (a?.kind === "wiki") {
+      // In an article: into its text, as in a node's body.
+      if (a.row.t === "sec" && this.wikiHost(a.host)?.nested && !this.colOpen.has(a.row.id)) this.colOpen.add(a.row.id);
+      const sel = this.selecting();
+      if (!sel && a.row.t === "head" && this.auxArticle(a)?.state === "loading") {
+        this.held = { aux: a, keys: [...(this.held && sameAux(this.held.aux, a) ? this.held.keys : []), "i"] };
+        return this.say("The article is still loading; i selects in it when it arrives.");
+      }
+      if (!sel) return this.say(a.row.t === "sec" ? "l opens the section; i then selects in its text." : a.row.t !== "head" ? "Nothing to select here." : this.folded(this.wikiHost(a.host)?.embedded) ? "l unfolds the article; i then selects in it." : "The article is still loading.");
+      const unit = sel.grain === "node" ? sentences(sel.text)[0] : sel.grain === "sentence" ? words(sel.text, sel.range)[0] : undefined;
+      if (unit) sel.set(sel.grain === "node" ? "sentence" : "word", unit);
+      else if (sel.grain === "node") this.say("This part of the article has no text to select.");
+      return;
+    }
     if (f.grain === "node") {
       if (!this.isOpen(f.node) && n.kind === "section" && !this.listing(f.node)) this.open.add(f.node);
       if (n.kind === "section") this.rowPane(f.node, true);
@@ -1305,16 +1351,17 @@ class Store {
   /** Esc: widen the grain. Word → sentence → node; at the top of a hoisted page, step out of it. */
   ascend() {
     const f = this.focus;
-    const body = this.snap.nodes[f.node].body;
-    if (f.grain === "word") {
-      const all = sentences(body);
-      this.setFocus({ node: f.node, grain: "sentence", range: all[rangeAt(all, f.range?.[0] ?? 0)] });
-    } else if (f.grain === "sentence") this.setFocus({ node: f.node, grain: "node" });
-    else if (this.hoist && f.node === this.hoist) this.stepOut();
+    const sel = this.selecting();
+    if (sel?.grain === "word") {
+      const all = sentences(sel.text);
+      sel.set("sentence", all[rangeAt(all, sel.range?.[0] ?? 0)]);
+    } else if (sel?.grain === "sentence") sel.set("node");
+    else if (this.hoist && f.node === this.hoist && !this.aux) this.stepOut();
   }
 
   /** Tab: jump between the spans that already carry a note. */
   nextAnchor(delta: number) {
+    if (this.aux?.kind === "wiki") return this.auxTab(delta);
     const s = this.snap;
     const f = this.focus;
     const spans = notesOf(s, f.node)
@@ -1523,6 +1570,14 @@ class Store {
   remove() {
     if (!this.writable()) return;
     const s = this.snap;
+    const sel = this.articleSelection();
+    if (sel) {
+      const note = this.annotationAt(sel.spot, sel.range);
+      if (!note) return this.say("No annotation on these words to delete; Wikipedia's text itself cannot be deleted.");
+      this.apply([{ op: "delete", id: note }], `Delete note on “${clip(s.nodes[note].wanchor!.q, 40)}”`);
+      this.open.delete(note);
+      return this.say("Note deleted. u to undo.");
+    }
     if (this.focus.grain !== "node") {
       // On a selection, D removes the note anchored there.
       const note = this.noteAt(this.focus.range);
@@ -1533,6 +1588,12 @@ class Store {
     }
     const n = s.nodes[this.focus.node];
     if (!n.parent) return this.say("The library itself cannot be deleted.");
+    if (n.wanchor) {
+      // An annotation: back to its words in the article, then away with it.
+      this.leaveAnnotation(n.id);
+      this.apply([{ op: "delete", id: n.id }], `Delete note on “${clip(n.wanchor.q, 40)}”`);
+      return this.say("Note deleted. u to undo.");
+    }
     const order = this.visible();
     const i = order.indexOf(n.id);
     const sibs = sections(s, n.parent);
@@ -1661,6 +1722,7 @@ class Store {
    * otherwise). On a node: open it, then open its sections, then generate sections it lacks.
    */
   expand(lens = "elaborate", question?: string) {
+    if (this.aux?.kind === "wiki") return this.expandArticle(lens, question);
     const s = this.snap;
     const f = this.focus;
     const n = s.nodes[f.node];
@@ -1844,6 +1906,11 @@ class Store {
       research: () => this.agent(arg, { research: true }),
     };
     if (verb.startsWith("/") && builtin[verb.slice(1)]) return builtin[verb.slice(1)]();
+    if (this.inArticleText) {
+      const lens = LENSES.find((l) => l === text.toLowerCase());
+      return this.expandArticle(lens ?? "elaborate", lens ? undefined : text);
+    }
+    if (this.aux?.kind === "wiki") return this.say("Select words of the article first (i), then : asks about them. The editor works on your own nodes.");
     if (this.focus.grain !== "node") {
       // A question about the selection becomes a note answering it.
       const lens = LENSES.find((l) => l === text.toLowerCase());
@@ -1854,23 +1921,18 @@ class Store {
 
   // ---- keys on aux rows: Wikipedia views, targets, "Linked from" ----
 
-  /** The article HTML whose links Tab walks from this aux focus, if any. */
-  auxText(a: Aux): string | null {
-    if (a.kind !== "wiki") return null;
+  /** The article text an aux focus is in: the lead or the section its row shows, with the article. None while it loads, or on a row that shows no text. */
+  auxSpot(a: Aux | null = this.aux): Spot | null {
+    if (a?.kind !== "wiki") return null;
     const h = this.wikiHost(a.host);
-    if (!h) return null;
-    const art = wikiArticle(h.title, h.lang);
-    if (art.state !== "ready") return null;
-    if (a.row.t === "head") {
-      if (this.folded(h.embedded)) return null;
-      if (h.sec) return art.value.sections.find((x) => x.id === h.sec)?.html ?? null;
-      return art.value.lead;
-    }
-    if (a.row.t === "sec" && h.nested && this.colOpen.has(a.row.id)) return art.value.sections.find((x) => x.id === (a.row as { id: number }).id)?.html ?? null;
-    return null;
+    const art = h ? wikiArticle(h.title, h.lang) : null;
+    if (!h || art?.state !== "ready") return null;
+    const sec = a.row.t === "head" ? (this.folded(h.embedded) ? -1 : h.sec) : a.row.t === "sec" && h.nested && this.colOpen.has(a.row.id) ? a.row.id : -1;
+    const html = sec === 0 ? art.value.lead : art.value.sections.find((x) => x.id === sec)?.html;
+    return sec < 0 || html === undefined ? null : { at: articleText(html), sec, article: art.value, lang: h.lang, host: a.host };
   }
 
-  /** Tab on a Wikipedia view: the next (or previous) article link in the text the focus is on. */
+  /** Tab on a Wikipedia view: the next (or previous) annotation or link in the text the focus is on, selected as words. */
   auxTab(delta: number) {
     const a = this.aux;
     if (!a || a.kind !== "wiki") return;
@@ -1882,12 +1944,299 @@ class Store {
       return this.say("The article is still loading; Tab goes to its first link when it arrives.");
     }
     if (art?.state === "failed") return this.say(`The article could not be loaded: ${art.message}`);
-    const html = this.auxText(a);
-    const links = html ? wikiLinks(html) : [];
-    if (!links.length) return this.say(a.row.t === "head" || a.row.t === "sec" ? "No links to other articles here." : "");
-    const at = a.link ?? (delta > 0 ? -1 : links.length);
-    this.aux = { ...a, link: (at + delta + links.length) % links.length };
+    const spot = this.auxSpot(a);
+    const spans = spot ? this.spansIn(spot) : [];
+    if (!spans.length) return this.say(a.row.t === "head" || a.row.t === "sec" ? "No links to other articles or notes here." : "");
+    const at = a.range?.[0] ?? (delta > 0 ? -1 : Infinity);
+    const next = delta > 0 ? spans.find((r) => r[0] > at) ?? spans[0] : [...spans].reverse().find((r) => r[0] < at) ?? spans[spans.length - 1];
+    this.setFocus(this.focus, { ...a, grain: "word", range: next });
+  }
+
+  /** The article a focused link inside an article names: the link whose words are exactly the selection. */
+  auxLink(a: Aux): { title: string; lang: string } | null {
+    if (a.kind !== "wiki" || !a.range) return null;
+    const spot = this.auxSpot(a);
+    const l = spot?.at.links.find((x) => x.range[0] === a.range![0] && x.range[1] === a.range![1]);
+    return l && spot ? { title: l.title, lang: spot.lang } : null;
+  }
+
+  // ---- annotating articles (src/core/article.ts) ----
+
+  private placed = new WeakMap<Article, { entries: unknown[]; value: Placements }>();
+  /**
+   * An article's annotations, found again in the revision at hand: where each is (a section's id
+   * and a range in its text), and those whose words are gone. Worked out again only when the
+   * article or one of its annotations changes.
+   */
+  annotations(article: Article, lang: string): Placements {
+    const s = this.snap;
+    const ids = annotationsOf(s, { lang, title: article.title, pageId: article.pageId });
+    const entries = ids.map((id) => s.nodes[id]);
+    const had = this.placed.get(article);
+    if (had && had.entries.length === entries.length && had.entries.every((e, i) => e === entries[i])) return had.value;
+    const value: Placements = { at: new Map(), detached: [] };
+    if (ids.length) {
+      const { ids: secIds, secs } = sectionTexts(article);
+      for (const id of ids) {
+        const p = reanchor(s.nodes[id].wanchor!, secs);
+        if ("detached" in p) value.detached.push({ id, sec: p.sec === null ? null : secIds[p.sec] });
+        else value.at.set(id, { sec: secIds[p.sec], range: p.range });
+      }
+    }
+    this.placed.set(article, { entries, value });
+    return value;
+  }
+
+  /** What Tab stops at in a piece of article text: its annotations' words and its links, in reading order. */
+  private spansIn(spot: Spot): Range[] {
+    const notes = [...this.annotations(spot.article, spot.lang).at.values()].filter((p) => p.sec === spot.sec).map((p) => p.range);
+    const seen = new Set<string>();
+    return [...notes, ...spot.at.links.map((l) => l.range)].sort((a, b) => a[0] - b[0] || a[1] - b[1]).filter((r) => !seen.has(r.join()) && !!seen.add(r.join()));
+  }
+
+  /** The annotation on exactly these words of a piece of article text. */
+  private annotationAt(spot: Spot, range: Range | undefined): NodeId | undefined {
+    if (!range) return;
+    for (const [id, p] of this.annotations(spot.article, spot.lang).at) if (p.sec === spot.sec && p.range[0] === range[0] && p.range[1] === range[1]) return id;
+  }
+
+  /** The selection in article text, when the focus is one: where it is, and its range. */
+  private articleSelection(): { a: Aux & { kind: "wiki" }; spot: Spot; range: Range; grain: "sentence" | "word" } | null {
+    const a = this.aux;
+    if (a?.kind !== "wiki" || !a.grain || !a.range) return null;
+    const spot = this.auxSpot(a);
+    return spot ? { a, spot, range: a.range, grain: a.grain } : null;
+  }
+
+  /** Whether the focus is a selection in an article's text. */
+  get inArticleText(): boolean {
+    return this.aux?.kind === "wiki" && !!this.aux.grain;
+  }
+
+  /** The text the focus selects in and how to move the selection: a node's body, or an article's text under the aux focus. */
+  private selecting(): { text: string; grain: Grain; range?: Range; set: (grain: Grain, range?: Range) => void } | null {
+    const a = this.aux;
+    if (a?.kind === "wiki") {
+      const spot = this.auxSpot(a);
+      if (!spot) return null;
+      return {
+        text: spot.at.text,
+        grain: a.grain ?? "node",
+        range: a.range,
+        set: (grain, range) => this.setFocus(this.focus, grain === "node" ? { kind: "wiki", host: a.host, row: a.row } : { kind: "wiki", host: a.host, row: a.row, grain, range }),
+      };
+    }
+    if (a) return null;
+    const f = this.focus;
+    return { text: this.snap.nodes[f.node].body, grain: f.grain, range: f.range, set: (grain, range) => this.setFocus({ node: f.node, grain, range }) };
+  }
+
+  /** e d y x c and : on words of an article: open the annotation already there, or have one written. */
+  private expandArticle(lens: string, question?: string) {
+    const sel = this.articleSelection();
+    if (!sel) return this.say("Select words first: i, then e d y x c or :. An article itself is never deepened or rewritten.");
+    const existing = this.annotationAt(sel.spot, sel.range);
+    if (existing && lens === "elaborate" && !question) {
+      if (this.open.has(existing)) this.open.delete(existing);
+      else this.open.add(existing);
+      this.saveView();
+      return this.emit();
+    }
+    this.generateArticleNote(sel.spot, sel.range, lens, question);
+  }
+
+  /** Enter on words of an article: an annotation opens, and Enter again steps into it; a link opens its article; anything else is expanded. */
+  private enterArticle() {
+    const sel = this.articleSelection()!;
+    const note = this.annotationAt(sel.spot, sel.range);
+    if (!note) {
+      const link = this.auxLink(sel.a);
+      return link ? this.follow({ kind: "wiki", title: link.title, lang: link.lang }) : this.expandArticle("elaborate");
+    }
+    if (this.open.has(note)) return this.setFocus({ node: note, grain: "node" });
+    this.open.add(note);
+    this.saveView();
     this.emit();
+  }
+
+  private generateArticleNote(spot: Spot, range: Range, lens: string, question?: string) {
+    if (!this.writable()) return;
+    if (!this.generating) return this.say("No model is configured to write a note. Start the server with ANTHROPIC_API_KEY set.");
+    const quote = spot.at.text.slice(range[0], range[1]);
+    if (!quote.trim()) return;
+    const a = spot.article;
+    const form = formFor(quote);
+    const req = {
+      article: { lang: spot.lang, title: a.title, pageId: a.pageId },
+      anchor: makeAnchor(spot.at.text, range, sectionPath(a, spot.sec), a.revisionId),
+      form,
+      lens,
+      question,
+      context: this.articleContext(spot, range),
+    };
+    const p: Pending = { key: `p${++this.seq}`, node: "" as NodeId, kind: "note", range, form, lens: question ?? lens, text: "", art: { key: wikiKey(spot.lang, a.title), sec: spot.sec } };
+    const doc = this.doc;
+    this.pending.set(p.key, p);
+    this.busy++;
+    this.emit();
+    streamArticleNote(this.llm, req, (d) => ((p.text += d), this.emit()))
+      .then((text) => {
+        this.open.add(commitArticleNote(doc, req, text));
+        this.saveView();
+      })
+      .catch((err) => this.say(err instanceof Error ? err.message : String(err)))
+      .finally(() => {
+        this.pending.delete(p.key);
+        this.busy--;
+        this.emit();
+      });
+  }
+
+  /** What a note on words of an article is written from: the lead, the section around the words (trimmed), and the reader's own sentence if the article was opened from one. */
+  private articleContext(spot: Spot, range: Range) {
+    const a = spot.article;
+    const text = spot.at.text;
+    const from = Math.max(0, range[0] - 3000);
+    return {
+      title: a.title,
+      lead: clip(articleText(a.lead).text, spot.sec ? 2000 : 6000),
+      heading: spot.sec ? sectionPath(a, spot.sec).join(" › ") : null,
+      section: spot.sec ? `${from ? "… " : ""}${text.slice(from, range[1] + 3000)}${range[1] + 3000 < text.length ? " …" : ""}` : "",
+      selection: text.slice(range[0], range[1]),
+      from: this.fromSentence(spot.host),
+    };
+  }
+
+  /** The sentence of the reader's own text an article view was opened from, if it was opened from words. */
+  private fromSentence(host: string): string | undefined {
+    const s = this.snap;
+    let f: Focus | undefined;
+    const n = host.startsWith("n") ? s.nodes[host.slice(1) as NodeId] : undefined;
+    if (n?.kind === "note" && n.parent && n.anchors[0]) f = { node: n.parent, grain: "word", range: [n.anchors[0].start, n.anchors[0].end] };
+    else if (host.startsWith("p")) {
+      const b = this.trail[+host.slice(1)]?.from;
+      if (b && !b.aux) f = b.focus;
+    } else if (host === "col" && this.colWiki && !this.colWiki.stack.length && !this.colWiki.back.aux) f = this.colWiki.back.focus;
+    const body = f?.range ? s.nodes[f.node]?.body : undefined;
+    const sent = body ? sentences(body).find(([x, y]) => f!.range![0] >= x && f!.range![0] < y) : undefined;
+    return sent ? plain(body!.slice(sent[0], sent[1])) : undefined;
+  }
+
+  /** The node of the article an annotation (or a note inside one) belongs to. */
+  private articleOf(id: NodeId): NodeId | undefined {
+    const s = this.snap;
+    for (let x: NodeId | null = id; x && s.nodes[x]; x = s.nodes[x].parent) if (s.nodes[x].parent && s.nodes[s.nodes[x].parent!].articles) return x;
+  }
+
+  /** The article a host shows, keyed as the library files it: by its loaded title and page id when it has arrived. */
+  private hostArticle(host: string): ArticleKey | null {
+    const h = this.wikiHost(host);
+    if (!h) return null;
+    const art = wikiArticle(h.title, h.lang);
+    return art.state === "ready" ? { lang: h.lang, title: art.value.title, pageId: art.value.pageId } : { lang: h.lang, title: h.title };
+  }
+
+  /** The views that could show an annotation: the article page, a pane's article, the article under a pane's node or the column's top. */
+  private hosts(): string[] {
+    if (!this.panes) return this.colWiki ? ["col"] : this.articleUnder(this.top) ? [`n${this.top}`] : [];
+    return this.trail.flatMap((p, i) => (p.kind === "wiki" ? [`p${i}`] : this.articleUnder(p.id) ? [`n${p.id}`] : []));
+  }
+
+  /** Whether a view shows the article an annotation (or a note inside one) is on. */
+  private shows(host: string, id: NodeId): boolean {
+    const art = this.articleOf(id);
+    const k = art && this.hostArticle(host);
+    return !!k && articleNodes(this.snap, k).includes(art!);
+  }
+
+  /** The view showing the article an annotation is on, the focused pane's first. */
+  private hostOf(id: NodeId): string | undefined {
+    const p = this.panes ? this.trail[this.paneAt] : undefined;
+    const mine = p ? (p.kind === "wiki" ? `p${this.paneAt}` : `n${p.id}`) : undefined;
+    return mine && this.shows(mine, id) ? mine : this.hosts().find((h) => this.shows(h, id));
+  }
+
+  /** h on an annotation: back to its words in the article. */
+  private leaveAnnotation(id: NodeId) {
+    const host = this.hostOf(id);
+    const k = host ? this.hostArticle(host) : null;
+    const art = k ? wikiArticle(k.title, k.lang) : null;
+    const p = k && art?.state === "ready" ? this.annotations(art.value, k.lang).at.get(id) : undefined;
+    if (!host) return this.say("Its article is not on screen.");
+    if (host.startsWith("p")) this.paneAt = +host.slice(1);
+    const node = this.focusFor(host);
+    // A detached annotation has no words to return to: back to the article.
+    if (!p) return this.setFocus(node, { kind: "wiki", host, row: { t: "head" } });
+    const h = this.wikiHost(host)!;
+    const row: WRow = p.sec === h.sec ? { t: "head" } : { t: "sec", id: p.sec };
+    if (row.t === "sec") this.colOpen.add(p.sec);
+    this.setFocus(node, { kind: "wiki", host, row, grain: "word", range: p.range });
+  }
+
+  /** j k on an annotation: the next or previous open annotation of the same article, in reading order. */
+  private moveAnnotation(id: NodeId, delta: number) {
+    const host = this.hostOf(id);
+    const k = host ? this.hostArticle(host) : null;
+    const art = k ? wikiArticle(k.title, k.lang) : null;
+    if (!k || art?.state !== "ready") return;
+    const order = sectionTexts(art.value).ids;
+    const list = [...this.annotations(art.value, k.lang).at].filter(([x]) => this.open.has(x)).sort(([, a], [, b]) => order.indexOf(a.sec) - order.indexOf(b.sec) || a.range[0] - b.range[0]);
+    const next = list[list.findIndex(([x]) => x === id) + delta];
+    if (next) this.setFocus({ node: next[0], grain: "node" });
+  }
+
+  /** The selected words, in a node's body or an article's text; null when nothing smaller than a node is selected. */
+  selectedText(): string | null {
+    const sel = this.selecting();
+    return sel && sel.grain !== "node" && sel.range ? sel.text.slice(sel.range[0], sel.range[1]) : null;
+  }
+
+  /** The annotation on exactly the selected words of an article, if any. */
+  articleNoteHere(): NodeId | undefined {
+    const sel = this.articleSelection();
+    return sel ? this.annotationAt(sel.spot, sel.range) : undefined;
+  }
+
+  /** The node focus to keep under an aux focus on an article view: the node it is under, else where it was, if that is not an annotation. */
+  private focusFor(host: string): Focus {
+    if (host.startsWith("n")) return { node: host.slice(1) as NodeId, grain: "node" };
+    return inArticles(this.snap, this.focus.node) ? { node: this.top, grain: "node" } : this.focus;
+  }
+
+  /** A click or a drag in an article's text: the sentence at a point, or the words dragged over. */
+  selectInArticle(host: string, row: WRow, range: Range, grain: "sentence" | "word") {
+    const a: Aux = { kind: "wiki", host, row };
+    const spot = this.auxSpot(a);
+    if (!spot) return this.setFocus(this.focus, a);
+    const all = sentences(spot.at.text);
+    const r: Range = grain === "sentence" ? all.find((x) => range[0] >= x[0] && range[0] <= x[1]) ?? all[rangeAt(all, range[0])] : range;
+    if (r) this.setFocus(this.focusFor(host), { ...a, grain, range: r });
+  }
+
+  /** A click on an annotation's words: it opens or closes, and the words are selected. */
+  toggleAnnotation(host: string, row: WRow, id: NodeId) {
+    const k = this.hostArticle(host);
+    const art = k ? wikiArticle(k.title, k.lang) : null;
+    const p = k && art?.state === "ready" ? this.annotations(art.value, k.lang).at.get(id) : undefined;
+    if (this.open.has(id)) this.open.delete(id);
+    else this.open.add(id);
+    this.saveView();
+    if (p) this.selectInArticle(host, row, p.range, "word");
+    else this.emit();
+  }
+
+  /** Why a key that works on a node does nothing on Wikipedia's text, for the status line; null for a key that does work there. */
+  articleRefuses(k: string, selecting: boolean): string | null {
+    const own = "Wikipedia's text is shown as it is: it cannot be edited, renamed, moved, pinned, reconciled or rewritten here. Annotations on it can: i selects words, e d y x c writes one.";
+    if (["r", "a", "A", "J", "K", ">", "<", "p", "R", "b", "o", "O", "z"].includes(k) && !(selecting && (k === "J" || k === "K"))) return own;
+    if (k === "c" && !selecting) return "Wikipedia's text cannot be edited here. Select words (i) and press c to challenge them, or e d y x to annotate them.";
+    if (["e", "d", "y", "x"].includes(k) && !selecting) return "Select words first: i, then e d y x c or :. An article itself is never deepened or rewritten.";
+    if (k === "D" && !selecting) return "An article cannot be deleted. D on an annotation's words deletes the annotation.";
+    if (k === "w") return "Words of an article cannot be linked from here; W opens it on wikipedia.org.";
+    if (k === "f") return "f changes an annotation's form: Enter on its words, Enter again, then f.";
+    if (k === "S" || k === "n") return "Link suggestions are for your own text, not Wikipedia's.";
+    if (/^[1-5]$/.test(k)) return "Related is listed under your own nodes, not under an article.";
+    return null;
   }
 
   /** The article an aux focus shows, as loaded so far. */
@@ -1904,8 +2253,8 @@ class Store {
   holdKey(k: string): boolean {
     const h = this.held;
     if (!h) return false;
-    if (k === "Enter" && sameAux(h.aux, this.aux)) {
-      h.keys.push("Enter");
+    if ((k === "Enter" || k === "i") && sameAux(h.aux, this.aux)) {
+      h.keys.push(k);
       return true;
     }
     if (k !== "Tab") this.held = null;
@@ -1922,18 +2271,10 @@ class Store {
     this.held = null;
     if (art?.state !== "ready") return;
     for (const k of h.keys) {
-      if (k === "Enter") this.auxActivate();
+      if (k === "Enter") this.inArticleText ? this.enterArticle() : this.auxActivate();
+      else if (k === "i") this.descend();
       else this.auxTab(k === "Tab" ? 1 : -1);
     }
-  }
-
-  /** The article a focused link inside an article names. */
-  auxLink(a: Aux): { title: string; lang: string } | null {
-    if (a.kind !== "wiki" || a.link === undefined) return null;
-    const html = this.auxText(a);
-    const l = html ? wikiLinks(html)[a.link] : undefined;
-    const h = this.wikiHost(a.host);
-    return l && h ? { title: l.title, lang: h.lang } : null;
   }
 
   /** l, Enter: open what an aux row is: a section (as a pane, or in place on the column's page), a sense, a link, a target, a linking node. */
@@ -1986,10 +2327,6 @@ class Store {
     const a = this.aux;
     if (!a) return;
     if (a.kind !== "wiki") return this.setFocus({ node: a.of, grain: "node" });
-    if (a.link !== undefined) {
-      this.aux = { ...a, link: undefined };
-      return this.emit();
-    }
     const h = this.wikiHost(a.host);
     if (a.row.t !== "head") {
       // On the column's page an open section's subsection steps out to the section first.
@@ -2068,6 +2405,7 @@ class Store {
   /** w: the link picker, filled in with the selected words. On words that already link somewhere, it retargets them. */
   openPicker() {
     if (!this.writable()) return;
+    if (this.aux?.kind === "wiki") return this.say(this.articleRefuses("w", true)!);
     const spot = this.linkSpot();
     if (!spot) return this.say("Select words to link (i, then H L to widen), or press w on a node to give the node itself a target.");
     if (isLibraryRoot(this.snap, spot.node) && !spot.range) return this.say("The library itself has no target.");
@@ -2751,7 +3089,7 @@ class Store {
   search(q: string): NodeId[] {
     const s = this.snap;
     const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
-    const all = Object.values(s.nodes).filter((n) => n.kind === "section" && n.id !== s.root);
+    const all = Object.values(s.nodes).filter((n) => n.kind === "section" && n.id !== s.root && !inArticles(s, n.id));
     if (!terms.length) return documents(s).slice(0, 12);
     const low = (n: (typeof all)[number]) => {
       let l = lowered.get(n);

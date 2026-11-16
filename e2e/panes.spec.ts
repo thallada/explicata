@@ -37,7 +37,7 @@ test("the library is the first pane, and a document opens in the next; reload an
   await page.goto("/");
   await page.waitForSelector(".strip > .pane");
   expect(await paneTitles(page)).toEqual(["Library"]);
-  await expect(page.locator(".pane.root .rows > .node")).toHaveCount(await state(page, (s) => s.snap.nodes[s.snap.root].children.length));
+  await expect(page.locator(".pane.root .rows > .node")).toHaveCount(await state(page, (s) => s.snap.nodes[s.snap.root].children.filter((c: string) => !s.snap.nodes[c].articles).length));
   await keys(page, "j l"); // the first document's row, then open it
   expect(await paneTitles(page)).toEqual(["Library", "Infinispand"]);
   await expect(page.locator(".pane.doc .abstract.seed.folded")).toBeVisible();

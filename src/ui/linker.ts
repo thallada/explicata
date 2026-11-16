@@ -8,6 +8,7 @@
  */
 import type { JobState } from "../../server/links/jobs";
 import type { Related as RelatedRow, Suggestion as Sugg } from "../../server/links/scan";
+import { inArticles } from "../core/article";
 import { applyLinks, nodeRef } from "../core/links";
 import type { Mark } from "../core/marks";
 import { ancestors, docOf, notesOf, type Doc, type NodeId, type Snap } from "../core/model";
@@ -110,6 +111,9 @@ export class Linker {
   /** Queue a scan of a node that was just written. Off the keystroke: it runs after the write is saved. */
   scan(node: NodeId, origin: Origin, forced: Mark[] = []) {
     if (this.host.mode() === "off" && !(origin === "human" && forced.length)) return;
+    // Annotations on Wikipedia articles are not a document's text: nothing in them is linked.
+    const snap = this.host.doc().snap();
+    if (snap.nodes[node] && inArticles(snap, node)) return;
     const had = this.queue.find((t) => t.node === node);
     if (had) {
       had.forced = forced.length ? forced : had.forced;

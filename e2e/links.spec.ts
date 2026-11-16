@@ -139,17 +139,19 @@ test("panes: Tab and Enter open an article in the next pane; its sections open a
   await expect(sec.locator(".wattr")).toBeVisible();
   await keys(page, "l");
   expect(await state(page, (s) => s.aux)).toMatchObject({ kind: "wiki", host: "p4", row: { t: "head" } });
-  // Tab reaches the section's link to Lambda calculus; Enter opens it as a further pane.
+  // Tab selects the section's link to Lambda calculus, as words of a node; Enter opens it as a further pane.
   await keys(page, "Tab");
   await expect(sec.locator("a.wfocus")).toHaveText("lambda calculus");
+  expect(await state(page, (s) => s.selectedText())).toBe("lambda calculus");
   await keys(page, "Enter");
   await expect(panes(page)).toHaveCount(6);
   await expect(panes(page).last().locator(".wiki-head h2")).toHaveText("Lambda calculus");
   // Back left, step by step, to the words the trail started from; nothing to the right closes.
   await keys(page, "h");
   expect(await state(page, (s) => s.paneAt)).toBe(4);
-  // From the link it was opened from: off the link, up to the section's row, the article's head, the words.
-  await keys(page, "h h h h");
+  // From the link it was opened from: Esc widens the selection to its sentence, then to the text's
+  // head; h goes up to the section's row in the pane before, its head, the words.
+  await keys(page, "Escape Escape h h h");
   expect(await selected(page)).toBe("fixed-point combinator");
   expect(await trail(page)).toEqual(["Library", "Fixed points", "Recursion without names", "W:Fixed-point combinator", "W:Fixed-point combinator#2", "W:Lambda calculus"]);
   await expect(panes(page)).toHaveCount(6);
@@ -167,7 +169,10 @@ test("panes: Tab and Enter open an article in the next pane; its sections open a
   // Spines of covered article panes carry the W and the tint.
   await keys(page, "j j l l Tab Enter");
   await expect(panes(page).last().locator(".wiki-head h2")).toHaveText("Lambda calculus");
-  await keys(page, "Tab Enter");
+  // (Tab also stops on notes the library keeps on the article, if an earlier test wrote one.)
+  await expect(panes(page).last().locator(".wiki-text a[data-wiki]").first()).toBeVisible();
+  for (let i = 0; i < 4 && (await state(page, (s) => s.selectedText())) !== "Alonzo Church"; i++) await keys(page, "Tab");
+  await keys(page, "Enter");
   await expect(panes(page).last().locator(".wiki-head h2")).toHaveText("Alonzo Church");
   const spine = page.locator(".wiki-pane[data-covered] .spine").first();
   await expect(spine.locator(".wmark")).toHaveText("W");
@@ -437,7 +442,8 @@ test("column: Enter on a link shows a preview, Enter again opens the article as 
   await expect(pageEl.locator(".wiki-head h2")).toHaveText("Lambda calculus");
   await keys(page, "h");
   await expect(pageEl.locator(".wiki-head h2")).toHaveText("Fixed-point combinator");
-  await keys(page, "h h h");
+  // Back on the link's words: Esc widens to the sentence, then to the section's row; h to the head, then out.
+  await keys(page, "Escape Escape h h");
   await expect(page.locator(".wiki-page")).toHaveCount(0);
   expect(await selected(page)).toBe("fixed-point combinator");
   // Back works too.

@@ -103,7 +103,7 @@ test("past the pre-generated text, a selection is expanded by the model, in a fo
   await expect(page.locator(".inset").last()).toContainText("through the how does this fail? lens");
 
   const notes = await state(page, (s) =>
-    Object.values(s.snap.nodes).filter((c: any) => c.kind === "note" && /^[Mm]ock/.test(c.body)).map((c: any) => c.form).sort(),
+    Object.values(s.snap.nodes).filter((c: any) => c.kind === "note" && !c.wanchor && /^[Mm]ock/.test(c.body)).map((c: any) => c.form).sort(),
   );
   expect(notes).toEqual(["gloss", "note", "passage"]);
 

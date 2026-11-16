@@ -33,7 +33,7 @@ test("everything is reachable with the mouse: titles, marked spans, and a dragge
   expect(focus.text.length).toBeGreaterThan(3);
   await page.keyboard.press("e");
   await idle(page);
-  const made = await state(page, (s) => Object.values(s.snap.nodes).filter((n: any) => n.kind === "note" && /^[Mm]ock/.test(n.body)).map((n: any) => n.anchors[0].text));
+  const made = await state(page, (s) => Object.values(s.snap.nodes).filter((n: any) => n.kind === "note" && !n.wanchor && /^[Mm]ock/.test(n.body)).map((n: any) => n.anchors[0].text));
   expect(made).toContain(focus.text);
 });
 

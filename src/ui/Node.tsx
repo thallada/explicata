@@ -12,7 +12,7 @@ import { store, type Pending } from "./store";
 // ---- inline text ----
 
 /** A note as the renderer sees it: one in the document, or one still being written. */
-interface VNote {
+export interface VNote {
   key: string;
   id?: NodeId;
   form: Form;
@@ -155,7 +155,7 @@ function Writing({ text }: { text: string }) {
 
 const LENS_LABEL: Record<string, string> = { elaborate: "", define: "definition", why: "why", example: "example", challenge: "objection" };
 
-function NoteView({ v, inNote }: { v: VNote; inNote: boolean }) {
+export function NoteView({ v, inNote }: { v: VNote; inNote: boolean }) {
   const snap = store.snap;
   const focused = !!v.id && store.focus.node === v.id;
   const st = v.id ? staleness(snap, v.id) : null;
@@ -434,7 +434,7 @@ export function TopMatter({ id }: { id: NodeId }) {
   // the page should open on the outline, so it is folded until asked for. Other text is plain.
   const prompt = !library && docOf(snap, id) === id && kids.some((k) => snap.nodes[k].anchors.length > 0);
   const folded = prompt && !store.unfolded.has(id) && !(focused && store.focus.grain !== "node") && store.edit?.node !== id;
-  const count = library ? Object.keys(snap.nodes).length - 1 : descendants(snap, id).length;
+  const count = library ? kids.reduce((n, d) => n + 1 + descendants(snap, d).length, 0) : descendants(snap, id).length;
   return (
     <>
       {crumbs.length > 0 && (

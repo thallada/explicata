@@ -1,4 +1,5 @@
 /** The keymap. Modal, in the manner of vim: focus is a (node, grain) pair and most keys are one stroke. */
+import { inArticles } from "../core/article";
 import { store } from "./store";
 
 export const HELP: [string, [string, string][]][] = [
@@ -10,7 +11,7 @@ export const HELP: [string, [string, string][]][] = [
       ["h", "close, or step out to the parent"],
       ["i", "narrow the grain: node → sentence → word"],
       ["Esc", "widen the grain; leave a note; close a panel; stop the editor while it works"],
-      ["Tab", "jump between spans that carry a note or a link; in an article, between its links"],
+      ["Tab", "jump between spans that carry a note or a link; in an article, between its links and the notes on it"],
       ["/", "jump to a section by name, in any document"],
       ["z", "hoist: make this node the whole page (again, or h or Esc at its top, to step out)"],
       ["v", "view: one column ↔ panes side by side (in panes, j k move among siblings)"],
@@ -30,6 +31,7 @@ export const HELP: [string, [string, string][]][] = [
       ["S", "review the suggested links of this document one by one: y link · n decline · s skip · Y link all the rest · Esc stop"],
       ["1–5", "the node's Related list (sections of other documents close in meaning, numbered under its text): with words selected, link them to that one; on the node, go there"],
       ["l h j k", "in an article: sections are rows, as in a node; l opens one, h goes back"],
+      ["i e d y x c :", "in an article: select words of its text as in a node, and write a note on them; the note belongs to the article and shows wherever it is opened (one whose words are gone from a newer revision is listed as detached)"],
     ],
   ],
   [
@@ -333,19 +335,27 @@ export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
     return done();
   }
   if (store.panes) store.syncTrail();
-  // On a Wikipedia view, a target or a "Linked from" row, the keys mean what they would on rows.
-  if (!store.aux && ((store.panes && store.trail[store.paneAt]?.kind === "wiki") || (!store.panes && store.colWiki))) {
+  // On a Wikipedia view, a target or a "Linked from" row, the keys mean what they would on rows
+  // (unless the focus is an annotation shown in it, which is a node like any other).
+  const onAnnotation = !!store.snap.nodes[store.focus.node]?.wanchor || inArticles(store.snap, store.focus.node);
+  if (!store.aux && !onAnnotation && ((store.panes && store.trail[store.paneAt]?.kind === "wiki") || (!store.panes && store.colWiki))) {
     store.aux = { kind: "wiki", host: store.panes ? `p${store.paneAt}` : "col", row: { t: "head" } };
   }
-  if (store.aux) {
-    // An Enter after a Tab that is waiting for its article to arrive waits with it.
-    if (store.holdKey(k)) return done();
+  // An Enter after a Tab that is waiting for its article to arrive waits with it.
+  if (store.aux && store.holdKey(k)) return done();
+  // Words selected in an article's text take the same keys as words of a node.
+  if (store.aux && !store.inArticleText) {
     if (auxKey(k, e.shiftKey) || commonKey(k, hooks)) return done();
+    const why = store.aux.kind === "wiki" ? store.articleRefuses(k, false) : null;
+    if (why) (store.say(why), done());
     return;
   }
   if (commonKey(k, hooks)) return done();
-  const grain = store.focus.grain;
-  const selecting = grain !== "node";
+  const selecting = store.focus.grain !== "node" || store.inArticleText;
+  if (store.inArticleText) {
+    const why = store.articleRefuses(k, true);
+    if (why) return store.say(why), done();
+  }
 
   switch (k) {
     case "j":
@@ -535,6 +545,9 @@ function auxKey(k: string, shift: boolean): boolean {
       return true;
     case "Tab":
       store.auxTab(shift ? -1 : 1);
+      return true;
+    case "i":
+      store.descend();
       return true;
     case "L": {
       // Under a node, its article opens in a pane of its own.
