@@ -8,6 +8,8 @@ export const LANE_PITCH = 4;
 export const LANE_FIRST = 5;
 export const LANE_LAST = 29;
 export const LANES = Math.floor((LANE_LAST - LANE_FIRST) / LANE_PITCH) + 1;
+/** Up to this many curves in a gutter, every order is tried (720 at most). */
+const EVERY = 6;
 /** Up to this many curves in a gutter, every lane is tried for each; past it, only the neighbouring lanes. */
 const MOVES = 8;
 
@@ -48,9 +50,27 @@ export function laneOrder<T extends { key: string; sy: number; ey: number }>(edg
     const at = order.findIndex((o) => rule.indexOf(o) > r);
     order.splice(at < 0 ? order.length : at, 0, e);
   }
-  // Move one curve to another lane while that removes crossings: a few curves per gutter, every place
-  // tried; many (past MOVES), only neighbours swapped, which stays cheap enough for every frame.
   let best = crossings(order);
+  // A few curves: the order that crosses least, of all of them. Moving one curve at a time can stop
+  // short of it (two moves that each add a crossing may together remove two). Only a strictly better
+  // order replaces the one there, so the bundle keeps its order while no order crosses less.
+  if (order.length <= EVERY) {
+    if (!best) return order;
+    let pick = order.slice();
+    const go = (left: T[], done: T[]) => {
+      if (!best) return;
+      if (!left.length) {
+        const n = crossings(done);
+        if (n < best) (best = n), (pick = done.slice());
+        return;
+      }
+      for (let i = 0; i < left.length; i++) go([...left.slice(0, i), ...left.slice(i + 1)], [...done, left[i]]);
+    };
+    go(order, []);
+    return pick;
+  }
+  // More: move one curve to another lane while that removes crossings, every place tried for up to
+  // MOVES curves and only neighbours swapped past that, which stays cheap enough for every frame.
   const far = order.length <= MOVES;
   for (let pass = 0, better = best > 0; better && pass < order.length; pass++) {
     better = false;

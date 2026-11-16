@@ -38,9 +38,13 @@ describe("lanes", () => {
         const es = ys.map(([a, b], i) => e(String(i), a, b));
         const o = laneOrder(es);
         const again = laneOrder(es, keys(o));
-        return o.length === es.length && new Set(keys(o)).size === es.length && keys(again).join() === keys(o).join() && (es.length > 6 || crossings(o) <= least(es) + 1);
+        return o.length === es.length && new Set(keys(o)).size === es.length && keys(again).join() === keys(o).join() && (es.length > 6 || crossings(o) === least(es));
       }),
+      { numRuns: 300 },
     );
+    // Found by the property above (it failed about one run in six): moving one curve at a time stopped at 2 crossings where an order has none.
+    const stuck = [e("0", 3, 1), e("1", 6, 2), e("2", 7, 4), e("3", 2, 0)];
+    expect(crossings(laneOrder(stuck))).toBe(0);
     // A small scroll that changes no crossing keeps the lanes as they were.
     const before = laneOrder([e("a", 300, 100), e("b", 335, 400), e("c", 370, 700)]);
     const after = laneOrder([e("a", 290, 100), e("b", 325, 400), e("c", 360, 700)], keys(before));
