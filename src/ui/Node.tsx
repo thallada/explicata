@@ -5,6 +5,7 @@ import { anchorLost, ancestors, descendants, docOf, isLibraryRoot, label, notesO
 import type { Ref } from "../core/ref";
 import { clip, overlaps, paragraphs, plain, type Form, type Range } from "../core/text";
 import { streamView } from "../core/marks";
+import { ownerSection } from "../core/links";
 import { ChoiceRows, LinkMark, LinkPreview, NodeBacklinks, NodeRelated, SuggestionCard, TargetRow, articleChoice, sectionChoice, useWikiSuggest, type Choice } from "./Links";
 import { store, type Pending } from "./store";
 
@@ -446,9 +447,12 @@ export function TopMatter({ id }: { id: NodeId }) {
         </nav>
       )}
       <header class={`top${focused ? " focused" : ""}${library ? " library" : ""}`} data-node={id}>
-        <div data-row={id}>{editing ? <TitleEditor id={id} /> : <h1>{n.title || "Untitled"}</h1>}</div>
+        <div data-row={id}>{editing ? <TitleEditor id={id} /> : <h1 class={n.kind === "note" ? "note-title" : undefined}>{n.title || (n.kind === "note" ? label(snap, id) : "Untitled")}</h1>}</div>
         <div class="byline">
-          {library ? `${kids.length} document${kids.length === 1 ? "" : "s"}` : `${kids.length} section${kids.length === 1 ? "" : "s"}`} · {count} nodes · branch {store.repo.current}
+          {n.kind === "note"
+            ? `a note in ${clip(label(snap, ownerSection(snap, id)), 40)}${n.by === "llm" ? ", written by the model" : ""}`
+            : `${library ? `${kids.length} document${kids.length === 1 ? "" : "s"}` : `${kids.length} section${kids.length === 1 ? "" : "s"}`} · ${count} nodes`}{" "}
+          · branch {store.repo.current}
           <Flags id={id} />
         </div>
       </header>

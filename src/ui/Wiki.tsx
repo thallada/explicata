@@ -64,7 +64,7 @@ export function WikiView({ host }: { host: string }) {
   const embedded = h.embedded;
 
   // Under a node, folded: its summary only, until l unfolds the article.
-  if (embedded && !store.expanded.has(embedded)) {
+  if (store.folded(embedded)) {
     const sum = summary(h.title, h.lang);
     return (
       <section class={`wiki embedded folded${at({ t: "head" }) ? " focused" : ""}`} data-host={host}>

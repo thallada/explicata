@@ -21,7 +21,7 @@ export const HELP: [string, [string, string][]][] = [
     "Links",
     [
       ["", "W marks a Wikipedia link, § another note in the library, ↗ a web page; a dotted underline is a note, both together a note that also links"],
-      ["Enter", "on a link: open it (panes: the next pane; column: a preview, Enter again opens it)"],
+      ["Enter", "on a link: open it (panes: the next pane; column: a preview, Enter again opens it). On a note that also links, or a note and a link on the same words: one page, the note's text above the article"],
       ["w", "on a selection: link it (library, Wikipedia or an address); on a link: retarget it; on a node: give the node a target"],
       ["L", "on a node: open its own target"],
       ["W", "open the focused article on wikipedia.org, in a new tab"],
@@ -379,7 +379,7 @@ export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
     case "Enter":
     case " ":
       if (selecting) store.enterOrExpand();
-      else if (store.snap.nodes[store.focus.node]?.kind === "note" && store.snap.nodes[store.focus.node].ref) store.followOwn();
+      else if (store.snap.nodes[store.focus.node]?.kind === "note" && store.targetOf(store.focus.node)) store.followOwn();
       else store.toggle();
       break;
     case "w":
@@ -540,7 +540,7 @@ function auxKey(k: string, shift: boolean): boolean {
       // Under a node, its article opens in a pane of its own.
       const a = store.aux;
       const id = a?.kind === "wiki" && a.host.startsWith("n") ? a.host.slice(1) : a?.kind === "target" ? a.of : null;
-      const r = id ? store.snap.nodes[id as keyof typeof store.snap.nodes]?.ref : undefined;
+      const r = id ? store.targetOf(id as keyof typeof store.snap.nodes) : undefined;
       if (r) store.follow(r);
       return true;
     }

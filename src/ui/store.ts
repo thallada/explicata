@@ -382,7 +382,7 @@ class Store {
     const q = this.trail[i - 1];
     if (!p || !q || p.from) return false;
     if (p.kind === "node") return q.kind === "node" && this.snap.nodes[p.id]?.parent === q.id && this.snap.nodes[p.id].kind === "section";
-    return p.sec !== undefined && (q.kind === "wiki" ? q.title === p.title : this.snap.nodes[q.id]?.ref?.kind === "wiki");
+    return p.sec !== undefined && (q.kind === "wiki" ? q.title === p.title : this.targetOf(q.id)?.kind === "wiki");
   }
 
   /**
@@ -480,14 +480,14 @@ class Store {
     const s = this.snap;
     if (!s.nodes[p.id]) return [];
     const rows: Row[] = sections(s, p.id).map((node) => ({ node }));
-    return [...rows, ...this.auxRows(p.id, true)];
+    return [...rows, ...this.auxRows(p.id)];
   }
 
   /** Under a node: its target (in panes a Wikipedia target is the article itself, unfolded on l), then "Linked from". */
-  private auxRows(id: NodeId, panes: boolean): Row[] {
-    const r = this.snap.nodes[id]?.ref;
+  private auxRows(id: NodeId): Row[] {
+    const r = this.targetOf(id);
     const rows: Row[] = [];
-    if (r?.kind === "wiki" && panes) rows.push(...this.wikiRows(`n${id}`).map((row): Row => ({ aux: { kind: "wiki", host: `n${id}`, row } })));
+    if (this.articleUnder(id)) rows.push(...this.wikiRows(`n${id}`).map((row): Row => ({ aux: { kind: "wiki", host: `n${id}`, row } })));
     else if (r) rows.push({ aux: { kind: "target", of: id } });
     this.linkedFrom(id).forEach((_, index) => rows.push({ aux: { kind: "back", of: id, index } }));
     return rows;
@@ -518,7 +518,7 @@ class Store {
       out.push({ node: id });
       if (!this.isOpen(id)) return;
       sections(s, id).forEach(visit);
-      if (!(listing && id === this.top)) out.push(...this.auxRows(id, false));
+      if (!(listing && id === this.top)) out.push(...this.auxRows(id));
     };
     visit(this.top);
     return out;
@@ -556,8 +556,62 @@ class Store {
       return p?.kind === "wiki" ? { title: p.title, lang: p.lang, sec: p.sec ?? 0, mentions: p.sec === undefined } : null;
     }
     const id = host.slice(1) as NodeId;
-    const r = this.snap.nodes[id]?.ref;
-    return r?.kind === "wiki" ? { title: r.title, lang: r.lang, sec: 0, embedded: id } : null;
+    const r = this.targetOf(id);
+    // In the column its sections open in place, as on the article page.
+    return r?.kind === "wiki" ? { title: r.title, lang: r.lang, sec: 0, embedded: id, nested: !this.panes } : null;
+  }
+
+  /**
+   * Whether the article under a node is folded to its summary. A section about an article opens on
+   * its own text, with the article folded until l; a note's text is a commentary on the article, so
+   * the article is there in full beneath it.
+   */
+  folded(id: NodeId | undefined): boolean {
+    return !!id && this.snap.nodes[id]?.kind === "section" && !this.expanded.has(id);
+  }
+
+  /** Whether a node shows its Wikipedia target as the article itself: always in a pane; in the column, under a note opened as a page. */
+  articleUnder(id: NodeId): boolean {
+    return this.targetOf(id)?.kind === "wiki" && (this.panes || (id === this.top && this.snap.nodes[id].kind === "note"));
+  }
+
+  /**
+   * What a node is about: its own target, or, for a note with text of its own, the target of a link
+   * on exactly the same words. Two notes on one span read as one: the note's text, then where the
+   * link goes.
+   */
+  targetOf(id: NodeId): Ref | undefined {
+    const s = this.snap;
+    const n = s.nodes[id];
+    if (!n || n.ref || n.kind !== "note" || !n.parent || !n.body.trim() || !n.anchors[0]) return n?.ref;
+    const a = n.anchors[0];
+    return notesOf(s, n.parent).map((c) => s.nodes[c]).find((c) => c.ref && !c.body.trim() && c.anchors.some((b) => b.start === a.start && b.end === a.end))?.ref;
+  }
+
+  /** On these words, the note to open as a commentary with its target: one with text and a target, its own or a link's on the same words. */
+  commentaryAt(range: Range | undefined, node = this.focus.node): NodeId | undefined {
+    const s = this.snap;
+    if (!range || !s.nodes[node]) return;
+    const texts = notesOf(s, node).filter((id) => s.nodes[id].body.trim() && s.nodes[id].anchors.some((a) => a.start === range[0] && a.end === range[1]));
+    const note = texts.find((id) => s.nodes[id].ref) ?? texts[0];
+    return note && this.targetOf(note) ? note : undefined;
+  }
+
+  /**
+   * Open a note that has text and a target as one page: the note's text, the library's commentary,
+   * then what it is about (an article in full; a card for a node or a web page). In panes it is
+   * the next pane; in the column the note is hoisted, and h at its top returns to its words.
+   */
+  openCommentary(note: NodeId) {
+    if (this.panes) {
+      const from = this.backHere();
+      this.openPane(this.paneAt, { kind: "node", id: note, from });
+      this.paneAt = this.trail.length - 1;
+      return this.setFocus({ node: note, grain: "node" });
+    }
+    this.colWiki = null;
+    this.colOpen.clear();
+    this.setHoist(note);
   }
 
   /**
@@ -569,7 +623,7 @@ class Store {
     const h = this.wikiHost(host);
     if (!h) return [];
     const rows: WRow[] = [{ t: "head" }];
-    if (h.embedded && !this.expanded.has(h.embedded)) return rows;
+    if (this.folded(h.embedded)) return rows;
     const a = wikiArticle(h.title, h.lang);
     if (a.state === "ready") {
       if (a.value.disambiguation && h.sec === 0) {
@@ -1051,7 +1105,10 @@ class Store {
     if (!was) return;
     const d = docOf(s, was);
     this.hoist = d && d !== was ? d : null;
-    this.focus = { node: was, grain: "node" };
+    // A note opened as a page steps back out to its words.
+    const a = s.nodes[was].kind === "note" ? s.nodes[was].anchors[0] : undefined;
+    this.focus = a ? { node: s.nodes[was].parent!, grain: "word", range: [a.start, a.end] } : { node: was, grain: "node" };
+    if (a) this.reveal(this.focus.node);
     this.saveView();
     this.remember(true);
     this.emit();
@@ -1067,7 +1124,7 @@ class Store {
       const i = Math.max(0, Math.min(units.length - 1, rangeAt(units, f.range?.[0] ?? 0) + delta));
       return this.setFocus({ ...f, range: units[i] });
     }
-    if (n.kind === "note" && !this.aux && !this.paneHead(n.id)) {
+    if (n.kind === "note" && !this.aux && !this.paneHead(n.id) && n.id !== this.top) {
       // Among the open notes of the same parent, in the order their anchors appear.
       const sibs = notesOf(s, n.parent!).filter((id) => this.open.has(id)).sort((a, b) => (s.nodes[a].anchors[0]?.start ?? 0) - (s.nodes[b].anchors[0]?.start ?? 0));
       const next = sibs[sibs.indexOf(n.id) + delta];
@@ -1137,21 +1194,15 @@ class Store {
 
   /** Enter on a selection: open the note anchored there, step into it if it is open, or ask for one. */
   enterOrExpand() {
+    // Words with a note and a target (the note's own, or a link's on the same words) open as one
+    // page: the note's text above, the article (or target) beneath.
+    const both = this.commentaryAt(this.focus.range);
+    if (both) return this.openCommentary(both);
     const note = this.noteAt(this.focus.range);
     if (!note) return this.expand();
     const n = this.snap.nodes[note];
-    if (n.ref) {
-      // A link opens its target; in panes a note that also has a target opens as a pane of its own,
-      // its text above its article. In the column a link first shows a preview under its paragraph.
-      if (this.panes) {
-        if (!n.body.trim()) return this.follow(n.ref);
-        const from = this.backHere();
-        this.openPane(this.paneAt, { kind: "node", id: note, from });
-        this.paneAt = this.trail.length - 1;
-        return this.setFocus({ node: note, grain: "node" });
-      }
-      if (!n.body.trim() && this.open.has(note)) return this.follow(n.ref);
-    }
+    // A link opens its target: in panes at once, in the column after a preview under its paragraph.
+    if (n.ref && !n.body.trim() && (this.panes || this.open.has(note))) return this.follow(n.ref);
     if (this.open.has(note)) return this.setFocus({ node: note, grain: "node" });
     this.open.add(note);
     this.saveView();
@@ -1164,7 +1215,7 @@ class Store {
     const f = this.focus;
     const n = s.nodes[f.node];
     if (f.grain !== "node") return this.move(-1);
-    if (n.kind === "note" && !this.paneHead(n.id)) {
+    if (n.kind === "note" && !this.paneHead(n.id) && n.id !== this.top) {
       const a = n.anchors[0];
       return this.setFocus({ node: n.parent!, grain: a ? "word" : "node", range: a ? [a.start, a.end] : undefined });
     }
@@ -1811,7 +1862,7 @@ class Store {
     const art = wikiArticle(h.title, h.lang);
     if (art.state !== "ready") return null;
     if (a.row.t === "head") {
-      if (h.embedded && !this.expanded.has(h.embedded)) return null;
+      if (this.folded(h.embedded)) return null;
       if (h.sec) return art.value.sections.find((x) => x.id === h.sec)?.html ?? null;
       return art.value.lead;
     }
@@ -1891,7 +1942,7 @@ class Store {
     if (!a) return;
     const s = this.snap;
     if (a.kind === "target") {
-      const r = s.nodes[a.of]?.ref;
+      const r = this.targetOf(a.of);
       return r ? this.follow(r) : undefined;
     }
     if (a.kind === "back") return this.openLinking(this.linkedFrom(a.of)[a.index]);
@@ -1907,8 +1958,8 @@ class Store {
       return;
     }
     if (row.t === "head") {
-      if (h.embedded && !this.expanded.has(h.embedded)) {
-        this.expanded.add(h.embedded);
+      if (this.folded(h.embedded)) {
+        this.expanded.add(h.embedded!);
         return this.emit();
       }
       return this.move(1);
@@ -1976,7 +2027,7 @@ class Store {
     if (!target) {
       const f = this.focus;
       const note = f.grain !== "node" ? this.noteAt(f.range) : undefined;
-      const r = this.snap.nodes[note ?? (a?.kind === "target" ? a.of : f.node)]?.ref;
+      const r = this.targetOf(note ?? (a?.kind === "target" ? a.of : f.node));
       if (r?.kind === "wiki") target = { title: r.title, lang: r.lang };
     }
     if (!target) return this.say("No Wikipedia article here.");
@@ -2081,9 +2132,9 @@ class Store {
 
   /** L on a node: open its own target (a section about an article, a note that also links). */
   followOwn() {
-    const n = this.snap.nodes[this.focus.node];
-    if (!n?.ref) return this.say("This node has no target. w gives it one.");
-    this.follow(n.ref);
+    const r = this.targetOf(this.focus.node);
+    if (!r) return this.say("This node has no target. w gives it one.");
+    this.follow(r);
   }
 
   setView(view: View) {

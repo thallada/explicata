@@ -35,7 +35,7 @@ class Pane extends Component<PaneProps> {
   shouldComponentUpdate(next: PaneProps) {
     if (key(next) !== key(this.props)) return true;
     if (next.p.kind === "wiki") return true;
-    return store.paneDirty(next.p.id) || !!store.snap.nodes[next.p.id]?.ref || store.linkedFrom(next.p.id).length > 0;
+    return store.paneDirty(next.p.id) || !!store.targetOf(next.p.id) || store.linkedFrom(next.p.id).length > 0;
   }
   render() {
     const p = this.props.p;
@@ -85,7 +85,7 @@ function NodePane({ id, index, showing, active }: PaneProps & { id: NodeId }) {
           </ul>
         )}
         <PendingSections id={id} />
-        {n.ref?.kind === "wiki" ? <WikiView host={`n${id}`} /> : <TargetRow id={id} />}
+        {store.articleUnder(id) ? <WikiView host={`n${id}`} /> : <TargetRow id={id} />}
         <NodeBacklinks id={id} />
         <NodeRelated id={id} />
       </div>

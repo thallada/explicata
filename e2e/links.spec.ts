@@ -174,7 +174,7 @@ test("panes: Tab and Enter open an article in the next pane; its sections open a
   expect(await spine.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(await page.locator(".pane.root .spine").evaluate((el) => getComputedStyle(el).backgroundColor));
 });
 
-test("a note that also links opens as one pane: its text above, the article beneath, folded to its summary until l", async ({ page }) => {
+test("a note that also links opens as one pane: its text above, the article in full beneath", async ({ page }) => {
   await wide(page, "/doc/origin-of-the-elements");
   await inPane(page, "The triple-alpha process", "an excited state at almost exactly the energy");
   await keys(page, "Enter");
@@ -182,20 +182,79 @@ test("a note that also links opens as one pane: its text above, the article bene
   await expect(pane).toHaveClass(/note-pane/);
   await expect(pane.locator(".body").first()).toContainText("It is called the Hoyle state");
   const block = pane.locator(".wiki.embedded");
-  await expect(block).toHaveClass(/folded/);
-  await expect(block.locator(".wiki-head h2")).toHaveText("Hoyle state");
-  await expect(block.locator(".wattr")).toBeVisible();
-  // j reaches the article under the note; l unfolds it in place; its sections are rows.
-  await keys(page, "j");
-  expect(await state(page, (s) => s.aux?.host?.startsWith("n"))).toBe(true);
-  await keys(page, "l");
   await expect(block).not.toHaveClass(/folded/);
+  await expect(block.locator(".wiki-head h2")).toHaveText("Hoyle state");
+  await expect(block.locator(".wiki-text").first()).toContainText("excited, spin-0 resonant state");
+  await expect(block.locator(".wattr")).toBeVisible();
   await expect(block.locator(".wrow .title")).toHaveText(["Prediction", "Structure"]);
   expect(await block.locator(".wiki-text a[data-wiki]").evaluateAll((as) => as.map((a) => a.getAttribute("data-wiki")))).toEqual(["Carbon-12", "Fred Hoyle", "Triple-alpha process"]);
+  // j reaches the article under the note, then its sections; l opens one as the next pane.
+  await keys(page, "j");
+  expect(await state(page, (s) => s.aux?.host?.startsWith("n"))).toBe(true);
   await keys(page, "j l");
   await expect(panes(page).last().locator(".wiki-head h2")).toContainText("Prediction");
-  await keys(page, "h h");
+  await keys(page, "h h h");
   expect(await state(page, (s) => s.aux)).toBeNull();
+});
+
+/** The page a note with a target opens as: the note's text first, as the library's, then the article. */
+async function expectCommentary(page: Page, note: string, article: string, lead: string) {
+  const host = page.locator(".pane.note-pane, article:has(> header h1.note-title)").last();
+  await expect(host.locator(".body").first()).toContainText(note);
+  const block = host.locator(".wiki.embedded");
+  await expect(block).not.toHaveClass(/folded/);
+  await expect(block.locator(".wiki-head h2")).toHaveText(article);
+  await expect(block.locator(".wiki-text").first()).toContainText(lead);
+  // The note's text comes before the article's.
+  const [n, a] = await Promise.all([host.locator(".body").first().boundingBox(), block.boundingBox()]);
+  expect(n!.y).toBeLessThan(a!.y);
+}
+
+test("a note that also links, clicked or entered, opens its article with the note on top, in panes and in the column", async ({ page }) => {
+  const words = "an excited state at almost exactly the energy";
+  const note = "It is called the Hoyle state";
+  // Panes, by click.
+  await wide(page, "/doc/origin-of-the-elements");
+  await jump(page, "The triple-alpha process");
+  await keys(page, "l");
+  await panes(page).last().locator(".anchor", { hasText: words }).click();
+  await expect(panes(page).last()).toHaveClass(/note-pane/);
+  await expectCommentary(page, note, "Hoyle state", "excited, spin-0 resonant state");
+  // The column, by keyboard: Enter on the words opens the note as a page; h returns to the words.
+  await column(page, "/doc/origin-of-the-elements");
+  await jump(page, "The triple-alpha process");
+  await keys(page, "Enter i");
+  await tabTo(page, words);
+  await keys(page, "Enter");
+  await expectCommentary(page, note, "Hoyle state", "excited, spin-0 resonant state");
+  // Its sections open in place, as on the article page.
+  for (let i = 0; i < 6 && !(await page.locator(".wrow.focused").count()); i++) await keys(page, "j");
+  await keys(page, "l");
+  await expect(page.locator(".wrow.open .wiki-text")).toContainText("Hoyle reasoned");
+  await keys(page, "h h h");
+  expect(await selected(page)).toBe(words);
+  await expect(page.locator(".wiki.embedded")).toHaveCount(0);
+  // The column, by click.
+  await page.locator(".anchor", { hasText: words }).click();
+  await expectCommentary(page, note, "Hoyle state", "excited, spin-0 resonant state");
+  await page.goBack();
+  await expect(page.locator(".wiki.embedded")).toHaveCount(0);
+});
+
+test("a note and a link on the same words open as that one page: the note on top, the linked article beneath", async ({ page }) => {
+  const words = "The camera-like eye";
+  const note = "The octopus eye has a lens";
+  await wide(page, "/doc/octopus-minds");
+  await inPane(page, "The common ancestor", words);
+  await keys(page, "Enter");
+  await expectCommentary(page, note, "Cephalopod", "molluscan class Cephalopoda");
+  await column(page, "/doc/octopus-minds");
+  await jump(page, "The common ancestor");
+  await keys(page, "l");
+  await page.locator(".anchor", { hasText: words }).click();
+  await expectCommentary(page, note, "Cephalopod", "molluscan class Cephalopoda");
+  await keys(page, "h");
+  expect(await selected(page)).toBe(words);
 });
 
 test("a link to a node in another document opens it, and Back returns; in panes it opens next and h returns", async ({ page }) => {

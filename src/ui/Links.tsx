@@ -128,7 +128,7 @@ export function LinkPreview({ id }: { id: NodeId }) {
 
 /** A node's own target, as a row at the foot of its text (the column; in panes a Wikipedia target is the article itself). */
 export function TargetRow({ id }: { id: NodeId }) {
-  const r = store.snap.nodes[id]?.ref;
+  const r = store.targetOf(id);
   if (!r) return null;
   const focused = sameAux(store.aux, { kind: "target", of: id });
   return (

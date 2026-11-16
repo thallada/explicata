@@ -9,7 +9,7 @@ import { LinkCard, LinkPicker, NodeBacklinks, NodeRelated, TargetRow } from "./L
 import { NodeBody, Outline, PendingSections, TopMatter } from "./Node";
 import { Panes } from "./Panes";
 import { PANES_MIN_WIDTH, store, type Aux } from "./store";
-import { WikiPage } from "./Wiki";
+import { WikiPage, WikiView } from "./Wiki";
 import { Usage } from "./Usage";
 
 function Page() {
@@ -21,7 +21,7 @@ function Page() {
       <TopMatter id={store.top} />
       {kids.length > 0 && <Outline ids={kids} />}
       <PendingSections id={store.top} />
-      {!listing && <TargetRow id={store.top} />}
+      {!listing && (store.articleUnder(store.top) ? <WikiView host={`n${store.top}`} /> : <TargetRow id={store.top} />)}
       {!listing && <NodeBacklinks id={store.top} />}
       {!listing && <NodeRelated id={store.top} />}
     </article>
@@ -375,7 +375,9 @@ function StatusLine() {
     : selecting && store.focusedSuggestion()
       ? `suggested link → ${clip(store.focusedSuggestion()!.title, 40)} · y link · n decline · Tab next · S review all`
     : selecting
-      ? store.noteAt(f.range)
+      ? store.commentaryAt(f.range)
+        ? `Enter opens the note with ${store.targetOf(store.commentaryAt(f.range)!)!.kind === "wiki" ? "its article" : "what it links to"} · e shows the note here · D delete note · w retarget`
+      : store.noteAt(f.range)
         ? store.snap.nodes[store.noteAt(f.range)!].ref
           ? `Enter open the link · w retarget · D remove${store.snap.nodes[store.noteAt(f.range)!].ref!.kind === "wiki" ? " · W on Wikipedia" : ""}`
           : "Enter open/enter · e toggle · D delete note · w link it"
@@ -535,7 +537,7 @@ export function App() {
     const targetRow = target.closest<HTMLElement>("[data-target]");
     if (targetRow) {
       store.paneAt = paneIndex;
-      const r = store.snap.nodes[targetRow.dataset.target as NodeId]?.ref;
+      const r = store.targetOf(targetRow.dataset.target as NodeId);
       return r && store.follow(r);
     }
     if (host && target.closest(".wiki-head")) {
@@ -559,6 +561,13 @@ export function App() {
       const n = store.snap.nodes[id];
       const a = n.anchors[0];
       store.popup = null;
+      // Words with a note and a target open as one page: the note's text, then the article.
+      const both = store.commentaryAt([a.start, a.end], n.parent!);
+      if (both) {
+        store.paneAt = paneIndex;
+        store.go(n.parent!, "word", [a.start, a.end]);
+        return store.openCommentary(both);
+      }
       if (n.ref && (store.panes || store.open.has(id)) && !n.body.trim()) {
         // A link: in panes it opens next to its pane; in the column, once its preview is open.
         store.paneAt = paneIndex;

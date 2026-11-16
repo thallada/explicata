@@ -2,7 +2,8 @@
  * What the browser tests share: driving the page from the keyboard, reading the store the page
  * exposes as globalThis.__ie, waiting for it to settle, and the links written into the shared
  * library over the op API, as an outside agent would (every kind of target, a note that also links,
- * a cross-document node link, two documents mentioning one article; the articles are the mock
+ * a cross-document node link, two documents mentioning one article, a link and a note on the same
+ * words; the articles are the mock
  * Wikipedia's fixtures in server/wikiMock.ts).
  */
 import { writeFileSync } from "node:fs";
@@ -85,6 +86,7 @@ export async function seedLinks(request: APIRequestContext) {
   const howY = find(s, "fixed-points", "Recursion without names", "How Y works");
   const triple = find(s, "origin-of-the-elements", "Fusion in ordinary stars", "The triple-alpha process");
   const separate = find(s, "octopus-minds", "A separate experiment");
+  const ancestor = find(s, "octopus-minds", "A separate experiment", "The common ancestor");
   const programs = find(s, "what-a-proof-is", "Proof assistants", "Proofs as programs");
   const ops = [
     { op: "create", parent: recursion, kind: "note", quote: "fixed-point combinator", ref: W("Fixed-point combinator") },
@@ -95,6 +97,8 @@ export async function seedLinks(request: APIRequestContext) {
     { op: "create", parent: triple, kind: "note", quote: "Fred Hoyle", ref: W("Fred Hoyle") },
     { op: "create", parent: separate, kind: "note", quote: "octopus", ref: W("Octopus") },
     { op: "update", id: noteOn(s, separate, "cephalopod"), ref: W("Cephalopod") },
+    // A link on words that already carry a note of their own: two notes on one span.
+    { op: "create", parent: ancestor, kind: "note", quote: "The camera-like eye", ref: W("Cephalopod") },
     { op: "create", parent: programs, kind: "note", quote: "a function turning proofs", ref: W("Lambda calculus") },
     { op: "create", parent: programs, kind: "note", quote: "Several of the leading systems", ref: { kind: "node", id: recursion, doc: "fixed-points", path: ["Recursion without names"] } },
   ];

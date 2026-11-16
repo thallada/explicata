@@ -84,7 +84,9 @@ Press `?` for every key. The short version:
 - A node can have a **target**: a Wikipedia article, another node in the library, or a web page.
   A note with a target and no text of its own is a **link**. Linked words get a thin underline and
   a mark after them, after gwern.net: **W** Wikipedia, **§** a node in this library, **↗** the web.
-  A note that also links keeps its dotted underline and gets the mark.
+  A note that also links keeps its dotted underline and gets the mark; `Enter` or a click on it (or on
+  words that carry both a note and a link) opens one page: the note's text first, as the library's,
+  then the article in full (or the node's or page's card). `h` returns to the words.
 - Hovering linked words, or landing on them with `Tab`, previews the target. `Enter` opens it: in
   panes in the next pane; in the column a preview first, then the node (Back returns) or the
   article as a page of its own. `L` opens a node's own target; a web page opens in a new tab.
