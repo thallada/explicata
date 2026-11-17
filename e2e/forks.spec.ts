@@ -8,7 +8,7 @@
  * the documents are hoisted to (z) as in panes.spec.ts.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, command, focusedTitle, jump, keys, seedLinks, selected, settle, state } from "./helpers";
+import { autoLayout, command, focusedTitle, jump, keys, seedLinks, selected, settle, state, visit } from "./helpers";
 
 /** The first tree of panes by title, the picked child starred: [title, [children]] or a leaf's title. */
 const tree = (page: Page) =>
@@ -73,7 +73,7 @@ async function still(page: Page) {
 }
 
 async function open(page: Page) {
-  await page.goto("/doc/infinispand");
+  await visit(page, "Infinispand");
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
   await expect(page.locator(".strip .pane")).toHaveCount(2);
@@ -92,7 +92,7 @@ async function tabTo(page: Page, words: string) {
 
 /** The owner's screenshot: Two kinds of cell, with Eukaryote (opened from its link), Simple cells and Complex cells beside each other in the next column, and Bacteria opened from Eukaryote's text. */
 async function cells(page: Page) {
-  await page.goto("/doc/the-one-merger");
+  await visit(page, "The one merger");
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
   await jump(page, "Two kinds of cell");
@@ -184,7 +184,7 @@ test("a click, a Ctrl- and a middle click open beside; a Shift-click in place; a
 });
 
 test("a link and an article's link open beside by default, in place with Shift; twenty opens stay usable", async ({ page }) => {
-  await page.goto("/doc/fixed-points");
+  await visit(page, "Fixed points");
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
   await jump(page, "Recursion without names");
@@ -659,7 +659,7 @@ test("× and q close the pane they are on, whatever it shows, with what was open
   await pane(page, "Bacteria").locator(".pane-ctl .pane-btn.close").click();
   expect(await columns(page)).toEqual([["Library"], ["The one merger"], ["Two kinds of cell"], ["Complex cells"]]);
   // A note that also links, opened as a pane of its own: q closes it, back to its words.
-  await page.goto("/doc/octopus-minds");
+  await visit(page, "Octopus minds");
   await page.waitForSelector(".strip .pane");
   await jump(page, "The common ancestor");
   await keys(page, "l");
@@ -672,7 +672,7 @@ test("× and q close the pane they are on, whatever it shows, with what was open
 });
 
 test("q on an article opened from an article in a fork closes that article only (the owner's bug)", async ({ page }) => {
-  await page.goto("/doc/fixed-points");
+  await visit(page, "Fixed points");
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
   await jump(page, "Recursion without names");
@@ -692,7 +692,7 @@ test("q on an article opened from an article in a fork closes that article only 
 });
 
 test("from a Wikipedia link, a node link and a link inside an article: forks, each marked where it was opened", async ({ page }) => {
-  await page.goto("/doc/fixed-points");
+  await visit(page, "Fixed points");
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
   await jump(page, "Recursion without names");
@@ -777,7 +777,7 @@ test("many forks: a reload brings the forest back", async ({ page }) => {
 
 test("in the column a Shift open is a plain open, and the status line says why once", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/doc/fixed-points");
+  await visit(page, "Fixed points");
   await page.waitForFunction(() => (globalThis as any).__ie?.ready);
   await command(page, "/view column");
   await jump(page, "Recursion without names");

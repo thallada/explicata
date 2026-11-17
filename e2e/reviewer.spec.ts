@@ -11,7 +11,7 @@
  * IE_SHOTS=<dir> also saves the links list with each filter, light and dark, into that directory.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { command, idle, keys, selected, settle, state } from "./helpers";
+import { addTop, command, idle, keys, selected, settle, state, visit } from "./helpers";
 
 const SHOTS = process.env.IE_SHOTS;
 
@@ -38,14 +38,8 @@ async function column(page: Page) {
   await page.evaluate(() => document.fonts.ready);
 }
 
-/** A new document with this text, typed from the keyboard; the focus is on it afterwards. */
-async function newDoc(page: Page, title: string, text: string) {
-  await command(page, `/new ${title}`);
-  await expect(page.locator("h1", { hasText: title })).toBeVisible();
-  await keys(page, "c");
-  await page.keyboard.type(text);
-  await page.keyboard.press("Escape");
-}
+/** A new top-level section with this text, typed from the keyboard; the focus is on it afterwards. */
+const newDoc = addTop;
 
 test.describe.configure({ mode: "serial" });
 
@@ -148,12 +142,12 @@ test("a link removed in the text, by D or by the right-click menu, is declined a
   await item.click();
   expect(Object.keys(await linksHere(page))).toEqual(["Hoyle state"]);
   expect(await nolink(page)).toEqual(["fred hoyle", "lambda calculus"]);
-  // An edit rescans the node; /linkdoc rescans the document: neither puts them back.
+  // An edit rescans the node; /linkhere rescans it and all under it: neither puts them back.
   await keys(page, "Escape Escape c End");
   await page.keyboard.type(" Again.");
   await keys(page, "Escape");
   await idle(page);
-  await command(page, "/linkdoc");
+  await command(page, "/linkhere");
   await page.waitForFunction(() => (globalThis as any).__ie.links.job?.state === "done", undefined, { timeout: 30_000 });
   await idle(page);
   expect(Object.keys(await linksHere(page))).toEqual(["Hoyle state"]);
@@ -187,8 +181,7 @@ test("when the model fails, nothing is linked unreviewed: everything is suggeste
 
 test("a background job is reviewed as it goes, with the model's calls counted, and can be stopped; a finished one links what was approved", async ({ page }) => {
   await column(page);
-  await page.goto("/doc/the-tides");
-  await page.waitForFunction(() => (globalThis as any).__ie?.ready);
+  await visit(page, "The tides");
   await command(page, "/linkall");
   await page.waitForFunction(() => (globalThis as any).__ie.links.job?.state === "running" && (globalThis as any).__ie.links.job.done > 0);
   expect(await state(page, (s) => s.links.job.review)).toMatchObject({ max: 50 });
@@ -196,9 +189,9 @@ test("a background job is reviewed as it goes, with the model's calls counted, a
   await command(page, "/linkcancel");
   await page.waitForFunction(() => (globalThis as any).__ie.links.job?.state === "cancelled");
   await expect(page.locator(".status .message")).toContainText("Stopped looking for links in the library");
-  // A document's job runs to the end: its approved links are made as one commit by the reviewer.
+  // A job on one tree (/linkhere on its top) runs to the end: its approved links are made as one commit by the reviewer.
   const before = await state(page, (s) => s.commits()[0].id);
-  await command(page, "/linkdoc");
+  await command(page, "/linkhere");
   await page.waitForFunction(() => (globalThis as any).__ie.links.job?.state === "done", undefined, { timeout: 30_000 });
   await expect(page.locator(".status .message")).toContainText("linked by the reviewer");
   const job = await state(page, (s) => s.links.job);

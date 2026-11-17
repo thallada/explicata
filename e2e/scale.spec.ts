@@ -6,7 +6,7 @@
  * store call to the painted frame. Runs last: it fills the shared library.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, idle, state, synced, writeReport, type Sample } from "./helpers";
+import { autoLayout, idle, state, synced, writeReport, type Sample, visit } from "./helpers";
 
 const ready = (page: Page) => page.waitForFunction(() => (globalThis as any).__ie?.ready === true, undefined, { timeout: 30_000 });
 /** One keystroke per frame, as in the other latency tests. */
@@ -91,7 +91,7 @@ test("a library of over 5,000 nodes in 100 more documents: keypress → paint an
   await paced(page, "O");
   const column = stats(await keySamples(page));
   // A body edit inside a document deep in the library.
-  await page.goto("/doc/scale-document-97");
+  await visit(page, "Scale document 97");
   await ready(page);
   await paced(page, "j l j");
   const columnEdit = stats(await editTimes(page, 15));
@@ -110,7 +110,7 @@ test("a library of over 5,000 nodes in 100 more documents: keypress → paint an
   // ---- forks: four documents opened side by side from the library pane, each three panes deep (document, part, leaf) ----
   // A fresh view: the panes opened above stay open (opens go beside), and would be restored here.
   await page.evaluate(() => localStorage.clear());
-  await page.goto("/doc/scale-document-90");
+  await visit(page, "Scale document 90");
   await ready(page);
   await paced(page, "l l l l");
   for (let d = 1; d < 4; d++) await paced(page, "h h j Enter l l l l");
@@ -126,7 +126,7 @@ test("a library of over 5,000 nodes in 100 more documents: keypress → paint an
   await page.evaluate(() => ((globalThis as any).__ie.samples.length = 0));
   for (let i = 0; i < 8; i++) await paced(page, "[ [ [ ] ] ]");
   const forks = stats(await keySamples(page));
-  await page.goto("/doc/scale-document-98");
+  await visit(page, "Scale document 98");
   await ready(page);
   await paced(page, "l l j");
   const panesEdit = stats(await editTimes(page, 15));

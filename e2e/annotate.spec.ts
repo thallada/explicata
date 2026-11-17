@@ -5,14 +5,14 @@
  * again in a later revision, or listed as detached when its words are gone.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, command, idle, jump, keys, seedLinks, selected, settle, state } from "./helpers";
+import { autoLayout, command, idle, jump, keys, seedLinks, selected, settle, state, visit } from "./helpers";
 
 const panes = (page: Page) => page.locator(".strip .pane");
 
-async function wide(page: Page, path = "/doc/fixed-points") {
+async function wide(page: Page, path = "Fixed points") {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await autoLayout(page);
-  await page.goto(path);
+  await visit(page, path);
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
 }
@@ -20,7 +20,7 @@ async function column(page: Page, path: string) {
   await page.setViewportSize({ width: 1440, height: 900 });
   // After wide(), this page's layout follows the window, and 1440 px is wide enough for panes.
   if (page.url().startsWith("http")) await page.evaluate(() => localStorage.setItem("ie:settings", JSON.stringify({ ...JSON.parse(localStorage.getItem("ie:settings") ?? "{}"), view: "column" })));
-  await page.goto(path);
+  await visit(page, path);
   await page.waitForFunction(() => (globalThis as any).__ie?.ready);
 }
 async function tabTo(page: Page, words: string) {
@@ -46,7 +46,7 @@ test.afterEach(({ page }) => settle(page));
 
 test("words of an article are selected with the node keys, and a lens writes a note on them that the library keeps", async ({ page }) => {
   await wide(page);
-  const docs = await state(page, (s) => s.menuItems("").length);
+  const docs = await state(page, (s) => s.snap.nodes[s.snap.root].children.filter((c: string) => !s.snap.nodes[c].articles).map((c: string) => s.snap.nodes[c]).length);
   await jump(page, "Recursion without names");
   await tabTo(page, "fixed-point combinator");
   await keys(page, "Enter");
@@ -80,9 +80,9 @@ test("words of an article are selected with the node keys, and a lens writes a n
   await expect(art.locator(".wiki-text .gloss")).toContainText("mock gloss of Haskell Curry");
   await expect(art.locator(".wiki-text .anchor.a-gloss")).toHaveText("Haskell Curry");
   expect((await annotations(page)).sort()).toEqual([`Haskell Curry | mock gloss of Haskell Curry`, `${sentence} | Mock note on “${sentence!.slice(0, 47)}…” through the why lens. It is two sentences long.`].sort());
-  // The article's node is in the library's Wikipedia container, which is not a document.
-  expect(await state(page, (s) => s.menuItems("").length)).toBe(docs);
-  expect(await state(page, (s) => s.menuItems("").some((d: any) => d.title === "Wikipedia"))).toBe(false);
+  // The article's node is in the library's Wikipedia container, which is not one of the root's sections.
+  expect(await state(page, (s) => s.snap.nodes[s.snap.root].children.filter((c: string) => !s.snap.nodes[c].articles).map((c: string) => s.snap.nodes[c]).length)).toBe(docs);
+  expect(await state(page, (s) => s.snap.nodes[s.snap.root].children.filter((c: string) => !s.snap.nodes[c].articles).map((c: string) => s.snap.nodes[c]).some((d: any) => d.title === "Wikipedia"))).toBe(false);
   // Keys that only make sense on a node say why not.
   await keys(page, "Escape Escape");
   await keys(page, "c");
@@ -150,9 +150,9 @@ test("an article's annotations show wherever it is opened: from another link, fr
   await keys(page, "x");
   await idle(page);
   await expect(under.locator(".wiki-text .inset")).toContainText("through the example lens");
-  // From another document's link to it.
+  // From a link to it in another tree.
   await settle(page);
-  await wide(page, "/doc/what-a-proof-is");
+  await wide(page, "What a proof is");
   await jump(page, "Proofs as programs");
   await tabTo(page, "a function turning proofs");
   await keys(page, "Enter");

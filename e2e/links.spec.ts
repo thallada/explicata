@@ -5,7 +5,7 @@
  * the address it would have gone to.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, command, focusedTitle, jump, keys, seedLinks, selected, settle, state, writeReport, type Sample } from "./helpers";
+import { autoLayout, command, focusedTitle, jump, keys, seedLinks, selected, settle, state, visit, writeReport, type Sample } from "./helpers";
 
 /** The panes' titles, left to right: a node's title, or W:article for a Wikipedia pane. */
 const trail = (page: Page) =>
@@ -21,18 +21,18 @@ async function tabTo(page: Page, words: string) {
   throw new Error(`Tab never reached “${words}”`);
 }
 
-async function column(page: Page, path = "/doc/fixed-points") {
+async function column(page: Page, path = "Fixed points") {
   await page.setViewportSize({ width: 1440, height: 900 });
   // After wide(), this page's layout follows the window, and 1440 px is wide enough for panes.
   if (page.url().startsWith("http")) await page.evaluate(() => localStorage.setItem("ie:settings", JSON.stringify({ ...JSON.parse(localStorage.getItem("ie:settings") ?? "{}"), view: "column" })));
-  await page.goto(path);
+  await visit(page, path);
   await page.waitForFunction(() => (globalThis as any).__ie?.ready);
   await page.evaluate(() => document.fonts.ready);
 }
-async function wide(page: Page, path = "/doc/fixed-points") {
+async function wide(page: Page, path = "Fixed points") {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await autoLayout(page);
-  await page.goto(path);
+  await visit(page, path);
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
 }
@@ -182,7 +182,7 @@ test("panes: Tab and Enter open an article in the next pane; its sections open a
 });
 
 test("a note that also links opens as one pane: its text above, the article in full beneath", async ({ page }) => {
-  await wide(page, "/doc/where-the-elements-come-from");
+  await wide(page, "Where the elements come from");
   await inPane(page, "The triple-alpha process", "an excited state at almost exactly the energy");
   await keys(page, "Enter");
   const pane = panes(page).last();
@@ -221,14 +221,14 @@ test("a note that also links, clicked or entered, opens its article with the not
   const words = "an excited state at almost exactly the energy";
   const note = "It is called the Hoyle state";
   // Panes, by click.
-  await wide(page, "/doc/where-the-elements-come-from");
+  await wide(page, "Where the elements come from");
   await jump(page, "The triple-alpha process");
   await keys(page, "l");
   await panes(page).last().locator(".anchor", { hasText: words }).click();
   await expect(panes(page).last()).toHaveClass(/note-pane/);
   await expectCommentary(page, note, "Hoyle state", "excited, spin-0 resonant state");
   // The column, by keyboard: Enter on the words opens the note as a page; h returns to the words.
-  await column(page, "/doc/where-the-elements-come-from");
+  await column(page, "Where the elements come from");
   await jump(page, "The triple-alpha process");
   await keys(page, "Enter i");
   await tabTo(page, words);
@@ -251,11 +251,11 @@ test("a note that also links, clicked or entered, opens its article with the not
 test("a note and a link on the same words open as that one page: the note on top, the linked article beneath", async ({ page }) => {
   const words = "The camera-like eye";
   const note = "The octopus eye has a lens";
-  await wide(page, "/doc/octopus-minds");
+  await wide(page, "Octopus minds");
   await inPane(page, "The common ancestor", words);
   await keys(page, "Enter");
   await expectCommentary(page, note, "Cephalopod", "molluscan class Cephalopoda");
-  await column(page, "/doc/octopus-minds");
+  await column(page, "Octopus minds");
   await jump(page, "The common ancestor");
   await keys(page, "l");
   await page.locator(".anchor", { hasText: words }).click();
@@ -264,8 +264,8 @@ test("a note and a link on the same words open as that one page: the note on top
   expect(await selected(page)).toBe(words);
 });
 
-test("a link to a node in another document opens it, and Back returns; in panes it opens next and h returns", async ({ page }) => {
-  await column(page, "/doc/what-a-proof-is");
+test("a link to a node in another tree opens it, and Back returns; in panes it opens next and h returns", async ({ page }) => {
+  await column(page, "What a proof is");
   await jump(page, "Proofs as programs");
   await keys(page, "Enter i");
   await tabTo(page, "Several of the leading systems");
@@ -275,20 +275,23 @@ test("a link to a node in another document opens it, and Back returns; in panes 
   await expect(preview).toContainText("Recursion without names");
   await keys(page, "Enter");
   await expect.poll(() => focusedTitle(page)).toBe("Recursion without names");
-  await expect(page).toHaveURL(/\/doc\/fixed-points\//);
+  const recursion = await state(page, (s) => s.focus.node);
+  await expect(page).toHaveURL(new RegExp(`/n/${encodeURIComponent(recursion)}$`));
   await page.goBack();
   await expect.poll(() => focusedTitle(page)).toBe("Proofs as programs");
-  // Panes: the node opens in the next pane, marked with its document; h comes back to the words.
-  await wide(page, "/doc/what-a-proof-is");
+  // Panes: the node opens in the next pane, marked with the titles above it; h comes back to the words.
+  await wide(page, "What a proof is");
   await inPane(page, "Proofs as programs", "Several of the leading systems");
   await keys(page, "Enter");
   const last = panes(page).last();
   await expect(last).toHaveClass(/jumped/);
-  await expect(last.locator(".pane-from")).toHaveText("Fixed points");
+  await expect(last.locator(".pane-from")).toHaveText("Library › Fixed points");
   await expect(last.locator(".pane-head h2")).toHaveText("Recursion without names");
   await keys(page, "h");
   expect(await selected(page)).toBe("Several of the leading systems");
-  await expect(panes(page)).toHaveCount(4);
+  // The library, What a proof is, Proof assistants, Proofs as programs, and the node opened beside it
+  // (following the link out of the hoisted tree in the column un-hoisted the page to the library).
+  await expect(panes(page)).toHaveCount(5);
 });
 
 test("Linked from and Mentioned in list what links here, reachable by j and Enter", async ({ page }) => {
@@ -323,7 +326,7 @@ test("Linked from and Mentioned in list what links here, reachable by j and Ente
 });
 
 test("linking by hand: the picker links to the library, to Wikipedia and to an address; it retargets; /unlink and D remove", async ({ page }) => {
-  await column(page, "/doc/the-tides");
+  await column(page, "The tides");
   await jump(page, "The tides");
   const doc = await state(page, (s) => s.focus.node);
   const linkCount = () => page.evaluate((d) => {
@@ -385,7 +388,7 @@ test("linking by hand: the picker links to the library, to Wikipedia and to an a
 });
 
 test("a disambiguation page lists its senses as rows; a missing article, an unreachable Wikipedia and a slow one say so plainly", async ({ page }) => {
-  await wide(page, "/doc/the-tides");
+  await wide(page, "The tides");
   await jump(page, "The tides");
   await keys(page, "i i");
   await command(page, "/link w:Mercury");
@@ -474,7 +477,7 @@ test("a hostile article cannot run script or load anything from elsewhere, in a 
   let dialogs = 0;
   page.on("dialog", (d) => (dialogs++, d.dismiss()));
   for (const view of [wide, column]) {
-    await view(page, "/doc/the-tides");
+    await view(page, "The tides");
     await jump(page, "The tides");
     await keys(page, "i i");
     await command(page, "/link w:Hostile article");

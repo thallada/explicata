@@ -4,7 +4,7 @@
  * Latencies are measured in the page (keydown timestamp → the frame after the render).
  */
 import { expect, test, type Page } from "@playwright/test";
-import { command, focusedTitle, idle, jump, keys, settle, state, writeReport, type Sample } from "./helpers";
+import { command, focusedTitle, idle, jump, keys, openPage, settle, state, writeReport, type Sample } from "./helpers";
 
 const titlesUnder = (page: Page, title: string) =>
   page.evaluate((t) => {
@@ -13,10 +13,9 @@ const titlesUnder = (page: Page, title: string) =>
     return n.children.map((c: string) => s.snap.nodes[c]).filter((c: any) => c.kind === "section").map((c: any) => c.title) as string[];
   }, title);
 
-/** The first document, opened in the column (hoisted, with the library one step out). */
+/** The first tree, opened in the column (hoisted, with the library one step out). */
 async function open(page: Page) {
-  await page.goto("/doc/infinispand");
-  await page.waitForSelector("article");
+  await openPage(page, "Infinispand");
   await page.evaluate(() => document.fonts.ready);
 }
 
@@ -205,8 +204,8 @@ test("history: every commit verifies, any commit can be viewed, and a revert is 
   await expect(page.locator(".verdict")).toContainText(/Verified: all \d+ hashed commits reproduce byte-for-byte/);
   const total = await state(page, (s) => s.commits().length);
   expect(total).toBeGreaterThan(11);
-  // Walk down to the oldest commits (the library's creation, then the first document's) and look
-  // at the document as it was when only three sections had been written.
+  // Walk down to the oldest commits (the library's creation, then the first tree's) and look
+  // at the tree as it was when only three sections had been written.
   for (let i = 0; i < total + 5; i++) await page.keyboard.press("j");
   await keys(page, "k k k k Enter");
   await expect(page.locator(".banner")).toContainText("Read-only");
@@ -215,15 +214,15 @@ test("history: every commit verifies, any commit can be viewed, and a revert is 
   await keys(page, "a");
   await expect(page.locator(".status .message")).toContainText("read-only");
   await expect(page.locator(".title-editor")).toHaveCount(0);
-  // Revert to it: the document goes back, the rest of the library stays, and the revert is itself
+  // Revert to it: the node the reader is on (the tree's top) goes back, the rest of the library stays, and the revert is itself
   // a commit that can be undone.
-  const others = await state(page, (s) => s.doc.snap().nodes[s.doc.snap().root].children.filter((c: string) => c !== s.currentDoc).map((c: string) => s.doc.shape(undefined, c)).join());
+  const others = await state(page, (s) => s.doc.snap().nodes[s.doc.snap().root].children.filter((c: string) => c !== s.activeNode).map((c: string) => s.doc.shape(undefined, c)).join());
   expect(others).not.toBe("");
   await keys(page, "r");
   await expect(page.locator(".banner")).toHaveCount(0);
   await expect(page.locator("article > .outline > .node")).toHaveCount(3);
   expect(await state(page, (s) => s.commits()[0].tag)).toBe("revert");
-  expect(await state(page, (s) => s.doc.snap().nodes[s.doc.snap().root].children.filter((c: string) => c !== s.currentDoc).map((c: string) => s.doc.shape(undefined, c)).join())).toBe(others);
+  expect(await state(page, (s) => s.doc.snap().nodes[s.doc.snap().root].children.filter((c: string) => c !== s.activeNode).map((c: string) => s.doc.shape(undefined, c)).join())).toBe(others);
   await keys(page, "v");
   await expect(page.locator(".verdict")).toContainText("Verified");
   await keys(page, "Escape u");

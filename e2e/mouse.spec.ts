@@ -6,13 +6,13 @@
  * other spec uses, and undo what they write.
  */
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { autoLayout, command, idle, keys, settle, state } from "./helpers";
+import { autoLayout, command, idle, keys, settle, state, visit } from "./helpers";
 
-const DOC = "/doc/tuning-and-temperament";
+const DOC = "Tuning and temperament";
 const FIRST = "Two notes sound smooth together when their frequencies stand in a simple ratio such as 2 to 1 or 3 to 2.";
 
 async function open(page: Page, path = DOC) {
-  await page.goto(path);
+  await visit(page, path);
   await page.waitForSelector("article .outline, .strip .pane");
   await page.evaluate(() => document.fonts.ready);
 }
@@ -236,13 +236,13 @@ test("the menu's keys: ↑ ↓ Home End move, Enter runs, Esc closes and gives t
   await expect(menu(page)).toBeVisible();
   const focused = () => page.evaluate(() => document.activeElement?.querySelector(".lbl")?.textContent ?? document.activeElement?.textContent);
   await keys(page, "ArrowDown");
-  expect(await focused()).toBe("Documents…");
-  await keys(page, "ArrowDown");
   expect(await focused()).toBe("Jump to a section…");
+  await keys(page, "ArrowDown");
+  expect(await focused()).toBe("History and branches");
   await keys(page, "ArrowUp ArrowUp");
   expect(await focused()).toBe("Keys and help");
   await keys(page, "Home");
-  expect(await focused()).toBe("Documents…");
+  expect(await focused()).toBe("Jump to a section…");
   await keys(page, "End Enter");
   await expect(menu(page)).toHaveCount(0);
   await expect(page.locator(".help")).toBeVisible();
@@ -439,6 +439,6 @@ test.describe("on a phone", () => {
     // The top bar's menu, a sheet too.
     await page.locator(".docbar .tool[aria-haspopup]").tap();
     await expect(page.locator(".menu.sheet")).toBeVisible();
-    await expect(item(page, "Documents…")).toHaveCount(1);
+    await expect(item(page, "Jump to a section…")).toHaveCount(1);
   });
 });

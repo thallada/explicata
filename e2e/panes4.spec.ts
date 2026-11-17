@@ -5,7 +5,7 @@
  * a menu's button closes it; a link's underline and its curve are one stroke at every pixel ratio.
  */
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { autoLayout, curveFaults, pixels, seedLinks, settle } from "./helpers";
+import { autoLayout, curveFaults, pixels, seedLinks, settle, visit } from "./helpers";
 
 const pane = (page: Page, title: string | RegExp) =>
   typeof title === "string" ? page.locator(".strip .pane", { has: page.locator(`:is(.wiki-head h2, .pane-head h2, .top h1):text-is("${title}")`) }).first() : page.locator(".strip .pane", { has: page.locator(`:is(.wiki-head h2, .pane-head h2, .top h1)`, { hasText: title }) }).first();
@@ -176,7 +176,7 @@ async function linked(browser: Browser, dpr: number) {
   await ctx.route(/wikipedia\.org|wikimedia\.org|stanford\.edu|example\.org/, (r) => r.abort());
   const page = await ctx.newPage();
   await autoLayout(page);
-  await page.goto("/doc/the-one-merger");
+  await visit(page, "The one merger");
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
   await page.waitForFunction(() => (globalThis as any).__ie?.ready);

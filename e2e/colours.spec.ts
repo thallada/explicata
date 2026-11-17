@@ -98,7 +98,7 @@ const near = (a: number, b: number, d = 1) => Math.abs(a - b) <= d;
 /** Two colours alike, but for rounding (a colour at part strength, un-premultiplied, may differ by a unit or two). */
 const alike = (a: number[] | null, b: number[] | null) => !!a && !!b && a.every((v, i) => Math.abs(v - b[i]) <= 3);
 
-test("every kind of pane's title rule is drawn by the curve into it, in the pane's colour: pages, sections, articles and their sections", async ({ page }) => {
+test("every kind of pane's title rule is drawn by the curve into it, in the pane's colour: nodes (a top-level one too), articles and their sections", async ({ page }) => {
   await library(page);
   for (const t of ["The tides", "Fixed points"]) await open(page, "Library", t);
   const seen = new Set<string>();
@@ -127,7 +127,9 @@ test("every kind of pane's title rule is drawn by the curve into it, in the pane
   await expect(page.locator(".wiki-pane .wiki-head .wsub")).toHaveCount(1);
   await still(page);
   await check();
-  expect([...seen].sort(), JSON.stringify((await lines(page)).map((l) => [l.kind, l.ruled, l.cls, l.folded, l.scrolled]))).toEqual(["article", "article section", "page", "section"]);
+  expect([...seen].sort(), JSON.stringify((await lines(page)).map((l) => [l.kind, l.ruled, l.cls, l.folded, l.scrolled]))).toEqual(["article", "article section", "section"]);
+  // A top-level node's pane is headed like any other: only the first pane is a page.
+  expect(await page.locator(".strip .pane:not(.root) > .pane-scroll > .pane-body > .top").count()).toBe(0);
   // The two forks out of the library are two colours; the top node has none.
   expect(await pane(page, "Library").getAttribute("data-hue")).toBeNull();
   expect(await pane(page, "The tides").getAttribute("data-hue")).not.toBe(await pane(page, "Fixed points").getAttribute("data-hue"));
@@ -185,8 +187,8 @@ test("the join of a curve and the rule it runs into is one stroke, on device pix
     await library(page);
     for (const t of ["The tides", "What a proof is", "The invention of writing", "Fixed points"]) await open(page, "Library", t);
     await open(page, "The tides", "The force");
-    // The focus to the last document, so The tides folds to its tab with its source out of sight.
-    await pane(page, "Fixed points").locator(".top h1").dispatchEvent("click");
+    // The focus to the last top-level pane, so The tides folds to its tab with its source out of sight.
+    await pane(page, "Fixed points").locator(".pane-head h2").dispatchEvent("click");
     await still(page);
     const ls = await lines(page);
     const shot = pixels(await page.screenshot());
@@ -231,7 +233,7 @@ test("a pane folded or scrolled past its title shows its tab, and its curve land
   await library(page);
   for (const t of ["The tides", "What a proof is", "The invention of writing", "Fixed points"]) await open(page, "Library", t);
   await open(page, "The tides", "The force");
-  await pane(page, "Fixed points").locator(".top h1").dispatchEvent("click");
+  await pane(page, "Fixed points").locator(".pane-head h2").dispatchEvent("click");
   await still(page);
   let ls = await lines(page);
   let checked = 0;
@@ -242,7 +244,7 @@ test("a pane folded or scrolled past its title shows its tab, and its curve land
     if (!l || l.cls.includes("lost") || l.focused) continue;
     checked++;
     const visible = await pane(page, t).evaluate((p) => {
-      const h = p.querySelector<HTMLElement>(".top h1")!.getBoundingClientRect();
+      const h = p.querySelector<HTMLElement>(".pane-head, .top h1")!.getBoundingClientRect();
       const r = p.getBoundingClientRect();
       const next = (p.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top ?? Infinity;
       const covered = p.hasAttribute("data-covered") || p.hasAttribute("data-scrolled");

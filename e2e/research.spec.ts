@@ -4,7 +4,7 @@
  * new tab, and Esc stops a run without keeping anything it did.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { command, idle, jump, keys, settle, state } from "./helpers";
+import { command, idle, jump, keys, openPage, settle, state } from "./helpers";
 
 
 async function open(page: Page) {
@@ -13,8 +13,7 @@ async function open(page: Page) {
     (globalThis as any).__opened = [];
     window.open = ((url: string) => ((globalThis as any).__opened.push(String(url)), null)) as typeof window.open;
   });
-  await page.goto("/doc/infinispand");
-  await page.waitForSelector("article");
+  await openPage(page, "Infinispand");
 }
 
 test.describe.configure({ mode: "serial" });

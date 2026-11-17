@@ -1,11 +1,11 @@
 /**
  * The panes view, on a wide window: the path to the focus as a strip of panes side by side.
  * Same production build, mock model and shared library as the other specs. The first pane is the
- * library; most tests here are about the panes themselves, so they hoist to the first document
+ * library; most tests here are about the panes themselves, so they hoist to the first tree's top
  * (z) and start from it, as the first pane.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, command, focusedTitle, idle, jump, keys, settle, state, writeReport, type Sample } from "./helpers";
+import { autoLayout, command, focusedTitle, idle, jump, keys, openAt, settle, state, writeReport, type Sample } from "./helpers";
 
 /** Each pane's title and box, left to right. */
 const panes = (page: Page) =>
@@ -19,10 +19,10 @@ const paneTitles = async (page: Page) => (await panes(page)).map((p) => p.title)
 const nodeId = (page: Page, title: string) => page.evaluate((t) => (Object.values((globalThis as any).__ie.snap.nodes) as any[]).find((n) => n.title === t).id as string, title);
 
 async function open(page: Page) {
-  await page.goto("/doc/infinispand");
+  await openAt(page, "Infinispand");
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
-  // The library pane and the document's; hoisting makes the document the first.
+  // The library pane and the tree's; hoisting makes the tree's top the first.
   await expect(page.locator(".strip .pane")).toHaveCount(2);
   await page.keyboard.press("z");
   await expect(page.locator(".strip .pane")).toHaveCount(1);
@@ -34,34 +34,35 @@ test.describe.configure({ mode: "serial" });
 test.beforeEach(({ page }) => autoLayout(page));
 test.afterEach(({ page }) => settle(page));
 
-test("the library is the first pane, and a document opens in the next; reload and Back keep the place", async ({ page }) => {
+test("the library is the first pane, and any node of it opens in the next; reload and Back keep the place", async ({ page }) => {
   await page.goto("/");
   await page.waitForSelector(".strip .pane");
   expect(await paneTitles(page)).toEqual(["Library"]);
   await expect(page.locator(".pane.root .rows > .node")).toHaveCount(await state(page, (s) => s.snap.nodes[s.snap.root].children.filter((c: string) => !s.snap.nodes[c].articles).length));
-  await keys(page, "j l"); // the first document's row, then open it
+  await keys(page, "j l"); // the first top-level node's row, then open it
   expect(await paneTitles(page)).toEqual(["Library", "Infinispand"]);
-  await expect(page.locator(".pane.doc .abstract.seed.folded")).toBeVisible();
-  await keys(page, "j l"); // the next document: its pane opens beside the first one's, below it in the same column
+  // Its pane is headed like any other; its text, a prompt its sections cite, is folded.
+  await expect(page.locator(".pane:not(.root) .pane-head h2")).toHaveText("Infinispand");
+  await expect(page.locator(".pane:not(.root) .abstract.seed.folded")).toBeVisible();
+  await keys(page, "j l"); // the next one: its pane opens beside the first one's, below it in the same column
   expect(await paneTitles(page)).toEqual(["Library", "Infinispand", "A mind made of text"]);
   await keys(page, "l l"); // into its first section, and open that
   const third = await paneTitles(page);
   expect(third).toHaveLength(4);
-  await expect(page).toHaveURL(/\/doc\/a-mind-made-of-text\/\d+%40\d+$/);
+  const section = await state(page, (s) => s.focus.node);
+  await expect(page).toHaveURL(new RegExp(`/n/${encodeURIComponent(section)}$`));
   await page.reload();
   await page.waitForSelector(".strip .pane");
   expect(await paneTitles(page)).toEqual(third);
-  // Opening a document from the menu is a new page in the address bar's history; Back returns.
-  await page.keyboard.press("m");
-  await page.keyboard.type("tides");
-  await page.keyboard.press("Enter");
-  // From the menu a document opens in place of the one open, not beside it.
-  expect(await paneTitles(page)).toEqual(["Library", "Infinispand", "The tides"]);
-  await expect(page).toHaveURL(/\/doc\/the-tides$/);
+  // A jump is a new page in the address bar's history; Back returns, Forward comes again.
+  await jump(page, "Amphidromes");
+  const amphidromes = await nodeId(page, "Amphidromes");
+  await expect(page).toHaveURL(new RegExp(`/n/${encodeURIComponent(amphidromes)}$`));
+  expect(await paneTitles(page)).toContain("The tides");
   await page.goBack();
-  await expect.poll(() => paneTitles(page)).toEqual(third);
+  await expect.poll(() => state(page, (s) => s.focus.node)).toBe(section);
   await page.goForward();
-  await expect.poll(() => paneTitles(page)).toEqual(["Library", "Infinispand", "The tides"]);
+  await expect.poll(() => state(page, (s) => s.focus.node)).toBe(amphidromes);
 });
 
 test("auto shows panes at 1920 px and on a laptop's 1366, one column on a phone or a narrow window; v and /view switch", async ({ page }) => {

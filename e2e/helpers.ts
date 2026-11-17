@@ -1,8 +1,9 @@
 /**
  * What the browser tests share: driving the page from the keyboard, reading the store the page
- * exposes as globalThis.__ie, waiting for it to settle, and the links written into the shared
- * library over the op API, as an outside agent would (every kind of target, a note that also links,
- * a cross-document node link, two documents mentioning one article, a link and a note on the same
+ * exposes as globalThis.__ie, waiting for it to settle, going to a node's address by its titles, and
+ * the links written into the shared library over the op API, as an outside agent would (every kind
+ * of target, a note that also links, a node link from one top-level tree into another, two trees
+ * mentioning one article, a link and a note on the same
  * words, links on the screenshot's cells; the articles are the mock
  * Wikipedia's fixtures in server/wikiMock.ts).
  */
@@ -34,6 +35,59 @@ export const autoLayout = (page: Page) =>
 export const keys = async (page: Page, seq: string) => {
   for (const k of seq.split(" ")) await page.keyboard.press(k);
 };
+
+/** The id of the section at these titles from the library root, asked of the server as an outside agent would (none: the root). */
+export async function nodeAt(page: Page, ...path: string[]): Promise<string> {
+  const s: Snap = await (await page.request.get("/api/tree")).json();
+  return find(s, ...path);
+}
+
+/** Go to the address of the section at these titles from the library root (none: the library, `/`), and wait for the page. */
+export async function openAt(page: Page, ...path: string[]) {
+  await page.goto(path.length ? `/n/${encodeURIComponent(await nodeAt(page, ...path))}` : "/");
+  await page.waitForSelector("article");
+}
+
+/** In the column, make the focused node the page, as z does (without a key, which would end a first visit's hint); in panes, nothing. */
+const hoistHere = (page: Page) => state(page, (s) => void (!s.panes && s.setHoist(s.focus.node)));
+
+/**
+ * The section at these titles as the page: in the column hoisted to it (as z does), with the
+ * library one step out; in panes, in its own pane beside the library's. What `/doc/<name>` used to open.
+ */
+export async function openPage(page: Page, ...path: string[]) {
+  await openAt(page, ...path);
+  await hoistHere(page);
+}
+
+/**
+ * Go somewhere: an address as it is (`/`, `/w/en/Octopus`), or a top-level section by its title,
+ * opened as the page (openPage). Does not wait for the page.
+ */
+export async function visit(page: Page, where: string) {
+  if (where.startsWith("/")) return void (await page.goto(where));
+  await page.goto(`/n/${encodeURIComponent(await nodeAt(page, where))}`);
+  await page.waitForFunction(() => (globalThis as any).__ie?.ready);
+  await hoistHere(page);
+}
+
+/**
+ * A new top-level section with this text, typed from the keyboard on the library page (`a` on the
+ * root, its title, then `c` and its text); it is the page afterwards (hoisted, in the column) and
+ * has the focus.
+ */
+export async function addTop(page: Page, title: string, text: string) {
+  await page.goto("/");
+  await page.waitForFunction(() => (globalThis as any).__ie?.ready);
+  await page.keyboard.press("a");
+  await page.keyboard.type(title);
+  await page.keyboard.press("Enter");
+  if (!(await state(page, (s) => s.panes))) await page.keyboard.press("z");
+  await page.locator(".title, h1, h2", { hasText: title }).first().waitFor();
+  await page.keyboard.press("c");
+  await page.keyboard.type(text);
+  await page.keyboard.press("Escape");
+}
 
 /** / then a title then Enter: jump to a section. */
 export const jump = async (page: Page, title: string) => {

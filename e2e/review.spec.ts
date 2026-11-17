@@ -2,12 +2,12 @@
  * Link discovery, keyboard only: links made automatically after an edit (and undone with u),
  * suggestions shown in the text and taken or declined with y and n, review mode, the [[ completer,
  * bare [[marks]] resolved on save, model-written text with its marks taken out and checked, the
- * Related list, /linkdoc with progress and a cancel, the /autolink modes, and latency. Against the
+ * Related list, /linkhere and /linkall with progress and a cancel, the /autolink modes, and latency. Against the
  * mock model, the mock Wikipedia (Octopus, Cephalopod, Fred Hoyle, Hoyle state, Carbon-12, Lambda
  * calculus, …) and the hashed-words embedder (IE_EMBED=fake).
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, command, idle, jump, keys, selected, settle, state, writeReport } from "./helpers";
+import { addTop, autoLayout, command, idle, jump, keys, selected, settle, state, visit, writeReport } from "./helpers";
 
 const body = (page: Page) => state(page, (s) => s.snap.nodes[s.focus.node].body as string);
 /** The links on the focused node: quote → target title (or node id). */
@@ -25,20 +25,13 @@ const suggestions = (page: Page) => state(page, (s) => s.links.forNode(s.focus.n
 
 async function column(page: Page, path = "/") {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(path);
+  await visit(page, path);
   await page.waitForFunction(() => (globalThis as any).__ie?.ready);
   await page.evaluate(() => document.fonts.ready);
 }
 
-/** A new document with this text, typed from the keyboard; the focus is on it afterwards. */
-async function newDoc(page: Page, title: string, text: string) {
-  await command(page, `/new ${title}`);
-  // In panes the library's pane has a heading too.
-  await expect(page.locator("h1", { hasText: title })).toBeVisible();
-  await keys(page, "c");
-  await page.keyboard.type(text);
-  await page.keyboard.press("Escape");
-}
+/** A new top-level section with this text, typed from the keyboard; the focus is on it afterwards. */
+const newDoc = addTop;
 
 test.describe.configure({ mode: "serial" });
 
@@ -188,8 +181,8 @@ test("the Related list sits under a node; a number links the selected words to t
   expect(await state(page, (s) => s.snap.nodes[s.focus.node].title)).not.toBe("Related here");
 });
 
-test("/linkdoc and /linkall look for links in the background, with progress in the status line and a cancel", async ({ page }) => {
-  await column(page, "/doc/fixed-points");
+test("/linkhere and /linkall look for links in the background, with progress in the status line and a cancel", async ({ page }) => {
+  await column(page, "Fixed points");
   await command(page, "/autolink suggest");
   await command(page, "/linkall");
   await page.waitForFunction(() => (globalThis as any).__ie.links.job?.state === "running" && (globalThis as any).__ie.links.job.done > 0);
@@ -201,10 +194,24 @@ test("/linkdoc and /linkall look for links in the background, with progress in t
   const job = await state(page, (s) => s.links.job);
   expect(job.done).toBeLessThan(job.total);
   await expect(page.locator(".status .job")).toHaveCount(0);
-  // A document job runs to the end, and what it found is waiting in the text.
-  await command(page, "/linkdoc");
+  // /linkall scanned the whole library; /linkhere scans the node the reader is on and everything under it.
+  const library = job.total;
+  const recursion = await state(page, (s) => s.focus.node);
+  await command(page, "/linkhere");
+  await page.waitForFunction(() => (globalThis as any).__ie.links.job?.state === "done", undefined, { timeout: 30_000 });
+  await expect(page.locator(".status .message")).toContainText("Looked for links in Recursion without names");
+  const here = await state(page, (s) => s.links.job);
+  expect(here).toMatchObject({ scope: "node", node: recursion });
+  expect(here.total).toBeLessThan(library);
+  // On its top, the whole tree; on the library root, /linkhere is /linkall.
+  await keys(page, "Escape");
+  await jump(page, "Fixed points");
+  await command(page, "/linkhere");
   await page.waitForFunction(() => (globalThis as any).__ie.links.job?.state === "done", undefined, { timeout: 30_000 });
   await expect(page.locator(".status .message")).toContainText("Looked for links in Fixed points");
+  const top = await state(page, (s) => s.links.job);
+  expect(top.total).toBeGreaterThan(here.total);
+  expect(top.total).toBeLessThan(library);
   await page.waitForFunction(() => {
     const s = (globalThis as any).__ie;
     return s.links.under(Object.keys(s.snap.nodes), s.snap).length > 0;

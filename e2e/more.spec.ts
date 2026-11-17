@@ -1,11 +1,9 @@
 /** The mouse, narrow screens, hover previews, hoisting, speculation, orphans, and an outside agent over HTTP. */
 import { expect, test, type Page } from "@playwright/test";
-import { idle, jump, keys, settle, state } from "./helpers";
+import { idle, jump, keys, openPage, settle, state } from "./helpers";
 
-async function open(page: Page) {
-  await page.goto("/doc/infinispand");
-  await page.waitForSelector("article");
-}
+/** The first tree as the page (hoisted), with the library one step out. */
+const open = (page: Page) => openPage(page, "Infinispand");
 
 test.afterEach(({ page }) => settle(page));
 
@@ -60,20 +58,27 @@ test("on a narrow screen a margin note falls into the column", async ({ page }) 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test("hoisting makes one node the whole page; Esc steps out to its document, and from its top to the library", async ({ page }) => {
+test("hoisting makes one node the whole page; Esc at its top steps out to its parent's page, and on up to the library", async ({ page }) => {
   await open(page);
   await jump(page, "Semantic conflicts");
   await page.keyboard.press("z");
   await expect(page.locator("h1")).toHaveText("Semantic conflicts");
-  await expect(page.locator(".crumbs")).toContainText("Versioning and merge");
+  await expect(page.locator(".crumbs")).toHaveText(/^Library › Infinispand › Versioning and merge ›/);
   await expect(page.locator("article > .outline > .node")).toHaveCount(3);
   await page.keyboard.press("Escape");
-  await expect(page.locator("h1")).toHaveText("Infinispand");
-  // The focus stays on the section it stepped out of, now a row; from the document's own top, out again.
+  await expect(page.locator("h1")).toHaveText("Versioning and merge");
+  // The focus stays on the section it stepped out of, now a row; from each page's own top, out again.
   expect(await state(page, (s) => s.snap.nodes[s.focus.node].title)).toBe("Semantic conflicts");
   await page.keyboard.press("O"); // collapse everything: the focus goes to the top
   await page.keyboard.press("Escape");
+  await expect(page.locator("h1")).toHaveText("Infinispand");
+  await page.keyboard.press("O");
+  await page.keyboard.press("Escape");
   await expect(page.locator("h1")).toHaveText("Library");
+  expect(await state(page, (s) => s.snap.nodes[s.focus.node].title)).toBe("Infinispand");
+  await expect(page).toHaveURL(/\/n\/[^/]+$/);
+  // On the root itself, the address is the library's.
+  await page.keyboard.press("O");
   await expect(page).toHaveURL(/\/$/);
 });
 

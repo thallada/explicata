@@ -127,11 +127,11 @@ test("every pane of a crowded column shows at least its tab, above or below the 
   await library(page);
   for (const t of ["Octopus minds", "Infinispand", "The tides", "Fixed points", "What a proof is"]) await open(page, "Library", t);
   // The one looked at near the top: those below it stack at the column's foot.
-  await pane(page, "Infinispand").locator(".top h1").dispatchEvent("click");
+  await pane(page, "Infinispand").locator(".pane-head h2").dispatchEvent("click");
   await still(page);
   for (const first of ["Infinispand", "What a proof is"]) {
     if (first !== "Infinispand") {
-      await pane(page, first).locator(".top h1").dispatchEvent("click");
+      await pane(page, first).locator(".pane-head h2").dispatchEvent("click");
       await still(page);
     }
     const shown = await page.evaluate(() => {
@@ -141,7 +141,7 @@ test("every pane of a crowded column shows at least its tab, above or below the 
       return ps.map((p, i) => {
         const r = p.getBoundingClientRect();
         const next = ps[i + 1]?.getBoundingClientRect().top ?? Infinity;
-        return { t: p.querySelector(".top h1")?.textContent?.trim(), shown: Math.min(next, c.bottom) - Math.max(r.top, c.top) };
+        return { t: p.querySelector(".pane-head h2, .top h1")?.textContent?.trim(), shown: Math.min(next, c.bottom) - Math.max(r.top, c.top) };
       });
     });
     for (const s of shown) expect(s.shown, `${first} looked at: ${s.t}`).toBeGreaterThanOrEqual(TAB - 1);
@@ -189,7 +189,7 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
         const top = Math.max(r.top, c.top);
         const bottom = Math.min(r.bottom, next, c.bottom);
         // A point on what shows of it, clear of the pin and x.
-        return { cut: bottom - top < Math.min(need, c.height) - 4, x: Math.max(r.left, c.left) + 14, y: top + Math.min(14, (bottom - top) / 2), colH: c.height, need, title: el.querySelector(".top h1")?.textContent?.trim() };
+        return { cut: bottom - top < Math.min(need, c.height) - 4, x: Math.max(r.left, c.left) + 14, y: top + Math.min(14, (bottom - top) / 2), colH: c.height, need, title: el.querySelector(".pane-head h2, .top h1")?.textContent?.trim() };
       });
       if (!info.cut && !across) continue;
       await page.mouse.move(info.x, info.y);
@@ -217,14 +217,14 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
     return peeked;
   };
   // Covered from below (the one looked at near the top) and from above (near the foot).
-  await pane(page, "Infinispand").locator(".top h1").dispatchEvent("click");
+  await pane(page, "Infinispand").locator(".pane-head h2").dispatchEvent("click");
   await still(page);
   expect(await sweep("top looked at", false)).toBeGreaterThan(0);
-  await pane(page, "Octopus minds").locator(".top h1").dispatchEvent("click");
+  await pane(page, "Octopus minds").locator(".pane-head h2").dispatchEvent("click");
   await still(page);
   expect(await sweep("foot looked at", false)).toBeGreaterThan(0);
   // Beside a pinned pane.
-  await pane(page, "The tides").locator(".top h1").dispatchEvent("click");
+  await pane(page, "The tides").locator(".pane-head h2").dispatchEvent("click");
   await keys(page, "P");
   await still(page);
   expect(await sweep("beside a pinned one", false)).toBeGreaterThan(0);
@@ -243,7 +243,7 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
   await library(page);
   await open(page, "Library", "Infinispand");
   await open(page, "Library", "Octopus minds");
-  await pane(page, "Octopus minds").locator(".top h1").dispatchEvent("click");
+  await pane(page, "Octopus minds").locator(".pane-head h2").dispatchEvent("click");
   await still(page);
   expect(await page.locator(".strip > .col").nth(1).evaluate((c) => c.classList.contains("crowded"))).toBe(false);
   expect(await sweep("by share", false)).toBeGreaterThan(0);
