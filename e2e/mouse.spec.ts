@@ -142,7 +142,7 @@ test("the ⋯ menus: a row's, the page's, a note's, a stale flag's", async ({ pa
   await expect(menu(page)).toHaveCount(0);
   await expect(page.locator(".title-editor")).toBeFocused();
   await keys(page, "Escape");
-  // The page's ⋯, in its byline: the document's items too. Esc closes it and the focus goes back to the ⋯.
+  // The page's ⋯, in its byline: the node's items too. Esc closes it and the focus goes back to the ⋯.
   const pageMore = page.locator(".top .byline .more");
   await page.locator(".top").hover();
   await pageMore.click();
@@ -236,13 +236,13 @@ test("the menu's keys: ↑ ↓ Home End move, Enter runs, Esc closes and gives t
   await expect(menu(page)).toBeVisible();
   const focused = () => page.evaluate(() => document.activeElement?.querySelector(".lbl")?.textContent ?? document.activeElement?.textContent);
   await keys(page, "ArrowDown");
-  expect(await focused()).toBe("Jump to a section…");
+  expect(await focused()).toBe("Libraries…");
   await keys(page, "ArrowDown");
-  expect(await focused()).toBe("History and branches");
+  expect(await focused()).toBe("Jump to a section…");
   await keys(page, "ArrowUp ArrowUp");
   expect(await focused()).toBe("Keys and help");
   await keys(page, "Home");
-  expect(await focused()).toBe("Jump to a section…");
+  expect(await focused()).toBe("Libraries…");
   await keys(page, "End Enter");
   await expect(menu(page)).toHaveCount(0);
   await expect(page.locator(".help")).toBeVisible();
