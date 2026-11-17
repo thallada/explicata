@@ -22,8 +22,18 @@ async function still(page: Page) {
   await frames(page);
 }
 async function open(page: Page, inPane: string | RegExp, text: string | RegExp, sel = ".row") {
-  await pane(page, inPane).locator(sel, { hasText: text }).first().dispatchEvent("click");
+  // A row by its exact title (the shared library has documents whose titles start the same).
+  const it = sel === ".row" && typeof text === "string" ? pane(page, inPane).locator(".row", { has: page.locator(`.title:text-is("${text}")`) }) : pane(page, inPane).locator(sel, { hasText: text });
+  await it.first().dispatchEvent("click");
   await still(page);
+}
+/** Open the nth row of a pane's own outline; returns its title. */
+async function openNth(page: Page, inPane: string, n: number): Promise<string> {
+  const row = pane(page, inPane).locator(":scope > .pane-scroll > .pane-body > .outline > li > .row").nth(n);
+  const title = (await row.locator(".title").first().textContent())!.trim();
+  await row.dispatchEvent("click");
+  await still(page);
+  return title;
 }
 async function library(page: Page) {
   await autoLayout(page);
@@ -42,9 +52,10 @@ async function forest(page: Page) {
   await open(page, "Expansion by depth", "Levels of a node");
   await open(page, "Expansion by depth", "Generation on demand");
   await open(page, "Library", "The tides");
-  await open(page, "The tides", "The force");
-  await open(page, "The force", "Why two bulges");
-  await open(page, "The force", "Why the Moon beats the Sun");
+  // (By their places, not their titles: other tests rename sections of the shared library.)
+  const sec = await openNth(page, "The tides", 1);
+  await openNth(page, sec, 0);
+  await openNth(page, sec, 1);
   await pane(page, "Generation on demand").locator(".pane-head h2").dispatchEvent("click");
   await still(page);
 }

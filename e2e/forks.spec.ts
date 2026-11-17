@@ -294,10 +294,11 @@ test("a curve per open edge, from where each pane was opened to its title; it fo
     expect(p.y).toBeLessThan(r.y + r.height + slack);
   };
   await nearIn(kinds.locator(".lnk", { hasText: "Eukaryotes" }), edge("Two kinds of cell", "Eukaryote")[0].a);
-  // From words, the curve starts at the right end of their underline (a short step joins it to the lead-out in the gap below).
+  // From words, the curve starts with their underline (it draws it, from their left), then a short step down to the lead-out in the gap below.
   const link = (await kinds.locator(".lnk", { hasText: "Eukaryotes" }).first().boundingBox())!;
   const start = edge("Two kinds of cell", "Eukaryote")[0].a;
-  expect(Math.abs(start.x - (link.x + link.width))).toBeLessThan(2);
+  // (It starts with the link's underline, which it draws, from the link's left.)
+  expect(Math.abs(start.x - link.x)).toBeLessThan(2);
   expect(start.y).toBeGreaterThan(link.y + link.height - 9);
   expect(start.y).toBeLessThan(link.y + link.height);
   await nearIn(kinds.locator(".node.forked > .row", { hasText: "Simple cells" }), edge("Two kinds of cell", "Simple cells")[0].a);
