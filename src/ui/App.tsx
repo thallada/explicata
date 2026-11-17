@@ -10,10 +10,10 @@ import { LinkCard, LinkPicker, LinksPanel, NodeBacklinks, NodeRelated, TargetRow
 import { NodeBody, Outline, PendingSections, TopMatter } from "./Node";
 import { Panes } from "./Panes";
 import { PaneMap, Trail } from "./Pages";
-import { PANES_MIN_WIDTH, store, type Aux, type WRow } from "./store";
+import { PANES_MIN_WIDTH, store, type Aux } from "./store";
 import { WikiPage, WikiView } from "./Wiki";
 import { Usage } from "./Usage";
-import { FirstRun, Hints, Key, MenuHost, SelBar, closeMenu, hideBar, locate, locateIn, menuAt, menuShown, setCard, setPrompt, showBar, touch, type Hint } from "./Mouse";
+import { FirstRun, Hints, Key, MenuHost, SelBar, closeMenu, dragged, hideBar, locate, locateIn, menuAt, pointedPane, setCard, setPrompt, showBar, touch, wtextRow, type Hint } from "./Mouse";
 import { press } from "./press";
 
 function Page() {
@@ -45,7 +45,7 @@ function ConflictCard({ c, selected }: { c: Conflict; selected: boolean }) {
   const kind = { "edit-edit": "both sides rewrote this", "edit-delete": "edited on one side, deleted on the other", contradiction: "contradicts another node" }[c.type];
   const other = c.other && store.snap.nodes[c.other] ? label(store.snap, c.other) : null;
   return (
-    <div class={`item conflict ${c.status}${selected ? " selected" : ""}`} data-conflict={c.id}>
+    <div class={`item conflict ${c.status}${selected ? " selected" : ""}`}>
       <div class="line">
         <b>{c.title || "(untitled)"}</b>
         <span class="chip">{c.status}</span>
@@ -95,14 +95,13 @@ function HistoryPanel({ verdict }: { verdict: string }) {
     ref.current?.querySelector(".selected")?.scrollIntoView({ block: "nearest" });
   });
   const heads = new Set<string>();
-  let lastType = "";
   const live = store.doc.snap();
   const filter = store.historyFilter && live.nodes[store.historyFilter] ? store.historyFilter : null;
   const onRoot = isLibraryRoot(live, store.activeNode);
   return (
     <aside class="panel" ref={ref}>
       <div class="panel-head">
-        <span>History{filter ? ` · ${clip(label(store.doc.snap(), filter), 30)}` : " · the library"}</span>
+        <span>History{filter ? ` · ${clip(label(live, filter), 30)}` : " · the library"}</span>
         <span class="keys">
           <Hints hint={["j k", ["Enter", "view"], ["r", `revert ${onRoot ? "the library" : "this node"}`], ["n", "branch"], ["m", "merge"], ["f", filter ? "everything" : "this node"], ["v", "verify"], ["Escape", "close"]]} />
         </span>
@@ -110,8 +109,7 @@ function HistoryPanel({ verdict }: { verdict: string }) {
       {verdict && <div class="verdict">{verdict}</div>}
       {items.map((it, i) => {
         const selected = i === store.historyIndex;
-        const head = it.type !== lastType && !heads.has(it.type) ? ({ conflict: "Conflicts", branch: "Branches", commit: "Commits" } as const)[it.type] : null;
-        lastType = it.type;
+        const head = !heads.has(it.type) ? ({ conflict: "Conflicts", branch: "Branches", commit: "Commits" } as const)[it.type] : null;
         heads.add(it.type);
         const pick = () => {
           store.historyIndex = i;
@@ -258,7 +256,6 @@ function Jump({ move }: { move?: boolean }) {
 function CommandBar({ prefill }: { prefill: string }) {
   const f = store.focus;
   const snap = store.snap;
-  const n = snap.nodes[f.node];
   const words = store.selectedText();
   const about = words !== null ? `ask about “${clip(plain(words), 48)}”` : `tell the editor · ${clip(label(snap, f.node), 40)}`;
   return (
@@ -311,7 +308,7 @@ function Popup() {
   const snap = store.snap;
   if (!p || !snap.nodes[p.note] || store.open.has(p.note)) return null;
   return (
-    <div class="popup" style={place(p.x, p.top, p.bottom)} data-popup={p.note}>
+    <div class="popup" style={place(p.x, p.top, p.bottom)}>
       <PopupBody note={p.note} />
     </div>
   );
@@ -338,7 +335,7 @@ function FocusPopup() {
   });
   if (!note || !n?.ref || store.open.has(note)) return null;
   return (
-    <div class="popup focus-popup" ref={ref} data-popup={note} style={{ visibility: "hidden" }}>
+    <div class="popup focus-popup" ref={ref} style={{ visibility: "hidden" }}>
       <PopupBody note={note} />
     </div>
   );
@@ -373,7 +370,7 @@ function AgentPanel() {
           {run.sources.map((s, i) => (
             <span key={s.url}>
               {i ? " · " : ""}
-              <a href={s.url} target="_blank" rel="noopener noreferrer" data-source={s.url}>
+              <a href={s.url} target="_blank" rel="noopener noreferrer">
                 {s.title || hostOf(s.url)}
               </a>{" "}
               <span class="agent-host">{hostOf(s.url)}</span>
@@ -442,7 +439,7 @@ function StatusLine() {
         : [];
   return (
     <footer class="status">
-      <span class={`grain ${lp ? "aux" : store.aux ? "aux" : f.grain}`}>{lp ? "libraries" : store.preview ? "history" : store.mode === "review" ? "review" : store.aux ? (store.aux.kind === "wiki" ? "article" : store.aux.kind === "back" ? "linked" : "target") : f.grain}</span>
+      <span class={`grain ${lp || store.aux ? "aux" : f.grain}`}>{lp ? "libraries" : store.preview ? "history" : store.mode === "review" ? "review" : store.aux ? (store.aux.kind === "wiki" ? "article" : store.aux.kind === "back" ? "linked" : "target") : f.grain}</span>
       <span class="path">{path}</span>
       <span class="message">{libsHint ? <Hints hint={libsHint} /> : reviewing ? <Hints hint={reviewing} /> : store.status || (hint.length ? <Hints hint={hint} /> : <FirstRun />)}</span>
       <span class="right">
@@ -486,10 +483,11 @@ export function App() {
   useEffect(() => store.subscribe(() => tick(0)), []);
 
   useEffect(() => {
-    setPrompt((text) => {
+    const openCommand = (text = "") => {
       setPrefill(text);
       store.setMode("command");
-    });
+    };
+    setPrompt(openCommand);
     // A long press on a link (touch) shows what it opens above its menu.
     setCard((note) => <PopupBody note={note} />);
     const onKey = (e: KeyboardEvent) => {
@@ -502,17 +500,11 @@ export function App() {
       // The keys take over from the pointer: its bar and menu go (not for a modifier, or the copy key).
       if (!e.ctrlKey && !e.metaKey && !e.altKey && !["Shift", "Control", "Alt", "Meta"].includes(e.key)) {
         hideBar();
-        if (menuShown()) closeMenu(false);
+        closeMenu(false);
       }
-      if (store.popup) {
-        store.popup = null;
-        store.emit(store.top);
-      }
+      dropPopup();
       handleKey(e, {
-        openCommand(text = "") {
-          setPrefill(text);
-          store.setMode("command");
-        },
+        openCommand,
         verify() {
           const t = performance.now();
           const v = verifyHistory(store.doc);
@@ -619,18 +611,13 @@ export function App() {
     // A pane's × and pin act on that pane, wherever the focus is.
     const ctl = target.closest<HTMLElement>("[data-close], [data-pin]");
     if (ctl) return ctl.dataset.close ? store.closePane(Number(ctl.dataset.close)) : store.togglePanePin(Number(ctl.dataset.pin));
-    const paneEl = target.closest<HTMLElement>("[data-pane-index]");
-    const paneIndex = paneEl ? Number(paneEl.dataset.paneIndex) : store.paneAt;
+    const { paneEl, paneIndex, tid, host } = pointedPane(target);
     // A pane in another fork: that fork becomes the focused branch first, then the click does what it would there.
-    const tid = paneEl ? Number(paneEl.dataset.tid) : undefined;
     if (tid !== undefined && store.branchNodes[paneIndex]?.id !== tid) store.enterFork(tid);
     // A covered pane's spine brings that pane back by focusing it.
     const spine = target.closest<HTMLElement>("[data-spine]");
     if (spine) return store.land(Number(spine.dataset.spine));
     // Article text: a link to another article opens it next; a link out leaves in a new tab (the HTML says so); nothing else navigates.
-    const named = target.closest<HTMLElement>("[data-host]")?.dataset.host;
-    // An article pane off the branch is named by its place in the tree; on the branch, by its column.
-    const host = named?.startsWith("f") ? `p${paneIndex}` : named;
     const a = target.closest<HTMLAnchorElement>("a");
     if (a && host) {
       if (a.dataset.wiki) {
@@ -677,7 +664,7 @@ export function App() {
     const wtext = target.closest<HTMLElement>("[data-wtext]");
     if (host && wtext && !target.closest("[data-node]")) {
       store.paneAt = paneIndex;
-      const row = (wtext.dataset.wtext === "head" ? { t: "head" } : { t: "sec", id: Number(wtext.dataset.wtext) }) as WRow;
+      const row = wtextRow(wtext);
       const at = (n: Node | null, o: number) => (n && wtext.contains(n) ? locateIn(n, o) : null);
       const a = selection && !selection.isCollapsed ? at(selection.anchorNode, selection.anchorOffset) : null;
       const b = selection && !selection.isCollapsed ? at(selection.focusNode, selection.focusOffset) : null;
@@ -693,14 +680,11 @@ export function App() {
       return;
     }
     // A drag selection inside one body becomes the focus range.
-    if (selection && !selection.isCollapsed && !store.replacing) {
-      const a = locate(selection.anchorNode, selection.anchorOffset);
-      const b = locate(selection.focusNode, selection.focusOffset);
-      if (a && b && a.id === b.id && a.at !== b.at) {
-        store.go(a.id, "word", [Math.min(a.at, b.at), Math.max(a.at, b.at)]);
-        selection.removeAllRanges();
-        return showBar();
-      }
+    const d = store.replacing ? null : dragged(selection);
+    if (d) {
+      store.go(d.id, "word", d.range);
+      selection!.removeAllRanges();
+      return showBar();
     }
     const anchor = target.closest<HTMLElement>("[data-note]");
     if (anchor?.dataset.note) {

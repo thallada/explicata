@@ -12,7 +12,7 @@ import { createPortal } from "preact/compat";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { isLibraryRoot, label, staleness, topOf, type NodeId } from "../core/model";
 import { plain } from "../core/text";
-import { articleRowEntries, barItems, nodeEntries, pageAct, paneEntries, selectionEntries, topEntries, type Entry, type Item, type NodeCtx, type SelCtx } from "./actions";
+import { articleRowEntries, barItems, nodeEntries, paneEntries, selectionEntries, type Act, type Entry, type Item, type NodeCtx, type SelCtx } from "./actions";
 import { press } from "./press";
 import { store, type WRow } from "./store";
 
@@ -33,6 +33,29 @@ export function locate(node: Node | null, offset: number): { id: NodeId; at: num
   if (!piece || !body) return null;
   return { id: body.dataset.body as NodeId, at: Number(piece.dataset.o) + (node instanceof Text ? offset : 0) };
 }
+
+/** Words dragged over inside one body, as its node and the range. */
+export function dragged(sel: Selection | null): { id: NodeId; range: [number, number] } | null {
+  if (!sel || sel.isCollapsed) return null;
+  const a = locate(sel.anchorNode, sel.anchorOffset);
+  const b = locate(sel.focusNode, sel.focusOffset);
+  return a && b && a.id === b.id && a.at !== b.at ? { id: a.id, range: [Math.min(a.at, b.at), Math.max(a.at, b.at)] } : null;
+}
+
+/**
+ * The pane a pointer is in (else the active one), and the article host it is in: an article pane
+ * off the branch is named by its place in the tree; on the branch, by its column.
+ */
+export function pointedPane(target: HTMLElement) {
+  const paneEl = target.closest<HTMLElement>("[data-pane-index]");
+  const paneIndex = paneEl ? Number(paneEl.dataset.paneIndex) : store.paneAt;
+  const tid = paneEl ? Number(paneEl.dataset.tid) : undefined;
+  const named = target.closest<HTMLElement>("[data-host]")?.dataset.host;
+  return { paneEl, paneIndex, tid, host: named?.startsWith("f") ? `p${paneIndex}` : named };
+}
+
+/** The row of an article's text an element is in: its head or a section. */
+export const wtextRow = (wtext: HTMLElement) => (wtext.dataset.wtext === "head" ? { t: "head" } : { t: "sec", id: Number(wtext.dataset.wtext) }) as WRow;
 
 /** The text position under a point. */
 function caretAt(x: number, y: number): { node: Node; offset: number } | null {
@@ -56,7 +79,30 @@ export const setPrompt = (fn: (prefill: string) => void) => (promptHook = fn);
 let cardHook: (note: NodeId) => ComponentChildren = () => null;
 /** What a link's card is drawn with, above a menu on touch (App.tsx: the hover preview's body). */
 export const setCard = (fn: (note: NodeId) => ComponentChildren) => (cardHook = fn);
-export const act = pageAct({ command: (t) => store.command(t), prompt: (p) => promptHook(p) });
+/** The page's own `Act`: keys through the key handler, commands through the command bar's handler. */
+export const act: Act = {
+  press,
+  command: (t) => store.command(t),
+  prompt: (p) => promptHook(p),
+  copy(text) {
+    if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+    else fallbackCopy(text);
+  },
+};
+
+function fallbackCopy(text: string) {
+  const t = document.createElement("textarea");
+  t.value = text;
+  t.style.position = "fixed";
+  t.style.opacity = "0";
+  document.body.appendChild(t);
+  t.select();
+  try {
+    document.execCommand("copy");
+  } finally {
+    t.remove();
+  }
+}
 
 // ---- what is focused, for the menus ----
 
@@ -99,11 +145,11 @@ function selCtx(): SelCtx {
   };
 }
 
-/** Which menu a place asks for: what is focused there, or the pane it is in, or the page's head. */
-export type Where = "auto" | "pane" | "page";
+/** Which menu a place asks for: what is focused there, or the pane it is in. */
+type Where = "auto" | "pane";
 
 /** The menu for what is focused now. */
-export function menuHere(where: Where): Entry[] {
+function menuHere(where: Where): Entry[] {
   if (store.mode !== "normal") return [];
   if (store.selectedText() !== null) return selectionEntries(selCtx(), act);
   const a = store.aux;
@@ -128,38 +174,31 @@ export function menuHere(where: Where): Entry[] {
  * sentence), a row, a note's box, a pane's head or the pane, an article's row or text. Returns
  * which menu to show, or null where the browser's own menu belongs.
  */
-export function focusAt(target: HTMLElement, x: number, y: number): Where | null {
+function focusAt(target: HTMLElement, x: number, y: number): Where | null {
   if (store.mode !== "normal") return null;
   const more = !!target.closest("[data-more]");
-  const paneEl = target.closest<HTMLElement>("[data-pane-index]");
-  const paneIndex = paneEl ? Number(paneEl.dataset.paneIndex) : store.paneAt;
-  const tid = paneEl ? Number(paneEl.dataset.tid) : undefined;
+  const { paneEl, paneIndex, tid, host } = pointedPane(target);
   const intoPane = () => {
     if (!paneEl) return;
     if (tid !== undefined && store.branchNodes[paneIndex]?.id !== tid) store.enterFork(tid);
     store.paneAt = paneIndex;
   };
-  const named = target.closest<HTMLElement>("[data-host]")?.dataset.host;
-  const host = named?.startsWith("f") ? `p${paneIndex}` : named;
   if (!more) {
     // In the selection: keep it.
     if (target.closest(".sel") && store.selectedText() !== null) return "auto";
     // Words dragged over, not yet taken (a long press on a touch screen selects a word this way).
     const sel = window.getSelection();
-    if (sel && !sel.isCollapsed) {
-      const a = locate(sel.anchorNode, sel.anchorOffset);
-      const b = locate(sel.focusNode, sel.focusOffset);
-      if (a && b && a.id === b.id && a.at !== b.at) {
-        intoPane();
-        store.go(a.id, "word", [Math.min(a.at, b.at), Math.max(a.at, b.at)]);
-        sel.removeAllRanges();
-        return "auto";
-      }
+    const d = dragged(sel);
+    if (d) {
+      intoPane();
+      store.go(d.id, "word", d.range);
+      sel!.removeAllRanges();
+      return "auto";
     }
     // An article's text: the sentence there.
     const wtext = target.closest<HTMLElement>("[data-wtext]");
     if (host && wtext && !target.closest("[data-node]")) {
-      const row = (wtext.dataset.wtext === "head" ? { t: "head" } : { t: "sec", id: Number(wtext.dataset.wtext) }) as WRow;
+      const row = wtextRow(wtext);
       const at = caretAt(x, y);
       const o = at && wtext.contains(at.node) ? locateIn(at.node, at.offset) : null;
       if (o === null) return null;
@@ -197,7 +236,7 @@ export function focusAt(target: HTMLElement, x: number, y: number): Where | null
   if (row) {
     intoPane();
     store.go(row.dataset.row as NodeId);
-    return row.closest(".top") ? (paneEl ? "pane" : "page") : "auto";
+    return row.closest(".top") && paneEl ? "pane" : "auto";
   }
   if (host && target.closest(".wiki-head")) {
     intoPane();
@@ -208,7 +247,7 @@ export function focusAt(target: HTMLElement, x: number, y: number): Where | null
   if (node?.dataset.node && store.snap.nodes[node.dataset.node as NodeId]) {
     intoPane();
     store.go(node.dataset.node as NodeId);
-    return node.matches(".pane-head") || (paneEl && node.matches(".top")) ? "pane" : node.matches(".top") ? "page" : "auto";
+    return node.matches(".pane-head") || (paneEl && node.matches(".top")) ? "pane" : "auto";
   }
   if (paneEl && (more || target.closest(".pane-scroll, .pane-ctl"))) {
     intoPane();
@@ -269,18 +308,17 @@ export function closeMenu(refocus = true) {
   else if (document.activeElement?.closest(".menu")) (document.activeElement as HTMLElement).blur();
 }
 
-export const menuShown = () => !!shown;
 
-const KEY_TEXT: Record<string, string> = { Enter: "⏎", Escape: "Esc", ArrowUp: "↑", ArrowDown: "↓" };
+const KEY_TEXT: Record<string, string> = { Enter: "⏎", Escape: "Esc" };
 /** How a key is written beside what it does. */
-export const keyText = (k: string) => KEY_TEXT[k] ?? (k.startsWith("A-") ? `Alt+${k.slice(2)}` : k);
+const keyText = (k: string) => KEY_TEXT[k] ?? (k.startsWith("A-") ? `Alt+${k.slice(2)}` : k);
 
 /**
  * A menu: a small list of text, every item with its key. A popover by the pointer or the button it
  * hangs from; on touch, a sheet from the foot of the screen. ↑ ↓ (and Home End) move, Enter runs,
  * Esc closes and puts the focus back where it was; a press outside closes it too.
  */
-export function Menu({ entries, at, sheet, card, onClose }: { entries: Entry[]; at: Shown["at"]; sheet: boolean; card?: NodeId; onClose: (refocus: boolean) => void }) {
+function Menu({ entries, at, sheet, card, onClose }: { entries: Entry[]; at: Shown["at"]; sheet: boolean; card?: NodeId; onClose: (refocus: boolean) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = ref.current!;
@@ -328,8 +366,7 @@ export function Menu({ entries, at, sheet, card, onClose }: { entries: Entry[]; 
     const all = cells();
     const i = all.indexOf(document.activeElement as HTMLElement);
     const go = (j: number) => (e.preventDefault(), all[(j + all.length) % all.length]?.focus());
-    if (e.key === "Escape") return e.preventDefault(), onClose(true);
-    if (e.key === "Tab") return e.preventDefault(), onClose(true);
+    if (e.key === "Escape" || e.key === "Tab") return e.preventDefault(), onClose(true);
     if (e.key === "ArrowDown" || (e.key === "ArrowRight" && i >= 0 && all[i].closest(".choices"))) return go(i + 1);
     if (e.key === "ArrowUp" || (e.key === "ArrowLeft" && i >= 0 && all[i].closest(".choices"))) return go(i < 0 ? -1 : i - 1);
     if (e.key === "Home") return go(0);
@@ -547,13 +584,13 @@ export function SelBar() {
 export type Hint = (string | [key: string, what: string])[];
 
 /** A key hint that is a button: a click does what the key does. */
-export function Key({ k, what, shift }: { k: string; what: ComponentChildren; shift?: boolean }) {
+export function Key({ k, what }: { k: string; what: ComponentChildren }) {
   return (
-    <button type="button" class="key" data-key={k} title={`${keyText(k)}`} onMouseDown={(e) => e.preventDefault()} onClick={(e) => {
+    <button type="button" class="key" data-key={k} title={keyText(k)} onMouseDown={(e) => e.preventDefault()} onClick={(e) => {
         e.stopPropagation();
         // A box being typed in (the jump box, the command line) gives the key back to the page.
         if ((document.activeElement as HTMLElement | null)?.matches?.("input, textarea")) (document.activeElement as HTMLElement).blur();
-        press(k, shift);
+        press(k);
       }}
     >
       <kbd>{keyText(k)}</kbd>
@@ -611,4 +648,3 @@ export function FirstRun() {
     </span>
   );
 }
-export const isFirstRun = () => firstRun;

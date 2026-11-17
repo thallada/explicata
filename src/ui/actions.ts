@@ -5,8 +5,6 @@
  * have none run a command of the command bar, or copy. Builders are pure: what they need to know
  * about the target comes in a context, and how to act in `Act`, so they can be tested without a page.
  */
-import { press } from "./press";
-
 export interface Item {
   t: "item";
   label: string;
@@ -195,7 +193,7 @@ export function nodeEntries(c: NodeCtx, act: Act): Entry[] {
 
 // ---- a pane ----
 
-export interface PaneCtx {
+interface PaneCtx {
   /** A node's pane: its node; none for an article's. */
   node?: NodeCtx;
   /** An article's pane: its title. */
@@ -283,7 +281,7 @@ export function topEntries(c: TopCtx, act: Act): Entry[] {
 
 // ---- a row of the libraries panel ----
 
-export interface LibCtx {
+interface LibCtx {
   title: string;
   /** The library this page holds. */
   current: boolean;
@@ -301,31 +299,4 @@ export function libraryEntries(c: LibCtx, act: Act): Entry[] {
     SEP,
     key(act, "New library…", "n"),
   ]);
-}
-
-/** The page's own `Act`: keys through the key handler, commands through the command bar's handler. */
-export function pageAct(hooks: { command(text: string): void; prompt(prefill: string): void }): Act {
-  return {
-    press,
-    command: hooks.command,
-    prompt: hooks.prompt,
-    copy(text) {
-      if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
-      else fallbackCopy(text);
-    },
-  };
-}
-
-function fallbackCopy(text: string) {
-  const t = document.createElement("textarea");
-  t.value = text;
-  t.style.position = "fixed";
-  t.style.opacity = "0";
-  document.body.appendChild(t);
-  t.select();
-  try {
-    document.execCommand("copy");
-  } finally {
-    t.remove();
-  }
 }

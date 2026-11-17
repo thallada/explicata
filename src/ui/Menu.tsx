@@ -5,7 +5,7 @@
 import { useLayoutEffect, useRef } from "preact/hooks";
 import { libraryEntries, topEntries } from "./actions";
 import { nodeCount } from "./libraries";
-import { Hints, Key, act, showMenu, type Hint } from "./Mouse";
+import { Hints, Key, act, showMenu } from "./Mouse";
 import { press } from "./press";
 import { store } from "./store";
 
@@ -21,7 +21,6 @@ const SAVE_TITLE = {
   deleted: "The server no longer has this library: it was deleted, and its files moved aside. Open another from the libraries (m).",
 };
 
-
 export function DocBar() {
   const state = store.saveState();
   const snap = store.snap;
@@ -30,7 +29,6 @@ export function DocBar() {
       <button
         type="button"
         class="tool lib-name"
-        data-libs-trigger
         aria-haspopup="dialog"
         aria-expanded={store.libs ? "true" : "false"}
         title="The libraries: open, make, rename or delete one (m)"
@@ -126,13 +124,12 @@ export function LibrariesPanel() {
     if (!l) return;
     showMenu(libraryEntries({ title: l.title, current: id === store.library && !store.gone, last: only }, act), at);
   };
-  const head: Hint = [["n", "new"], ["Escape", "close"]];
   return (
     <aside class="panel left libraries" ref={ref} data-libraries data-loading={p.loading ? "1" : undefined} aria-label="Libraries">
       <div class="panel-head">
         <span>Libraries{p.loading ? " …" : ""}</span>
         <span class="keys">
-          <Hints hint={head} />
+          <Hints hint={[["n", "new"], ["Escape", "close"]]} />
         </span>
       </div>
       {store.gone && <div class="verdict lib-gone">This library was deleted on the server, and its files moved aside; what was edited here since is not saved. Open another:</div>}
@@ -189,7 +186,7 @@ export function LibrariesPanel() {
         })}
         {!rows.length && <p class="lempty">{p.loading ? "Asking the server…" : "No other library."}</p>}
         {p.edit?.kind === "new" ? (
-          <div class="item lib-row lib-new selected">
+          <div class="item lib-row selected">
             <div class="line">
               <span class="lib-mark">+</span>
               <NameBox initial="" />

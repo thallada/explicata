@@ -22,7 +22,8 @@ export const HELP: [string, [string, string][]][] = [
       ["Alt+h Alt+l", "in panes: the pane this one was opened from (left) / one opened from it (right): the one opened from the focused row or link if it is open, else the one last visited; from a node, a selection or an article alike. Left then right comes back"],
       ["Alt+k Alt+j", "in panes: the pane above / below in the same column, across forks (Alt+↑ ↓ and [ ] too)"],
       ["Alt+Shift+k j", "in panes: move the active pane up / down its column, as dragging it by its grip or tab does (Alt+Shift+↑ ↓ too; the pane's ⋯ menu offers the same)"],
-      ["[ ]", "in panes: the pane above / below in the same column (back where you were in it, or at its head); at the top or bottom nothing moves. A crowded column stacks its panes as the strip stacks columns, covered to a tab; resting the mouse on a covered pane peeks it out; its grip or tab drags it up or down. A faint curve runs from where each pane was opened to its title"],    ],
+      ["[ ]", "in panes: the pane above / below in the same column (back where you were in it, or at its head); at the top or bottom nothing moves. A crowded column stacks its panes as the strip stacks columns, covered to a tab; resting the mouse on a covered pane peeks it out; its grip or tab drags it up or down. A faint curve runs from where each pane was opened to its title"],
+    ],
   ],
   [
     "Mouse and touch",

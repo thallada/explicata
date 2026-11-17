@@ -126,7 +126,7 @@ function windowLine(w: PlanWindow, now: Date): string {
 }
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-export interface UsageView {
+interface UsageView {
   plan: { text: string; title: string; attn: boolean; limited: boolean } | null;
   session: { text: string; title: string; calls: number } | null;
 }
