@@ -1,7 +1,7 @@
 /** The panes view's forest of forks (src/ui/forks.ts): each operation, and any sequence of them leaving a well-formed forest with one focused branch and one active pane. */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { HUES, all, besideInColumn, close, columns, find, focus, focused, load, open, path, pin, plain, prune, reorder, restore, save, valid, withBranch, type Forest, type Tree } from "../src/ui/forks";
+import { HUES, all, besideInColumn, close, columns, find, focus, focused, load, open, path, pin, plain, prune, reorder, restore, save, setSources, valid, withBranch, type Forest, type Tree } from "../src/ui/forks";
 
 type F = Forest<string>;
 type T = Tree<string>;
@@ -373,5 +373,46 @@ describe("branch colours", () => {
     // A colour out of the palette is not trusted.
     expect(load({ ref: "a", hue: HUES }, isStr)!.hue).toBeUndefined();
     expect(load({ ref: "a", hue: 1.5 }, isStr)!.hue).toBeUndefined();
+  });
+});
+
+describe("column order", () => {
+  const col = (f: F, c: number) => columns(f).get(c)!.map((x) => x.node.ref);
+  it("a column's panes stand by their parents' places, then by where in the parent each was opened from", () => {
+    let f: F = plain(["lib"]);
+    f = open(f, 0, "octopus", true, same);
+    f = open(focus(f, f.trees[0].id), 0, "expand", true, same);
+    expect(col(f, 1)).toEqual(["octopus", "expand"]); // not measured yet: in tree order
+    f = setSources(f, new Map([[idOf(f, "octopus"), 40], [idOf(f, "expand"), 10]]));
+    expect(col(f, 1)).toEqual(["expand", "octopus"]);
+    // Their children follow their parents' order, then their own sources.
+    f = open(focus(f, idOf(f, "octopus")), 1, "o1", true, same);
+    f = open(focus(f, idOf(f, "expand")), 1, "e2", true, same);
+    f = open(focus(f, idOf(f, "expand")), 1, "e1", true, same);
+    f = setSources(f, new Map([[idOf(f, "o1"), 5], [idOf(f, "e2"), 90], [idOf(f, "e1"), 20]]));
+    expect(col(f, 2)).toEqual(["e1", "e2", "o1"]);
+    // Stored with the view.
+    const isStr = (r: unknown): r is string => typeof r === "string";
+    const back = restore<string, unknown>(JSON.parse(JSON.stringify({ forest: f.trees.map((t) => save(t, (r) => r)), at: f.at, hues: f.hues })), isStr);
+    expect(col(back, 2)).toEqual(["e1", "e2", "o1"]);
+  });
+
+  it("an order set by hand stays; a pane never placed by hand goes just after the one before it in its own order", () => {
+    let f: F = plain(["lib"]);
+    for (const [r, y] of [["a", 10], ["b", 20], ["c", 30]] as const) {
+      f = open(focus(f, f.trees[0].id), 0, r, true, same);
+      f = setSources(f, new Map([[idOf(f, r), y]]));
+    }
+    expect(col(f, 1)).toEqual(["a", "b", "c"]);
+    f = reorder(f, idOf(f, "c"), idOf(f, "a"));
+    expect(col(f, 1)).toEqual(["c", "a", "b"]);
+    // A new one opened from between a and b: just after a, where the reader put a.
+    f = open(focus(f, f.trees[0].id), 0, "ab", true, same);
+    f = setSources(f, new Map([[idOf(f, "ab"), 15]]));
+    expect(col(f, 1)).toEqual(["c", "a", "ab", "b"]);
+    // One from above all: first.
+    f = open(focus(f, f.trees[0].id), 0, "top", true, same);
+    f = setSources(f, new Map([[idOf(f, "top"), 1]]));
+    expect(col(f, 1)).toEqual(["top", "c", "a", "ab", "b"]);
   });
 });

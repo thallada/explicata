@@ -38,6 +38,8 @@ export interface Tree<R, S = unknown> {
   rank?: number;
   /** Its branch's colour, 0 to HUES − 1; none on the first tree's root trail. Kept for the pane's life. */
   hue?: number;
+  /** Where in its parent pane it was opened from: the source's place down that pane's text (set by the page once it is drawn). */
+  src?: number;
 }
 
 /** The trees, the first starting at the top node; `at` is the one the focused branch is in. */
@@ -151,19 +153,37 @@ export function all<R, S>(f: Forest<R, S>): Placed<R, S>[] {
 }
 
 /**
- * The panes of each column, top to bottom: in the order the reader has put them in (by rank), then
- * those never placed by hand, in tree order (tree by tree, depth first, earlier forks first).
+ * The panes of each column, top to bottom. Their own order: by where their parents stand in the
+ * column before (an orphan's root after those, in tree order), then by where in the parent each was
+ * opened from (its source's place down the parent's text), then in tree order. So a pane opened
+ * from higher up stands higher, and curves cross as little as they can. Panes the reader has put in
+ * an order by hand (ranked, by dragging) keep it; a pane never placed by hand goes just after the
+ * pane before it in its own order (or first, if none is before it).
  */
 export function columns<R, S>(f: Forest<R, S>): Map<number, Placed<R, S>[]> {
-  const out = new Map<number, Placed<R, S>[]>();
-  for (const x of all(f)) {
-    const c = out.get(x.col);
+  const byCol = new Map<number, Placed<R, S>[]>();
+  const tree = new Map<Placed<R, S>, number>();
+  all(f).forEach((x, i) => {
+    tree.set(x, i);
+    const c = byCol.get(x.col);
     if (c) c.push(x);
-    else out.set(x.col, [x]);
-  }
-  for (const c of out.values()) {
-    const at = new Map(c.map((x, i) => [x, i]));
-    c.sort((a, b) => (a.node.rank ?? Infinity) - (b.node.rank ?? Infinity) || at.get(a)! - at.get(b)!);
+    else byCol.set(x.col, [x]);
+  });
+  const out = new Map<number, Placed<R, S>[]>();
+  /** Each pane's place in its column, as columns are ordered left to right. */
+  const place = new Map<number, number>();
+  for (const col of [...byCol.keys()].sort((a, b) => a - b)) {
+    const c = byCol.get(col)!;
+    const parentAt = (x: Placed<R, S>) => (x.parent ? (place.get(x.parent.id) ?? Infinity) : Infinity);
+    const natural = c.slice().sort((a, b) => parentAt(a) - parentAt(b) || (a.node.src ?? Infinity) - (b.node.src ?? Infinity) || tree.get(a)! - tree.get(b)!);
+    const order = natural.filter((x) => x.node.rank !== undefined).sort((a, b) => a.node.rank! - b.node.rank! || tree.get(a)! - tree.get(b)!);
+    natural.forEach((x, i) => {
+      if (x.node.rank !== undefined) return;
+      const before = i > 0 ? order.indexOf(natural[i - 1]) : -1;
+      order.splice(before + 1, 0, x);
+    });
+    order.forEach((x, i) => place.set(x.node.id, i));
+    out.set(col, order);
   }
   return out;
 }
@@ -304,6 +324,13 @@ export function close<R, S>(f: Forest<R, S>, id: number, active: number): { fore
   return { forest: focus(g, still), active: still };
 }
 
+/** Record where panes were opened from in their parents (by id), as the page measures it. */
+export function setSources<R, S>(f: Forest<R, S>, srcs: Map<number, number>): Forest<R, S> {
+  let g = f;
+  for (const [id, v] of srcs) g = updateIn(g, id, (n) => (n.src === v ? n : { ...n, src: v }));
+  return g;
+}
+
 /** Pin or unpin a pane. */
 export const pin = <R, S>(f: Forest<R, S>, id: number, on: boolean): Forest<R, S> => updateIn(f, id, (n) => (!!n.pinned === on ? n : { ...n, pinned: on || undefined }));
 
@@ -403,6 +430,7 @@ export interface Saved<R> {
   col?: number;
   rank?: number;
   hue?: number;
+  src?: number;
 }
 
 export function save<R, S, O>(t: Tree<R, S>, ref: (r: R) => O): Saved<O> {
@@ -413,6 +441,7 @@ export function save<R, S, O>(t: Tree<R, S>, ref: (r: R) => O): Saved<O> {
   if (t.col) out.col = t.col;
   if (t.rank !== undefined) out.rank = t.rank;
   if (t.hue !== undefined) out.hue = t.hue;
+  if (t.src !== undefined) out.src = t.src;
   return out;
 }
 
@@ -427,6 +456,7 @@ export function load<R, S>(o: unknown, ok: (r: unknown) => r is R): Tree<R, S> |
   if (typeof s.col === "number" && s.col >= 1) t.col = Math.floor(s.col);
   if (typeof s.rank === "number" && Number.isFinite(s.rank)) t.rank = s.rank;
   if (typeof s.hue === "number" && Number.isInteger(s.hue) && s.hue >= 0 && s.hue < HUES) t.hue = s.hue;
+  if (typeof s.src === "number" && Number.isFinite(s.src)) t.src = s.src;
   return t;
 }
 
