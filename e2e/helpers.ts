@@ -179,7 +179,7 @@ export const curveFaults = (page: Page) =>
     const svg = document.querySelector<SVGSVGElement>(".curves")!.getBoundingClientRect();
     const box = { left: Math.round(svg.left), top: Math.round(svg.top) };
     const placed = new Map<number, any>(ie.panesPlaced.map((x: any) => [x.node.id, x]));
-    for (const p of document.querySelectorAll<SVGPathElement>(".curves path:not(.foot)")) {
+    for (const p of document.querySelectorAll<SVGPathElement>(".curves path:not(.foot):not(.frame)")) {
       const to = Number(p.dataset.to);
       const from = Number(p.dataset.from);
       const ce = document.querySelector<HTMLElement>(`.pane[data-tid="${to}"]`);

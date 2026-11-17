@@ -136,12 +136,16 @@ test("the selection bar is over the curves and under a pane peeking over it; cur
   await noFaults(page, "with the bar (its place clear of the curves)");
   const z = await page.evaluate(() => ({ curves: Number(getComputedStyle(document.querySelector(".curves")!).zIndex), peek: 6 }));
   expect(z.curves).toBeGreaterThan(z.peek);
-  // The active pane: its other edges in the strong ink too.
+  // The active pane: the heavy rule on top, its other edges in the strong ink (drawn with the curves, along its left, foot and right).
   const frame = await page.locator(".pane.active").evaluate((el) => {
-    const a = getComputedStyle(el, "::after");
-    return { top: a.borderTopWidth, left: a.borderLeftWidth, right: a.borderRightWidth, bottom: a.borderBottomWidth, same: a.borderLeftColor === a.borderRightColor && a.borderRightColor === a.borderBottomColor, notRule: a.borderLeftColor !== getComputedStyle(el).borderRightColor };
+    const r = el.getBoundingClientRect();
+    const f = document.querySelector<SVGPathElement>(".curves path.frame");
+    if (!f) return null;
+    const a = f.getPointAtLength(0);
+    const b = f.getPointAtLength(f.getTotalLength());
+    return { rule: getComputedStyle(el, "::after").height, left: Math.abs(a.x - r.left) < 1.5, right: Math.abs(b.x - r.right) < 1.5, stroke: getComputedStyle(f).stroke !== getComputedStyle(el).borderRightColor };
   });
-  expect(frame).toEqual({ top: "3px", left: "1px", right: "1px", bottom: "1px", same: true, notRule: true });
+  expect(frame).toEqual({ rule: "3px", left: true, right: true, stroke: true });
 });
 
 test("a menu's button closes the menu it opened: the top bar's, and a pane's ⋯", async ({ page }) => {

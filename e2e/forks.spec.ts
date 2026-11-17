@@ -375,7 +375,7 @@ test("each fork has a colour, shared by its curve and the rule under its title; 
   expect((await curve("Simple cells")).stroke).not.toBe((await curve("Complex cells")).stroke);
   expect((await curve("Simple cells")).stroke).not.toBe((await curve("Eukaryote")).stroke);
   // The active pane's heavy ink rule is as it was.
-  expect(await page.locator(".pane.active").evaluate((el) => getComputedStyle(el, "::after").borderTopWidth)).toBe("3px");
+  expect(await page.locator(".pane.active").evaluate((el) => getComputedStyle(el, "::after").height)).toBe("3px");
   // Off: plain ink everywhere, as before colours.
   await page.keyboard.press(":");
   await page.keyboard.type("/colors off");

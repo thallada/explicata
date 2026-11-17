@@ -1003,7 +1003,8 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
       if (rr && rr.bottom <= Math.max(cbox.top, scroll.top) + TAB) {
         folded = true;
         ey = cbox.top + TAB / 2;
-      } else if (rr && ruleShows(ce, ccolBox, below) && rr.left < shownRight) {
+      } else if (rr && rr.bottom > Math.max(cbox.top, ccolBox.top, scroll.top) + TAB && rr.bottom <= Math.min(below, ccolBox.bottom, scroll.bottom) && rr.left < shownRight) {
+        // (ruleShows, from what is measured here already.)
         ey = level(rr.bottom - 0.5);
         ex = Math.max(left + ARRIVE, rr.left);
         rule = { x0: ex, x1: Math.min(rr.right, shownRight) };
@@ -1125,6 +1126,26 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
   for (const g of [...lanesUsed.keys()]) if (!gutters.has(g)) lanesUsed.delete(g);
   const fx = (n: number) => Math.round(n * 1000) / 1000;
   const out: { key: string; from: number; to: number; lane: number; cls: string; d: string; hue: string }[] = [];
+  // The active pane's edges (left, foot, right), where they show: in the stronger ink, a hairline each.
+  const act = el.querySelector<HTMLElement>(".pane.active");
+  if (act) {
+    const r = act.getBoundingClientRect();
+    const col = act.parentElement!;
+    const c = col.getBoundingClientRect();
+    const next = col.classList.contains("crowded") ? ((act.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top ?? Infinity) : Infinity;
+    const cover = (col.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().left ?? Infinity;
+    const h = wd / dpr / 2;
+    const top = Math.max(r.top, c.top) + 3;
+    const bottom = Math.min(r.bottom, next, c.bottom);
+    const x0 = Math.round(r.left * dpr) / dpr + h;
+    const right = Math.min(r.right, cover);
+    const x1 = Math.round(right * dpr) / dpr - h;
+    const yb = Math.round(bottom * dpr) / dpr - h;
+    if (bottom > top) {
+      const d = right < r.right - 1 ? `M${fx(x0 - box.left)} ${fx(top - box.top)}V${fx(yb - box.top)}H${fx(right - box.left)}` : `M${fx(x0 - box.left)} ${fx(top - box.top)}V${fx(yb - box.top)}H${fx(x1 - box.left)}V${fx(top - box.top)}`;
+      out.push({ key: "frame", from: Number(act.dataset.tid), to: -1, lane: -1, cls: "frame", d, hue: "" });
+    }
+  }
   for (const [id, f] of feet) if (!tabbed.has(id)) out.push({ key: `foot:${id}`, from: id, to: -1, lane: -1, cls: f.on ? "foot on" : "foot", d: `M${fx(f.x0)} ${fx(f.y)}H${fx(f.x1)}`, hue: f.hue === undefined ? "" : String(f.hue) });
   edges.sort((a, b) => Number(a.on) - Number(b.on));
   for (const e of edges) {
