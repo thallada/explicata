@@ -1,5 +1,5 @@
 /**
- * The panes view, round three: a click anywhere in a pane makes it active and anywhere clears a
+ * The panes view: a click anywhere in a pane makes it active and anywhere clears a
  * selection; a column's panes stand in the order of their sources; every pane in a crowded column
  * shows at least its tab, above or below; a pane cut off for any reason peeks out whole; the curves
  * keep to their sources and landing lines through every kind of layout change (curveFaults); the
@@ -7,39 +7,12 @@
  * between panes. Same build, mock model and mock Wikipedia as the others.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, curveFaults, keys, seedLinks, settle, state } from "./helpers";
+import { clickOpen, curveFaults, keys, library, noFaults, pane, seedLinks, settle, state, still } from "./helpers";
 
 const TAB = 30;
-const pane = (page: Page, title: string) => page.locator(".strip .pane", { has: page.locator(`:is(.wiki-head h2, .pane-head h2, .top h1):text-is("${title}")`) }).first();
-const frames = (page: Page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-async function still(page: Page) {
-  await page.waitForFunction(
-    () =>
-      new Promise((r) => {
-        const at = () => [document.querySelector(".strip")!, ...document.querySelectorAll(".strip > .col, .strip .pane-scroll")].map((el) => `${el.scrollLeft},${el.scrollTop}`).join();
-        const x = at();
-        setTimeout(() => r(at() === x), 250);
-      }),
-  );
-  await frames(page);
-}
-async function open(page: Page, inPane: string, text: string, sel = ".row") {
-  await pane(page, inPane).locator(sel, { hasText: text }).first().dispatchEvent("click");
-  await still(page);
-}
-async function library(page: Page) {
-  await autoLayout(page);
-  await page.goto("/");
-  await page.waitForSelector(".strip .pane");
-  await page.evaluate(() => document.fonts.ready);
-}
 const activeTitle = (page: Page) => page.locator(".pane.active").evaluate((p) => p.querySelector(".pane-head h2, .top h1, .wiki-head h2")?.textContent?.trim() ?? "");
 const colTitles = (page: Page, i: number) =>
   page.evaluate((i) => [...document.querySelectorAll(".strip > .col")[i].querySelectorAll(":scope > .pane")].map((p) => p.querySelector(".pane-head h2, .top h1, .wiki-head h2")?.textContent?.trim() ?? ""), i);
-const noFaults = async (page: Page, when: string) => {
-  await still(page);
-  expect(await curveFaults(page), when).toEqual([]);
-};
 
 test.use({ viewport: { width: 1920, height: 1080 }, colorScheme: "dark" });
 test.describe.configure({ mode: "serial" });
@@ -53,10 +26,10 @@ test.afterEach(({ page }) => settle(page));
 
 test("a column's panes stand in the order of their sources: opened from a row higher up, a pane stands higher", async ({ page }) => {
   await library(page);
-  await open(page, "Library", "Octopus minds");
-  await open(page, "Library", "Infinispand");
+  await clickOpen(page, "Library", "Octopus minds");
+  await clickOpen(page, "Library", "Infinispand");
   await expect.poll(() => colTitles(page, 1)).toEqual(["Infinispand", "Octopus minds"]);
-  await open(page, "Library", "Fixed points");
+  await clickOpen(page, "Library", "Fixed points");
   await expect.poll(() => colTitles(page, 1)).toEqual(["Infinispand", "Fixed points", "Octopus minds"]);
   // Kept with the view.
   await page.reload();
@@ -67,8 +40,8 @@ test("a column's panes stand in the order of their sources: opened from a row hi
 
 test("a click anywhere in a pane that is not text, a row or a link makes that pane the active one; anywhere at all clears a selection, and so does Esc", async ({ page }) => {
   await library(page);
-  await open(page, "Library", "Fixed points");
-  await open(page, "Fixed points", "The idea itself");
+  await clickOpen(page, "Library", "Fixed points");
+  await clickOpen(page, "Fixed points", "The idea itself");
   for (const t of ["Library", "Fixed points", "The idea itself", "Library", "The idea itself", "Fixed points"]) {
     const p = pane(page, t);
     /** A grid of points over the pane; those that fall on nothing that acts. */
@@ -125,7 +98,7 @@ test("a click anywhere in a pane that is not text, a row or a link makes that pa
 test("every pane of a crowded column shows at least its tab, above or below the one looked at; tabs line up with the active rule; curves stay on their sources and lines", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 700 });
   await library(page);
-  for (const t of ["Octopus minds", "Infinispand", "The tides", "Fixed points", "What a proof is"]) await open(page, "Library", t);
+  for (const t of ["Octopus minds", "Infinispand", "The tides", "Fixed points", "What a proof is"]) await clickOpen(page, "Library", t);
   // The one looked at near the top: those below it stack at the column's foot.
   await pane(page, "Infinispand").locator(".pane-head h2").dispatchEvent("click");
   await still(page);
@@ -172,7 +145,7 @@ test("every pane of a crowded column shows at least its tab, above or below the 
 test("a pane cut off for any reason peeks out whole, across and down, and the curves follow it: covered from below or above, by its share, by the column's foot, beside a pinned pane, and with its column covered", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 700 });
   await library(page);
-  for (const t of ["Octopus minds", "Infinispand", "The tides", "Fixed points"]) await open(page, "Library", t);
+  for (const t of ["Octopus minds", "Infinispand", "The tides", "Fixed points"]) await clickOpen(page, "Library", t);
   /** Hover each pane of the top-level trees' column that is cut off, and check it comes out whole, and the curves with it. */
   const sweep = async (label: string, across: boolean) => {
     const col = page.locator(".strip > .col").nth(1);
@@ -230,8 +203,8 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
   expect(await sweep("beside a pinned one", false)).toBeGreaterThan(0);
   await keys(page, "P");
   // Its column covered too: deeper panes push it under; a cut-off pane comes out across and down at once.
-  await open(page, "Fixed points", "The idea itself");
-  await open(page, "The idea itself", "Three questions");
+  await clickOpen(page, "Fixed points", "The idea itself");
+  await clickOpen(page, "The idea itself", "Three questions");
   await still(page);
   const col = page.locator(".strip > .col").nth(1);
   expect(await col.evaluate((c) => c.hasAttribute("data-covered") || !!c.nextElementSibling?.hasAttribute("data-over"))).toBe(true);
@@ -241,8 +214,8 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("ie:view:")).forEach((k) => localStorage.removeItem(k)));
   await library(page);
-  await open(page, "Library", "Infinispand");
-  await open(page, "Library", "Octopus minds");
+  await clickOpen(page, "Library", "Infinispand");
+  await clickOpen(page, "Library", "Octopus minds");
   await pane(page, "Octopus minds").locator(".pane-head h2").dispatchEvent("click");
   await still(page);
   expect(await page.locator(".strip > .col").nth(1).evaluate((c) => c.classList.contains("crowded"))).toBe(false);
@@ -251,10 +224,10 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
 
 test("the curves keep to their sources and landing lines through every kind of layout change: scrolls, a resize, folding, a drag, an article arriving, a sticky tab", async ({ page }) => {
   await library(page);
-  for (const t of ["Infinispand", "Fixed points"]) await open(page, "Library", t);
-  await open(page, "Fixed points", "Recursion without names");
+  for (const t of ["Infinispand", "Fixed points"]) await clickOpen(page, "Library", t);
+  await clickOpen(page, "Fixed points", "Recursion without names");
   await noFaults(page, "opened");
-  await open(page, "Recursion without names", "fixed-point combinator", ".lnk, .anchor");
+  await clickOpen(page, "Recursion without names", "fixed-point combinator", ".lnk, .anchor");
   await expect(pane(page, "Fixed-point combinator").locator(".wrow").first()).toBeVisible();
   await noFaults(page, "article arrived");
   // Scrolls: a pane's text, the strip.
@@ -282,7 +255,7 @@ test("the curves keep to their sources and landing lines through every kind of l
 
 test("the selection bar keeps clear of a pane's tab and of the words it is about", async ({ page }) => {
   await library(page);
-  await open(page, "Library", "Fixed points");
+  await clickOpen(page, "Library", "Fixed points");
   const p = pane(page, "Fixed points");
   await p.locator(".pane-scroll").evaluate((el) => (el.scrollTop = 160));
   await expect(p).toHaveAttribute("data-scrolled", "");
@@ -306,7 +279,7 @@ test("the selection bar keeps clear of a pane's tab and of the words it is about
 test("a dotted curve to a source out of sight in its pane turns, at its end, toward where the source is", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 560 });
   await library(page);
-  await open(page, "Library", "A mind made of text");
+  await clickOpen(page, "Library", "A mind made of text");
   const lib = pane(page, "Library").locator(".pane-scroll");
   const lead = async () =>
     page.evaluate(() => {
@@ -331,9 +304,9 @@ test("a dotted curve to a source out of sight in its pane turns, at its end, tow
 
 test("Alt with h j k l moves between panes from a node, a selection or an article; left then right comes back; [ ] still go up and down", async ({ page }) => {
   await library(page);
-  await open(page, "Library", "Infinispand");
-  await open(page, "Library", "Fixed points");
-  await open(page, "Fixed points", "Recursion without names");
+  await clickOpen(page, "Library", "Infinispand");
+  await clickOpen(page, "Library", "Fixed points");
+  await clickOpen(page, "Fixed points", "Recursion without names");
   await pane(page, "Recursion without names").locator(".pane-head h2").dispatchEvent("click");
   await still(page);
   expect(await activeTitle(page)).toBe("Recursion without names");
@@ -362,7 +335,7 @@ test("Alt with h j k l moves between panes from a node, a selection or an articl
   await page.keyboard.press("Alt+h");
   await expect.poll(() => activeTitle(page)).toBe("Fixed points");
   await page.keyboard.press("Alt+l");
-  await open(page, "Recursion without names", "fixed-point combinator", ".lnk, .anchor");
+  await clickOpen(page, "Recursion without names", "fixed-point combinator", ".lnk, .anchor");
   await expect(pane(page, "Fixed-point combinator").locator(".wrow").first()).toBeVisible();
   await pane(page, "Fixed-point combinator").locator(".wiki-head h2").dispatchEvent("click");
   await expect.poll(() => activeTitle(page)).toBe("Fixed-point combinator");

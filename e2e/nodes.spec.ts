@@ -6,7 +6,7 @@
  * (under “Scratch pad”) and leave the starter trees alone: the other specs share them.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, command, idle, jump, keys, nodeAt, openAt, openPage, settle, state, synced } from "./helpers";
+import { autoLayout, command, focusedTitle, idle, jump, keys, nodeAt, openAt, openPage, settle, state, synced } from "./helpers";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseDoc } from "../src/core/format";
@@ -15,7 +15,6 @@ const FIXTURE = fileURLToPath(new URL("../tests/fixtures/menu-fixture.md", impor
 /** The fixture with a link inside it, written relative to its top. */
 const LINKED = readFileSync(FIXTURE, "utf8").replace("More text.", "More text.\n\n^ \"More text\" link -> ./First section");
 
-const focusTitle = (page: Page) => state(page, (s) => s.snap.nodes[s.focus.node].title as string);
 /** The title of the parent of the (first) node with this title. */
 const parentOf = (page: Page, title: string) =>
   page.evaluate((t) => {
@@ -96,7 +95,7 @@ test("the library root is the first page and a node like any other: its sections
   await expect(page.locator(".top .byline")).toContainText(/^\d+ sections · \d+ nodes/);
   await keys(page, "Escape");
   await expect(page.locator(".top h1")).toHaveText("Library");
-  expect(await focusTitle(page)).toBe("Infinispand");
+  expect(await focusedTitle(page)).toBe("Infinispand");
 });
 
 test("an address names a node by its id, and survives a reload, Back and Forward; an old /doc/ address shows the library", async ({ page }) => {
@@ -109,13 +108,13 @@ test("an address names a node by its id, and survives a reload, Back and Forward
   expect(await state(page, (s) => s.focus.node)).toBe(amph);
   // A link to another node opens it; Back returns, Forward comes again.
   await openAt(page, "Fixed points");
-  expect(await focusTitle(page)).toBe("Fixed points");
+  expect(await focusedTitle(page)).toBe("Fixed points");
   await page.goBack();
   await ready(page);
   await expect.poll(() => state(page, (s) => s.focus.node)).toBe(amph);
   await page.goForward();
   await ready(page);
-  await expect.poll(() => focusTitle(page)).toBe("Fixed points");
+  await expect.poll(() => focusedTitle(page)).toBe("Fixed points");
   // What names nothing says so and shows the library: an address from before, a node that is gone.
   await page.goto("/doc/the-tides");
   await page.waitForSelector("article");
@@ -138,17 +137,17 @@ test("the jump box searches the whole library, says where each match is, and goe
   await page.keyboard.press("Enter");
   // Outside the hoisted node: the page goes back to the library, with the node open to it.
   await expect(page.locator(".top h1")).toHaveText("Library");
-  expect(await focusTitle(page)).toBe("Amphidromes");
+  expect(await focusedTitle(page)).toBe("Amphidromes");
   // Back to where the jump started.
   await page.goBack();
   await ready(page);
-  await expect.poll(() => focusTitle(page)).toBe("Infinispand");
+  await expect.poll(() => focusedTitle(page)).toBe("Infinispand");
   // A top-level node is found like any other, and says it is in the library.
   await page.keyboard.press("/");
   await page.keyboard.type("Fixed points");
   await expect(page.locator(".jump li").first().locator(".in")).toHaveText("Library");
   await page.keyboard.press("Enter");
-  expect(await focusTitle(page)).toBe("Fixed points");
+  expect(await focusedTitle(page)).toBe("Fixed points");
 });
 
 test("a .md file is imported into a node deep in the library, exported from there the same, and copied just after itself", async ({ page }) => {
@@ -167,7 +166,7 @@ test("a .md file is imported into a node deep in the library, exported from ther
   await command(page, "/import");
   await (await chooser).setFiles({ name: "menu-fixture.md", mimeType: "text/markdown", buffer: Buffer.from(LINKED) });
   await expect(status(page)).toContainText("Imported menu-fixture.md as “Menu fixture”, under “Inbox”");
-  await expect.poll(() => focusTitle(page)).toBe("Menu fixture");
+  await expect.poll(() => focusedTitle(page)).toBe("Menu fixture");
   expect(await parentOf(page, "Menu fixture")).toBe("Inbox");
   // Its link, written relative to the file's top, is kept from the library root, and finds its section.
   const link = await state(page, (s) => {
@@ -185,7 +184,7 @@ test("a .md file is imported into a node deep in the library, exported from ther
   // :/duplicate copies it with everything under it, just after itself, as one commit; the copy has the focus.
   await command(page, "/duplicate");
   await expect(status(page)).toContainText("Saved a copy as “Menu fixture (copy)”");
-  expect(await focusTitle(page)).toBe("Menu fixture (copy)");
+  expect(await focusedTitle(page)).toBe("Menu fixture (copy)");
   expect(await kids(page, "Inbox")).toEqual(["Menu fixture", "Menu fixture (copy)"]);
   expect(await kids(page, "Menu fixture (copy)")).toEqual(["First section", "Second section"]);
   expect(await state(page, (s) => s.commits()[0].message)).toBe("Duplicate “Menu fixture” as “Menu fixture (copy)”");
@@ -234,7 +233,7 @@ test("Move under…: M picks any node in the library, or the root, and the node 
   await page.keyboard.press("Enter");
   await expect(picker).toHaveCount(0);
   expect(await parentOf(page, "Menu fixture (copy)")).toBe("Scratch pad");
-  expect(await focusTitle(page)).toBe("Menu fixture (copy)");
+  expect(await focusedTitle(page)).toBe("Menu fixture (copy)");
   expect(await state(page, (s) => s.commits()[0].message)).toBe("Move “Menu fixture (copy)” under “Scratch pad”");
   await expect(status(page)).toContainText("Moved “Menu fixture (copy)” under “Scratch pad”. u undoes.");
   await keys(page, "u");
@@ -323,7 +322,7 @@ test("a note being written in one place lands there after the reader has gone el
   await quiet(page);
   await jump(page, "Inbox");
   await keys(page, "l j"); // Inbox open, and its first section: Menu fixture
-  expect(await focusTitle(page)).toBe("Menu fixture");
+  expect(await focusedTitle(page)).toBe("Menu fixture");
   await keys(page, "l i j e"); // select its second sentence and expand it
   await expect.poll(() => state(page, (s) => s.pending.size)).toBe(1);
   await jump(page, "Fixed points");

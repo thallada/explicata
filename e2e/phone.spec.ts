@@ -7,7 +7,7 @@
  * directory, each state is saved there, light and dark.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, seedLinks, settle, state } from "./helpers";
+import { autoLayout, command, frames, seedLinks, settle, state } from "./helpers";
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 });
 
@@ -22,7 +22,6 @@ async function shot(page: Page, name: string) {
   await page.emulateMedia({ colorScheme: "light" });
 }
 
-const frames = (page: Page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 
 async function start(page: Page) {
   await seedLinks(page.request);
@@ -347,13 +346,9 @@ test("the libraries panel, the top menu, and the other layouts are a tap away; a
   await page.locator(".menu.sheet .choices button", { hasText: "auto" }).tap();
   await at(page, "Fixed points", 1);
   // /view panes: side by side even here; /view auto: pages again.
-  await page.keyboard.press(":");
-  await page.keyboard.type("/view panes");
-  await page.keyboard.press("Enter");
+  await command(page, "/view panes");
   await expect(page.locator(".panes:not([data-layout])")).toHaveCount(1);
-  await page.keyboard.press(":");
-  await page.keyboard.type("/view auto");
-  await page.keyboard.press("Enter");
+  await command(page, "/view auto");
   await at(page, "Fixed points", 1);
   // Keys: Alt+h to where the pane was opened from, Alt+l back; l on a row opens it and goes there.
   await page.keyboard.press("Alt+h");

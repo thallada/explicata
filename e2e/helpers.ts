@@ -9,7 +9,7 @@
  */
 import { writeFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
-import type { APIRequestContext, Page } from "@playwright/test";
+import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
 /** A keypress → paint timing, as the page records it. */
 export interface Sample {
@@ -48,7 +48,7 @@ export async function libraryId(page: Page): Promise<string> {
 }
 
 /** An address in the shared library: `/l/<id>` for its root, then a path within it (`/n/<node id>`, `/w/en/Octopus`). */
-export async function libraryPath(page: Page, part = "/"): Promise<string> {
+async function libraryPath(page: Page, part = "/"): Promise<string> {
   const base = `/l/${await libraryId(page)}`;
   return part === "/" ? base : base + part;
 }
@@ -137,6 +137,73 @@ export const selected = (page: Page) => state(page, (s) => (s.focus.range ? s.sn
 
 /** Write a latency report to test-results/latency-<name>.json. */
 export const writeReport = (name: string, report: unknown) => writeFileSync(`test-results/latency-${name}.json`, JSON.stringify(report, null, 2));
+
+/** Press space-separated keys one per frame, as a person types: each is painted before the next. */
+export async function paced(page: Page, seq: string) {
+  for (const k of seq.split(" ")) {
+    await page.keyboard.press(k);
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null))));
+  }
+}
+
+/** The links on the focused node: quote → target title (`node:<title>` for a node, the address for the web). */
+export const linksHere = (page: Page) =>
+  state(page, (s) => {
+    const snap = s.snap;
+    const out: Record<string, string> = {};
+    for (const c of snap.nodes[s.focus.node].children) {
+      const n = snap.nodes[c];
+      if (n.kind === "note" && n.ref) out[n.anchors[0].text] = n.ref.kind === "wiki" ? n.ref.title : n.ref.kind === "node" ? `node:${snap.nodes[n.ref.id]?.title}` : n.ref.url;
+    }
+    return out;
+  });
+
+// ---- the panes view ----
+
+/** A pane of the strip by its title, exact, or matching a pattern. */
+export const pane = (page: Page, title: string | RegExp) =>
+  typeof title === "string" ? page.locator(".strip .pane", { has: page.locator(`:is(.wiki-head h2, .pane-head h2, .top h1):text-is("${title}")`) }).first() : page.locator(".strip .pane", { has: page.locator(`:is(.wiki-head h2, .pane-head h2, .top h1)`, { hasText: title }) }).first();
+/** A pane's id in the forest of panes, by its title. */
+export const tid = (page: Page, title: string) => pane(page, title).evaluate((el) => Number((el as HTMLElement).dataset.tid));
+/** Two animation frames: what was laid out has been painted. */
+export const frames = (page: Page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+/** Wait until the strip, its columns and its panes have stopped scrolling, and the curves have been drawn after. */
+export async function still(page: Page) {
+  await page.waitForFunction(
+    () =>
+      new Promise((r) => {
+        const at = () => [document.querySelector(".strip")!, ...document.querySelectorAll(".strip > .col, .strip .pane-scroll")].map((el) => `${el.scrollLeft},${el.scrollTop}`).join();
+        const x = at();
+        setTimeout(() => r(at() === x), 250);
+      }),
+  );
+  await frames(page);
+}
+/** The library's panes at the site's root, laid out by the window, the fonts loaded. */
+export async function library(page: Page) {
+  await autoLayout(page);
+  await page.goto("/");
+  await page.waitForSelector(".strip .pane");
+  await page.evaluate(() => document.fonts.ready);
+}
+/** A window wide enough for panes, at a section (or an address, visit), the panes laid out by the window, the fonts loaded. */
+export async function wide(page: Page, path = "Fixed points") {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await autoLayout(page);
+  await visit(page, path);
+  await page.waitForSelector(".strip .pane");
+  await page.evaluate(() => document.fonts.ready);
+}
+/** Click a row (or the words `sel` matches) containing this text in a pane, as the mouse would, wherever the pane is (a covered one too); then wait until still. */
+export async function clickOpen(page: Page, inPane: string, text: string, sel = ".row") {
+  await pane(page, inPane).locator(sel, { hasText: text }).first().dispatchEvent("click");
+  await still(page);
+}
+/** Once still, no curve fails its invariant (curveFaults). */
+export const noFaults = async (page: Page, when: string) => {
+  await still(page);
+  expect(await curveFaults(page), when).toEqual([]);
+};
 
 // ---- links written into the shared library ----
 
@@ -277,7 +344,7 @@ export const curveFaults = (page: Page) =>
       }
       // The start.
       const pr = pe.getBoundingClientRect();
-      if (a.x < pr.left - 1 || a.x > Math.max(pr.right, pr.right) + 1) faults.push(`${name}: starts at x ${a.x}, outside its source pane ${pr.left}..${pr.right}`);
+      if (a.x < pr.left - 1 || a.x > pr.right + 1) faults.push(`${name}: starts at x ${a.x}, outside its source pane ${pr.left}..${pr.right}`);
       const footStart = Math.abs(a.y - (pr.top + TAB - 0.5)) <= 1.2 && Math.abs(a.x - Math.min(pr.right - 1, col.left)) <= 2;
       if (lost || footStart) continue;
       const cands = [...pe.querySelectorAll<HTMLElement>(`.${kidClass(refKey(x.node.ref))}`)];

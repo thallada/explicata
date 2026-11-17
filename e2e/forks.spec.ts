@@ -8,7 +8,7 @@
  * the top-level trees are hoisted to (z) as in panes.spec.ts.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, command, focusedTitle, jump, keys, seedLinks, selected, settle, state, visit } from "./helpers";
+import { autoLayout, command, focusedTitle, frames, jump, keys, paced, pane, seedLinks, selected, settle, state, tid, visit } from "./helpers";
 
 /** The first tree of panes by title, the picked child starred: [title, [children]] or a leaf's title. */
 const tree = (page: Page) =>
@@ -26,8 +26,6 @@ const columns = (page: Page) =>
       [...c.querySelectorAll(":scope > .pane")].map((p) => p.querySelector(".wiki-head h2, .pane-head h2, .top h1")?.textContent?.trim() ?? ""),
     ),
   );
-/** A pane by its title. */
-const pane = (page: Page, title: string) => page.locator(".strip .pane", { has: page.locator(`:is(.wiki-head h2, .pane-head h2, .top h1):text-is("${title}")`) }).first();
 /** Each pane's box, by title. */
 const boxes = (page: Page) =>
   page.evaluate(() =>
@@ -57,8 +55,6 @@ const curves = (page: Page) =>
       return { from: Number(p.dataset.from), to: Number(p.dataset.to), cls: p.getAttribute("class") ?? "", a: { x: a.x + box.x, y: a.y + box.y }, b: { x: b.x + box.x, y: b.y + box.y } };
     });
   });
-const tid = (page: Page, title: string) => pane(page, title).evaluate((el) => Number((el as HTMLElement).dataset.tid));
-const nextFrames = (page: Page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 /** Wait until the strip and its columns have stopped scrolling (the strip follows the focus smoothly, columns other than the active pane's once the keys pause), and the curves have been drawn after. */
 async function still(page: Page) {
   await page.waitForFunction(
@@ -69,7 +65,7 @@ async function still(page: Page) {
         setTimeout(() => r(at() === x), 300);
       }),
   );
-  await nextFrames(page);
+  await frames(page);
 }
 
 async function open(page: Page) {
@@ -209,15 +205,9 @@ test("a link and an article's link open beside by default, in place with Shift; 
   // Twenty opens in a row: each a pane of its own, the column stacked, the keys still quick.
   await open(page);
   await page.evaluate(() => ((globalThis as any).__ie.samples.length = 0));
-  const paced = async (seq: string) => {
-    for (const k of seq.split(" ")) {
-      await page.keyboard.press(k);
-      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null))));
-    }
-  };
-  await paced("l l l");
-  for (let i = 0; i < 20; i++) await paced(i % 4 === 3 ? "k k Enter" : "j Enter");
-  await paced("[ [ [ ] ] ] l h j k");
+  await paced(page, "l l l");
+  for (let i = 0; i < 20; i++) await paced(page, i % 4 === 3 ? "k k Enter" : "j Enter");
+  await paced(page, "[ [ [ ] ] ] l h j k");
   expect((await state(page, (s) => s.forest.trees[0].kids[0].kids.length)) as number).toBeGreaterThanOrEqual(3);
   const ms = (await state(page, (s) => s.samples.map((x: any) => x.ms))).sort((a: number, b: number) => a - b);
   const p95 = ms[Math.floor(ms.length * 0.95)];
@@ -319,12 +309,12 @@ test("a curve per open edge, from where each pane was opened to its title; it fo
   // Scroll Eukaryote's text: the curve out of it moves with its link.
   const before = edge("Eukaryote", "Bacteria")[0].a;
   await pane(page, "Eukaryote").locator(".pane-scroll").evaluate((el) => (el.scrollTop = 40));
-  await nextFrames(page);
+  await frames(page);
   cs = await curves(page);
   expect(Math.abs(edge("Eukaryote", "Bacteria")[0].a.y - (before.y - 40))).toBeLessThan(3);
   // Scrolled out of its pane, the source is held at the pane's edge and the curve is dotted.
   await pane(page, "Eukaryote").locator(".pane-scroll").evaluate((el) => (el.scrollTop = 400));
-  await nextFrames(page);
+  await frames(page);
   cs = await curves(page);
   expect(edge("Eukaryote", "Bacteria")[0].cls).toContain("lost");
   // (The pane, scrolled past its title, shows its tab: its edge is the tab's foot; the curve ends turned up toward the link.)
@@ -340,13 +330,9 @@ test("a curve per open edge, from where each pane was opened to its title; it fo
   expect(Math.abs(now.x - was.x)).toBeGreaterThan(20);
   expect(now.x).toBeGreaterThan(r.x);
   // And they can be turned off, and on again.
-  await page.keyboard.press(":");
-  await page.keyboard.type("/curves off");
-  await page.keyboard.press("Enter");
+  await command(page, "/curves off");
   await expect(page.locator(".curves path")).toHaveCount(0);
-  await page.keyboard.press(":");
-  await page.keyboard.type("/curves on");
-  await page.keyboard.press("Enter");
+  await command(page, "/curves on");
   await expect.poll(async () => (await curves(page)).length).toBeGreaterThan(3);
 });
 
@@ -377,20 +363,16 @@ test("each fork has a colour, shared by its curve and the rule under its title; 
   // The active pane's heavy ink rule is as it was.
   expect(await page.locator(".pane.active").evaluate((el) => getComputedStyle(el, "::after").height)).toBe("3px");
   // Off: plain ink everywhere, as before colours.
-  await page.keyboard.press(":");
-  await page.keyboard.type("/colors off");
-  await page.keyboard.press("Enter");
+  await command(page, "/colors off");
   await expect(page.locator(".panes")).toHaveAttribute("data-colors", "off");
-  await nextFrames(page);
+  await frames(page);
   expect((await curve("Simple cells")).stroke).toBe((await curve("Eukaryote")).stroke);
   expect(await rule("Simple cells")).toBe(await rule("Complex cells"));
   // Kept with the settings.
   await page.reload();
   await page.waitForSelector(".strip .pane");
   await expect(page.locator(".panes")).toHaveAttribute("data-colors", "off");
-  await page.keyboard.press(":");
-  await page.keyboard.type("/colors line");
-  await page.keyboard.press("Enter");
+  await command(page, "/colors line");
   await expect(page.locator(".panes")).toHaveAttribute("data-colors", "line");
 });
 
@@ -606,7 +588,7 @@ test("a pinned pane is not covered in its column, and outlives a closed parent a
   expect((await columns(page))[2]).toEqual([grand]);
   await expect(pane(page, grand).locator(".orphan-note")).toBeVisible();
   expect(await state(page, (s) => s.forest.trees.length)).toBe(2);
-  await nextFrames(page);
+  await frames(page);
   expect((await curves(page)).filter((c) => c.to === orphan)).toHaveLength(0);
   // Its own × closes it.
   await pane(page, grand).locator(".pane-ctl .pane-btn.close").click();

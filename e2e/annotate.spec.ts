@@ -5,17 +5,10 @@
  * again in a later revision, or listed as detached when its words are gone.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, command, idle, jump, keys, seedLinks, selected, settle, state, visit } from "./helpers";
+import { command, idle, jump, keys, seedLinks, selected, settle, state, visit, wide } from "./helpers";
 
 const panes = (page: Page) => page.locator(".strip .pane");
 
-async function wide(page: Page, path = "Fixed points") {
-  await page.setViewportSize({ width: 1920, height: 1080 });
-  await autoLayout(page);
-  await visit(page, path);
-  await page.waitForSelector(".strip .pane");
-  await page.evaluate(() => document.fonts.ready);
-}
 async function column(page: Page, path: string) {
   await page.setViewportSize({ width: 1440, height: 900 });
   // After wide(), this page's layout follows the window, and 1440 px is wide enough for panes.

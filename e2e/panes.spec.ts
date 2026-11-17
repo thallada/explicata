@@ -5,7 +5,7 @@
  * (z) and start from it, as the first pane.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, command, focusedTitle, idle, jump, keys, openAt, settle, state, writeReport, type Sample } from "./helpers";
+import { autoLayout, command, focusedTitle, idle, jump, keys, openAt, paced, settle, state, type Sample, writeReport } from "./helpers";
 
 /** Each pane's title and box, left to right. */
 const panes = (page: Page) =>
@@ -277,24 +277,17 @@ test("editing in a pane: c, type, Esc", async ({ page }) => {
 
 test("keypress → paint stays within the 50 ms budget in panes", async ({ page }) => {
   await open(page);
-  // One keystroke per frame, as in the column test.
-  const paced = async (seq: string) => {
-    for (const k of seq.split(" ")) {
-      await page.keyboard.press(k);
-      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null))));
-    }
-  };
   // Walk down and across: open each top-level section, then three of its children in turn,
   // read a sentence of the last, close back up and move to the next section.
   for (let pass = 0; pass < 2; pass++) {
-    await paced("O");
-    for (let i = 0; i < 10; i++) await paced(`${i === 0 ? "l" : "j"} l l l j l j l i j Escape h h`);
+    await paced(page, "O");
+    for (let i = 0; i < 10; i++) await paced(page, `${i === 0 ? "l" : "j"} l l l j l j l i j Escape h h`);
   }
   // Open notes in a pane from the keyboard.
   await jump(page, "Levels of a node");
-  await paced("Tab Enter Tab Enter Tab Enter Escape Escape");
+  await paced(page, "Tab Enter Tab Enter Tab Enter Escape Escape");
   await jump(page, "Expansion by depth");
-  await paced("l Tab Enter Tab Enter Escape Escape");
+  await paced(page, "l Tab Enter Tab Enter Escape Escape");
   const samples: Sample[] = await state(page, (s) => s.samples);
   const ms = samples.filter((x) => x.what !== "first-token").map((x) => x.ms).sort((a, b) => a - b);
   const pct = (p: number) => ms[Math.min(ms.length - 1, Math.floor(ms.length * p))];

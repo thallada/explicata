@@ -6,16 +6,9 @@
  * store call to the painted frame. Runs last: it fills the shared library.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, idle, state, synced, writeReport, type Sample, visit } from "./helpers";
+import { autoLayout, idle, paced, state, synced, type Sample, visit, writeReport } from "./helpers";
 
 const ready = (page: Page) => page.waitForFunction(() => (globalThis as any).__ie?.ready === true, undefined, { timeout: 30_000 });
-/** One keystroke per frame, as in the other latency tests. */
-const paced = async (page: Page, seq: string) => {
-  for (const k of seq.split(" ")) {
-    await page.keyboard.press(k);
-    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null))));
-  }
-};
 const SENTENCE = "This sentence is about something that matters here. Another follows it, with a few more words. ";
 
 /** Edit a leaf's body through the store, and time it to the painted frame. */

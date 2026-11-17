@@ -5,7 +5,7 @@
  * the address it would have gone to.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, command, focusedTitle, jump, keys, seedLinks, selected, settle, state, visit, writeReport, type Sample } from "./helpers";
+import { command, focusedTitle, jump, keys, paced, seedLinks, selected, settle, state, type Sample, visit, wide, writeReport } from "./helpers";
 
 /** The panes' titles, left to right: a node's title, or W:article for a Wikipedia pane. */
 const trail = (page: Page) =>
@@ -27,13 +27,6 @@ async function column(page: Page, path = "Fixed points") {
   if (page.url().startsWith("http")) await page.evaluate(() => localStorage.setItem("ie:settings", JSON.stringify({ ...JSON.parse(localStorage.getItem("ie:settings") ?? "{}"), view: "column" })));
   await visit(page, path);
   await page.waitForFunction(() => (globalThis as any).__ie?.ready);
-  await page.evaluate(() => document.fonts.ready);
-}
-async function wide(page: Page, path = "Fixed points") {
-  await page.setViewportSize({ width: 1920, height: 1080 });
-  await autoLayout(page);
-  await visit(page, path);
-  await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
 }
 /** Open a section in panes and select the first marked span in its text. */
@@ -507,12 +500,6 @@ test("a hostile article cannot run script or load anything from elsewhere, in a 
 });
 
 test("keypress → paint stays within one frame budget through links and articles, in panes and in the column", async ({ page }) => {
-  const paced = async (seq: string) => {
-    for (const k of seq.split(" ")) {
-      await page.keyboard.press(k);
-      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null))));
-    }
-  };
   const report: Record<string, unknown> = {};
   for (const view of ["panes", "column"] as const) {
     if (view === "panes") await wide(page);
@@ -521,7 +508,7 @@ test("keypress → paint stays within one frame budget through links and article
     const measure = async (passes: number) => {
       await page.evaluate(() => ((globalThis as any).__ie.samples.length = 0));
       for (let pass = 0; pass < passes; pass++) {
-        await paced(seq);
+        await paced(page, seq);
         await page.waitForTimeout(50);
       }
       const samples: Sample[] = await state(page, (s) => s.samples);

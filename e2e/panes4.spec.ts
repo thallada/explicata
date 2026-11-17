@@ -1,26 +1,12 @@
 /**
- * The panes view, round four: curves over the panes' edges and under the selection bar and menus;
+ * The panes view: curves over the panes' edges and under the selection bar and menus;
  * a pane peeking out leaves every other curve clear of its place, and nothing stale behind; a
  * pane's title and its tab never show together; a peeking pane and the active one have clear edges;
  * a menu's button closes it; a link's underline and its curve are one stroke at every pixel ratio.
  */
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { autoLayout, curveFaults, pixels, seedLinks, settle, visit } from "./helpers";
+import { autoLayout, curveFaults, frames, library, noFaults, pane, pixels, seedLinks, settle, still, visit } from "./helpers";
 
-const pane = (page: Page, title: string | RegExp) =>
-  typeof title === "string" ? page.locator(".strip .pane", { has: page.locator(`:is(.wiki-head h2, .pane-head h2, .top h1):text-is("${title}")`) }).first() : page.locator(".strip .pane", { has: page.locator(`:is(.wiki-head h2, .pane-head h2, .top h1)`, { hasText: title }) }).first();
-const frames = (page: Page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-async function still(page: Page) {
-  await page.waitForFunction(
-    () =>
-      new Promise((r) => {
-        const at = () => [document.querySelector(".strip")!, ...document.querySelectorAll(".strip > .col, .strip .pane-scroll")].map((el) => `${el.scrollLeft},${el.scrollTop}`).join();
-        const x = at();
-        setTimeout(() => r(at() === x), 250);
-      }),
-  );
-  await frames(page);
-}
 async function open(page: Page, inPane: string | RegExp, text: string | RegExp, sel = ".row") {
   // A row by its exact title (the shared library has top-level nodes whose titles start the same).
   const it = sel === ".row" && typeof text === "string" ? pane(page, inPane).locator(".row", { has: page.locator(`.title:text-is("${text}")`) }) : pane(page, inPane).locator(sel, { hasText: text });
@@ -34,12 +20,6 @@ async function openNth(page: Page, inPane: string, n: number): Promise<string> {
   await row.dispatchEvent("click");
   await still(page);
   return title;
-}
-async function library(page: Page) {
-  await autoLayout(page);
-  await page.goto("/");
-  await page.waitForSelector(".strip .pane");
-  await page.evaluate(() => document.fonts.ready);
 }
 /** The owner's kind of forest: several columns, crowded. */
 async function forest(page: Page) {
@@ -59,10 +39,6 @@ async function forest(page: Page) {
   await pane(page, "Generation on demand").locator(".pane-head h2").dispatchEvent("click");
   await still(page);
 }
-const noFaults = async (page: Page, when: string) => {
-  await still(page);
-  expect(await curveFaults(page), when).toEqual([]);
-};
 
 test.use({ viewport: { width: 2000, height: 1000 }, colorScheme: "dark" });
 test.describe.configure({ mode: "serial" });

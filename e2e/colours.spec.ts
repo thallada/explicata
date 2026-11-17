@@ -7,33 +7,8 @@
  * selection bar sits at its pane's level. Same build, mock model and mock Wikipedia as the others.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, pixels, seedLinks, settle, state } from "./helpers";
+import { clickOpen, frames, library, pane, pixels, seedLinks, settle, state, still, tid } from "./helpers";
 
-const pane = (page: Page, title: string) => page.locator(".strip .pane", { has: page.locator(`:is(.wiki-head h2, .pane-head h2, .top h1):text-is("${title}")`) }).first();
-const tid = (page: Page, title: string) => pane(page, title).evaluate((el) => Number((el as HTMLElement).dataset.tid));
-const frames = (page: Page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-async function still(page: Page) {
-  await page.waitForFunction(
-    () =>
-      new Promise((r) => {
-        const at = () => [document.querySelector(".strip")!, ...document.querySelectorAll(".strip > .col, .strip .pane-scroll")].map((el) => `${el.scrollLeft},${el.scrollTop}`).join();
-        const x = at();
-        setTimeout(() => r(at() === x), 250);
-      }),
-  );
-  await frames(page);
-}
-/** Click a row (or words) in a pane, as the mouse would, wherever the pane is (a covered one too). */
-async function open(page: Page, inPane: string, text: string, sel = ".row") {
-  await pane(page, inPane).locator(sel, { hasText: text }).first().dispatchEvent("click");
-  await still(page);
-}
-async function library(page: Page) {
-  await autoLayout(page);
-  await page.goto("/");
-  await page.waitForSelector(".strip .pane");
-  await page.evaluate(() => document.fonts.ready);
-}
 
 /**
  * Every curve, with where it ends and what it lands in: its stroke's colour (RGB), its pane's
@@ -100,7 +75,7 @@ const alike = (a: number[] | null, b: number[] | null) => !!a && !!b && a.every(
 
 test("every kind of pane's title rule is drawn by the curve into it, in the pane's colour: nodes (a top-level one too), articles and their sections", async ({ page }) => {
   await library(page);
-  for (const t of ["The tides", "Fixed points"]) await open(page, "Library", t);
+  for (const t of ["The tides", "Fixed points"]) await clickOpen(page, "Library", t);
   const seen = new Set<string>();
   const check = async () => {
     for (const l of await lines(page)) {
@@ -115,15 +90,15 @@ test("every kind of pane's title rule is drawn by the curve into it, in the pane
     }
   };
   await check();
-  await open(page, "Fixed points", "Recursion without names");
+  await clickOpen(page, "Fixed points", "Recursion without names");
   await check();
-  await open(page, "Recursion without names", "fixed-point combinator", ".lnk, .anchor");
+  await clickOpen(page, "Recursion without names", "fixed-point combinator", ".lnk, .anchor");
   await expect(pane(page, "Fixed-point combinator").locator(".wrow").first()).toBeVisible();
   // The article's head holds the focus now (its rule is then the text's ink): put the focus back in the section.
   await pane(page, "Recursion without names").locator(".pane-head h2").dispatchEvent("click");
   await still(page);
   await check();
-  await open(page, "Fixed-point combinator", "Y combinator", ".wrow .row");
+  await clickOpen(page, "Fixed-point combinator", "Y combinator", ".wrow .row");
   await expect(page.locator(".wiki-pane .wiki-head .wsub")).toHaveCount(1);
   await still(page);
   await check();
@@ -138,9 +113,9 @@ test("every kind of pane's title rule is drawn by the curve into it, in the pane
 
 test("a pane's colour is a function of the forest: unchanged by focus, a source scrolled out of sight, folding to a tab, or which way its rule is drawn", async ({ page }) => {
   await library(page);
-  for (const t of ["Infinispand", "Fixed points"]) await open(page, "Library", t);
-  await open(page, "Infinispand", "Expansion by depth");
-  await open(page, "Fixed points", "The idea itself");
+  for (const t of ["Infinispand", "Fixed points"]) await clickOpen(page, "Library", t);
+  await clickOpen(page, "Infinispand", "Expansion by depth");
+  await clickOpen(page, "Fixed points", "The idea itself");
   const colourOf = async () => Object.fromEntries((await lines(page)).map((l) => [l.to, { stroke: l.stroke, colour: l.colour, hue: l.paneHue }]));
   const before = await colourOf();
   const same = async (what: string) => {
@@ -178,15 +153,14 @@ test("a pane's colour is a function of the forest: unchanged by focus, a source 
   await same("unfolded");
 });
 
-test("the join of a curve and the rule it runs into is one stroke, on device pixels, at ratios 1, 1.25, 1.5, 2 and zoom 90 and 110 %", async ({ browser, request }) => {
-  void request;
+test("the join of a curve and the rule it runs into is one stroke, on device pixels, at ratios 1, 1.25, 1.5, 2 and zoom 90 and 110 %", async ({ browser }) => {
   for (const dpr of [1, 1.25, 1.5, 2, 0.9, 1.1]) {
     const ctx = await browser.newContext({ viewport: { width: 1920, height: 760 }, deviceScaleFactor: dpr, colorScheme: "dark" });
     await ctx.route(/wikipedia\.org|wikimedia\.org|stanford\.edu|example\.org/, (r) => r.abort());
     const page = await ctx.newPage();
     await library(page);
-    for (const t of ["The tides", "What a proof is", "The invention of writing", "Fixed points"]) await open(page, "Library", t);
-    await open(page, "The tides", "The force");
+    for (const t of ["The tides", "What a proof is", "The invention of writing", "Fixed points"]) await clickOpen(page, "Library", t);
+    await clickOpen(page, "The tides", "The force");
     // The focus to the last top-level pane, so The tides folds to its tab with its source out of sight.
     await pane(page, "Fixed points").locator(".pane-head h2").dispatchEvent("click");
     await still(page);
@@ -231,8 +205,8 @@ test("the join of a curve and the rule it runs into is one stroke, on device pix
 test("a pane folded or scrolled past its title shows its tab, and its curve lands in the tab's foot; with its title in sight, in the title's rule", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 760 });
   await library(page);
-  for (const t of ["The tides", "What a proof is", "The invention of writing", "Fixed points"]) await open(page, "Library", t);
-  await open(page, "The tides", "The force");
+  for (const t of ["The tides", "What a proof is", "The invention of writing", "Fixed points"]) await clickOpen(page, "Library", t);
+  await clickOpen(page, "The tides", "The force");
   await pane(page, "Fixed points").locator(".pane-head h2").dispatchEvent("click");
   await still(page);
   let ls = await lines(page);
@@ -283,9 +257,9 @@ test("a pane folded or scrolled past its title shows its tab, and its curve land
 test("a pane covered across and down peeks out whole on both axes; the wheel scrolls it and it stays out; the selection bar of a pane under it is covered", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 760 });
   await library(page);
-  for (const t of ["The tides", "What a proof is", "The invention of writing", "Fixed points"]) await open(page, "Library", t);
-  await open(page, "Fixed points", "Recursion without names");
-  await open(page, "Recursion without names", "fixed-point combinator", ".lnk, .anchor");
+  for (const t of ["The tides", "What a proof is", "The invention of writing", "Fixed points"]) await clickOpen(page, "Library", t);
+  await clickOpen(page, "Fixed points", "Recursion without names");
+  await clickOpen(page, "Recursion without names", "fixed-point combinator", ".lnk, .anchor");
   await expect(pane(page, "Fixed-point combinator").locator(".wrow").first()).toBeVisible();
   await still(page);
   // The top-level trees' column is covered to spines, and folded down: hover the spine of a folded pane in it.

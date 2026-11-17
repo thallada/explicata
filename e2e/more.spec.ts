@@ -1,6 +1,6 @@
 /** The mouse, narrow screens, hover previews, hoisting, speculation, orphans, and an outside agent over HTTP. */
 import { expect, test, type Page } from "@playwright/test";
-import { idle, jump, keys, openPage, settle, state } from "./helpers";
+import { command, idle, jump, keys, openPage, settle, state } from "./helpers";
 
 /** The first tree as the page (hoisted), with the library one step out. */
 const open = (page: Page) => openPage(page, "Infinispand");
@@ -84,9 +84,7 @@ test("hoisting makes one node the whole page; Esc at its top steps out to its pa
 
 test("with speculation on, the focused sentence is already being written when it is asked for", async ({ page }) => {
   await open(page);
-  await page.keyboard.press(":");
-  await page.keyboard.type("/speculate on");
-  await page.keyboard.press("Enter");
+  await command(page, "/speculate on");
   await jump(page, "Typography");
   await keys(page, "l i");
   await page.waitForTimeout(1200); // focus rests; the expansion is written in the background
@@ -95,16 +93,12 @@ test("with speculation on, the focused sentence is already being written when it
   // The whole text is there on the first frame: no stream to wait for.
   await expect(page.locator(".sidenote, .inset").filter({ hasText: "Mock" }).first()).toBeVisible({ timeout: 500 });
   await idle(page);
-  await page.keyboard.press(":");
-  await page.keyboard.type("/speculate off");
-  await page.keyboard.press("Enter");
+  await command(page, "/speculate off");
 });
 
 test("deleting the words a note is about orphans the note, visibly", async ({ page }) => {
   await open(page);
-  await page.keyboard.press(":");
-  await page.keyboard.type("/auto off");
-  await page.keyboard.press("Enter");
+  await command(page, "/auto off");
   await jump(page, "Focus and grain");
   await keys(page, "l Tab Enter"); // open its pre-generated note
   await expect(page.locator(".sidenote", { hasText: "A cursor that only addressed nodes" })).toHaveCount(1);
@@ -117,9 +111,7 @@ test("deleting the words a note is about orphans the note, visibly", async ({ pa
   await keys(page, "u"); // and undo brings the words, and the anchor, back
   await expect(orphan).toHaveCount(0);
   await expect(page.locator(".sidenote", { hasText: "A cursor that only addressed nodes" })).toHaveCount(1);
-  await page.keyboard.press(":");
-  await page.keyboard.type("/auto on");
-  await page.keyboard.press("Enter");
+  await command(page, "/auto on");
 });
 
 test("an outside agent edits over HTTP with the same ops, and the open page follows", async ({ page, request }) => {

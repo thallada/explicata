@@ -6,7 +6,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { command, idle, jump, keys, openPage, settle, state } from "./helpers";
 
-
 async function open(page: Page) {
   // Record what would open in a new tab instead of opening it.
   await page.addInitScript(() => {

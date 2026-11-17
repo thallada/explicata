@@ -10,7 +10,7 @@
  * at the end: the other specs share the first.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { autoLayout, command, curveFaults, keys, libraryId, settle, state } from "./helpers";
+import { autoLayout, command, curveFaults, frames, keys, libraryId, settle, state } from "./helpers";
 
 const ready = (page: Page) => page.waitForFunction(() => (globalThis as any).__ie?.ready);
 const status = (page: Page) => page.locator(".status .message");
@@ -120,7 +120,6 @@ const rows = (page: Page) => panel(page).locator(".lib-row[data-lib]");
 const row = (page: Page, title: string) => panel(page).locator(".lib-row[data-lib]", { has: page.locator(".lib-t", { hasText: title }) });
 const titles = (page: Page) => rows(page).locator(".lib-t").allTextContents();
 const loaded = (page: Page) => expect(panel(page)).not.toHaveAttribute("data-loading", /./);
-const frames = (page: Page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 /** Until the strip and its panes have stopped scrolling (a pane opened slides into view), then two frames for the curves. */
 async function still(page: Page) {
   await page.waitForFunction(

@@ -11,21 +11,10 @@
  * IE_SHOTS=<dir> also saves the links list with each filter, light and dark, into that directory.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { addTop, command, idle, keys, selected, settle, state, visit } from "./helpers";
+import { addTop, command, idle, keys, linksHere, selected, settle, state, visit } from "./helpers";
 
 const SHOTS = process.env.IE_SHOTS;
 
-/** The links on the focused node: quote → target title. */
-const linksHere = (page: Page) =>
-  state(page, (s) => {
-    const snap = s.snap;
-    const out: Record<string, string> = {};
-    for (const c of snap.nodes[s.focus.node].children) {
-      const n = snap.nodes[c];
-      if (n.kind === "note" && n.ref) out[n.anchors[0].text] = n.ref.kind === "wiki" ? n.ref.title : n.ref.kind === "node" ? `node:${snap.nodes[n.ref.id]?.title}` : n.ref.url;
-    }
-    return out;
-  });
 const nolink = (page: Page) => state(page, (s) => (s.snap.nodes[s.focus.node].nolink ?? []) as string[]);
 const panel = (page: Page) => page.locator("[data-links-panel]");
 const count = (page: Page, status: string) => panel(page).locator(`.lfilter[data-filter=${status}] .n`);
@@ -37,9 +26,6 @@ async function column(page: Page) {
   await page.waitForFunction(() => (globalThis as any).__ie?.ready);
   await page.evaluate(() => document.fonts.ready);
 }
-
-/** A new top-level section with this text, typed from the keyboard; the focus is on it afterwards. */
-const newDoc = addTop;
 
 test.describe.configure({ mode: "serial" });
 
@@ -54,7 +40,7 @@ test.afterEach(async ({ page }) => {
 test("review mode: the approved links are made as one commit by the reviewer, the rejected wait behind a filter with the reason, and u undoes", async ({ page }) => {
   await column(page);
   expect(await state(page, (s) => s.settings.autolink)).toBe("review");
-  await newDoc(page, "Reviewed links", "The cephalopod met Fred Hoyle, who taught it the lambda calculus.");
+  await addTop(page, "Reviewed links", "The cephalopod met Fred Hoyle, who taught it the lambda calculus.");
   await idle(page);
   expect(await linksHere(page)).toEqual({ "Fred Hoyle": "Fred Hoyle", "lambda calculus": "Lambda calculus" });
   const top = await state(page, (s) => s.commits()[0]);
@@ -94,7 +80,7 @@ test("review mode: the approved links are made as one commit by the reviewer, th
 
 test("in the list a person reverses the reviewer either way: links one it rejected, removes one it linked for good", async ({ page }) => {
   await column(page);
-  await newDoc(page, "Reversed links", "The cephalopod met Fred Hoyle, who taught it the lambda calculus.");
+  await addTop(page, "Reversed links", "The cephalopod met Fred Hoyle, who taught it the lambda calculus.");
   await idle(page);
   await keys(page, "S 2");
   // Select the rejected row with a click: its words are selected in the text.
@@ -125,7 +111,7 @@ test("in the list a person reverses the reviewer either way: links one it reject
 
 test("a link removed in the text, by D or by the right-click menu, is declined and not made again on a rescan", async ({ page }) => {
   await column(page);
-  await newDoc(page, "Removed links", "Fred Hoyle wrote about the lambda calculus and the Hoyle state.");
+  await addTop(page, "Removed links", "Fred Hoyle wrote about the lambda calculus and the Hoyle state.");
   await idle(page);
   expect(Object.keys(await linksHere(page)).sort()).toEqual(["Fred Hoyle", "Hoyle state", "lambda calculus"]);
   // By key: Tab to the first link, D.
@@ -160,7 +146,7 @@ test("a link removed in the text, by D or by the right-click menu, is declined a
 
 test("when the model fails, nothing is linked unreviewed: everything is suggested, and the status line says so", async ({ page }) => {
   await column(page);
-  await newDoc(page, "Failed review", "Fred Hoyle left mockfail notes on the lambda calculus.");
+  await addTop(page, "Failed review", "Fred Hoyle left mockfail notes on the lambda calculus.");
   await idle(page);
   await expect(page.locator("article .lnk")).toHaveCount(0);
   await expect(page.locator("article .sugg")).toHaveCount(2);

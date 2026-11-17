@@ -4,7 +4,7 @@
  * Latencies are measured in the page (keydown timestamp → the frame after the render).
  */
 import { expect, test, type Page } from "@playwright/test";
-import { command, focusedTitle, idle, jump, keys, openPage, settle, state, writeReport, type Sample } from "./helpers";
+import { command, focusedTitle, idle, jump, keys, openPage, paced, settle, state, type Sample, writeReport } from "./helpers";
 
 const titlesUnder = (page: Page, title: string) =>
   page.evaluate((t) => {
@@ -39,23 +39,17 @@ test("pre-generated expansions paint within the 50 ms budget", async ({ page }) 
   await open(page);
   // One keystroke per frame (about 60 a second, well past any typist). Sent faster than that,
   // keys queue behind each other and the measurement becomes the length of the queue.
-  const keys = async (p: Page, seq: string) => {
-    for (const k of seq.split(" ")) {
-      await p.keyboard.press(k);
-      await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null))));
-    }
-  };
   // Walk the whole pre-generated outline: open every section, top to bottom, then every note in a few.
-  for (let i = 0; i < 70; i++) await keys(page, "j l");
+  for (let i = 0; i < 70; i++) await paced(page, "j l");
   const opened = await page.locator(".node.open").count();
   expect(opened).toBeGreaterThan(40);
   // Close and reopen subtrees, and step through grains.
-  await keys(page, "O j l h l i j j i l l Escape Escape");
+  await paced(page, "O j l h l i j j i l l Escape Escape");
   // Open notes in every form from the keyboard.
   await jump(page, "Levels of a node");
-  await keys(page, "Tab Enter Tab Enter Tab Enter Escape Escape");
+  await paced(page, "Tab Enter Tab Enter Tab Enter Escape Escape");
   await jump(page, "Expansion by depth");
-  await keys(page, "Tab Enter Tab Enter");
+  await paced(page, "Tab Enter Tab Enter");
   await expect(page.locator(".gloss").first()).toBeVisible();
   await expect(page.locator(".inset").first()).toBeVisible();
   await expect(page.locator(".sidenote").first()).toBeVisible();

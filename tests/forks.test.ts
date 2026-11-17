@@ -6,6 +6,7 @@ import { HUES, all, besideInColumn, close, columns, find, focus, focused, load, 
 type F = Forest<string>;
 type T = Tree<string>;
 const same = (a: string, b: string) => a === b;
+const isStr = (r: unknown): r is string => typeof r === "string";
 const branch = (f: F) => path(focused(f)).map((n) => n.ref);
 /** A tree drawn as nested lists, the picked child starred, a pinned pane marked with a leading ^. */
 const shape = (t: T | null): unknown => {
@@ -140,7 +141,6 @@ describe("forks", () => {
     expect(col2(f)).toEqual(["b2", "b1", "c1", "c2"]);
     f = open(focus(f, idOf(f, "b1")), 1, "bx", false, same);
     expect(col2(f)).toEqual(["b2", "bx", "c1", "c2"]);
-    const isStr = (r: unknown): r is string => typeof r === "string";
     const back = restore<string, unknown>(JSON.parse(JSON.stringify({ forest: f.trees.map((t) => save(t, (r) => r)), at: f.at })), isStr);
     expect(col2(back)).toEqual(["b2", "bx", "c1", "c2"]);
   });
@@ -179,7 +179,6 @@ describe("forks", () => {
     f = open(f, 0, "x", true, same);
     f = pin(f, idOf(f, "c"), true);
     f = close(f, idOf(f, "b"), idOf(f, "x")).forest;
-    const isStr = (r: unknown): r is string => typeof r === "string";
     const stored = JSON.parse(JSON.stringify({ forest: f.trees.map((t) => save(t, (r) => r)), at: f.at }));
     const back = restore<string, unknown>(stored, isStr);
     expect(shapes(back)).toEqual(shapes(f));
@@ -272,7 +271,6 @@ describe("forks", () => {
 });
 
 describe("branch colours", () => {
-  const isStr = (r: unknown): r is string => typeof r === "string";
   /** Each pane's colour by its ref, "-" for none. */
   const hues = (f: F) => Object.fromEntries(all(f).map((x) => [x.node.ref, x.node.hue ?? "-"]));
   const roundTrip = (f: F) => restore<string, unknown>(JSON.parse(JSON.stringify({ forest: f.trees.map((t) => save(t, (r) => r)), at: f.at, hues: f.hues ?? 0 })), isStr);
@@ -392,7 +390,6 @@ describe("column order", () => {
     f = setSources(f, new Map([[idOf(f, "o1"), 5], [idOf(f, "e2"), 90], [idOf(f, "e1"), 20]]));
     expect(col(f, 2)).toEqual(["e1", "e2", "o1"]);
     // Stored with the view.
-    const isStr = (r: unknown): r is string => typeof r === "string";
     const back = restore<string, unknown>(JSON.parse(JSON.stringify({ forest: f.trees.map((t) => save(t, (r) => r)), at: f.at, hues: f.hues })), isStr);
     expect(col(back, 2)).toEqual(["e1", "e2", "o1"]);
   });
