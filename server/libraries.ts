@@ -24,7 +24,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync 
 import { join } from "node:path";
 import { LIBRARY_ID } from "../src/core/address";
 import { FormatError } from "../src/core/format";
-import { Doc, retitleOps } from "../src/core/model";
+import { Doc, libraryNodeCount, retitleOps } from "../src/core/model";
 import { writeText } from "../src/core/seed";
 import { LibraryStore } from "./library";
 import { HttpError, writeAtomic } from "./util";
@@ -48,6 +48,7 @@ export interface LibraryInfo {
   id: string;
   title: string;
   created: string;
+  /** Nodes under its top-level nodes (the root and the Wikipedia container not counted). */
   nodes: number;
   branches: string[];
 }
@@ -189,7 +190,7 @@ export class Libraries {
         e.title = title;
         renamed = true;
       }
-      out.push({ id: e.id, title, created: e.created, nodes: Object.keys(s.main.snap().nodes).length, branches: [...s.branches.keys()] });
+      out.push({ id: e.id, title, created: e.created, nodes: libraryNodeCount(s.main.snap()), branches: [...s.branches.keys()] });
     }
     if (renamed) this.saveIndex();
     return out;

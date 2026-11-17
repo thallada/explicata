@@ -28,6 +28,7 @@ export interface LibraryInfo {
   id: string;
   title: string;
   created: string;
+  /** Nodes under its top-level nodes (the root and the Wikipedia container not counted). */
   nodes: number;
   branches: string[];
 }

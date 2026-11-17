@@ -897,6 +897,9 @@ export function tops(snap: Snap): NodeId[] {
 
 export const isLibraryRoot = (snap: Snap, id: NodeId) => snap.library && id === snap.root;
 
+/** How many nodes a library holds: everything under its top-level nodes, the root and the Wikipedia container left out (0 for a root alone). */
+export const libraryNodeCount = (snap: Snap) => tops(snap).reduce((n, d) => n + 1 + descendants(snap, d).length, 0);
+
 /**
  * The top of a node's branch: its ancestor (or itself) among the root's children. A relation, not
  * a kind of node. None for the library root itself; in a single tree, the root.

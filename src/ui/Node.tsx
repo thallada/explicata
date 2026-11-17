@@ -1,7 +1,7 @@
 /** Rendering shared by both page layouts: a node's body with its notes, the outline rows, and the top of the page. */
 import { Component, type ComponentChildren } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
-import { anchorLost, ancestors, descendants, isLibraryRoot, label, notesOf, sections, staleness, type NodeId, type Snap } from "../core/model";
+import { anchorLost, ancestors, descendants, isLibraryRoot, label, libraryNodeCount, notesOf, sections, staleness, type NodeId, type Snap } from "../core/model";
 import type { Ref } from "../core/ref";
 import { clip, overlaps, paragraphs, plain, type Form, type Range } from "../core/text";
 import { streamView } from "../core/marks";
@@ -462,7 +462,7 @@ export function TopMatter({ id }: { id: NodeId }) {
   const editing = store.edit?.node === id && store.edit.field === "title";
   const library = isLibraryRoot(snap, id);
   // The library root's count leaves out the Wikipedia container, which is nobody's section.
-  const count = library ? kids.reduce((n, d) => n + 1 + descendants(snap, d).length, 0) : descendants(snap, id).length;
+  const count = library ? libraryNodeCount(snap) : descendants(snap, id).length;
   return (
     <>
       {crumbs.length > 0 && (

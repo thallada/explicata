@@ -36,8 +36,8 @@ describe("the libraries on disk", () => {
     expect(work.titles()).toEqual([]);
     expect(work.id).not.toBe(first.id);
     expect(libs.list().map((l) => [l.title, l.nodes])).toEqual([
-      ["Library", 2],
-      ["Work notes", 1],
+      ["Library", 1],
+      ["Work notes", 0],
     ]);
     // An op on one never touches the other: separate databases, separate files.
     const hash = first.main.stateHash();
@@ -150,7 +150,7 @@ describe("the server with several libraries", () => {
     const made = await send("POST", "/api/libraries", { title: "Second" });
     expect(made.status).toBe(201);
     const b = (await made.json()).library;
-    expect(b).toMatchObject({ title: "Second", nodes: 1 });
+    expect(b).toMatchObject({ title: "Second", nodes: 0 });
     const state = await get(`/api/l/${b.id}/state`);
     expect(state).toMatchObject({ library: b.id, title: "Second" });
     expect(state.libraries.map((l: { id: string }) => l.id)).toEqual([a.id, b.id]);
@@ -228,7 +228,7 @@ describe("the server with several libraries", () => {
     const again = serve(data, starters);
     await up();
     const listed = (await get("/api/libraries")).libraries;
-    expect(listed.map((l: { id: string; nodes: number }) => [l.id, l.nodes])).toEqual([[a.id, Object.keys(treeA.nodes).length]]);
+    expect(listed.map((l: { id: string; nodes: number }) => [l.id, l.nodes])).toEqual([[a.id, Object.keys(treeA.nodes).length - 1]]);
     again.child.kill("SIGTERM");
     await again.exited;
   }, 60_000);
