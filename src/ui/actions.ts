@@ -84,6 +84,8 @@ export interface SelCtx {
   /** The node's Related list, numbered 1–5, each with where it is. */
   related?: { title: string; where?: string }[];
   panes: boolean;
+  /** The panes as pages (a phone): an open goes to the next page rather than beside. */
+  pages?: boolean;
 }
 
 /** The lenses, as the bar shows them and the menus list them. */
@@ -111,7 +113,7 @@ export function selectionEntries(c: SelCtx, act: Act): Entry[] {
     head(quote(c.text)),
     c.text && { t: "item", label: "Copy", keyText: COPY, run: () => act.copy(c.text) },
     SEP,
-    c.link && key(act, c.panes ? "Open the link beside" : "Open the link", "Enter"),
+    c.link && key(act, c.panes && !c.pages ? "Open the link beside" : "Open the link", "Enter"),
     c.link && c.panes && key(act, "Open it in place", "Enter", { keyText: "⇧⏎", shift: true, sub: "instead of the pane there" }),
     c.link === "wiki" && key(act, "Open on wikipedia.org", "W"),
     c.note && key(act, "Open the note", "Enter"),
@@ -223,10 +225,10 @@ export function paneEntries(c: PaneCtx, act: Act): Entry[] {
 }
 
 /** A row of an article (a section, a sense): open it. */
-export function articleRowEntries(title: string, panes: boolean, act: Act): Entry[] {
+export function articleRowEntries(title: string, panes: boolean, act: Act, pages = false): Entry[] {
   return tidy([
     head(title),
-    key(act, panes ? "Open beside" : "Open", "Enter"),
+    key(act, panes && !pages ? "Open beside" : "Open", "Enter"),
     panes && key(act, "Open in place", "Enter", { keyText: "⇧⏎", shift: true, sub: "instead of the pane there" }),
     key(act, "Open on wikipedia.org", "W"),
   ]);

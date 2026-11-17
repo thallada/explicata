@@ -53,6 +53,9 @@ export const touch = () => typeof matchMedia === "function" && matchMedia("(hove
 let promptHook: (prefill: string) => void = () => {};
 /** The page's command bar, to open with text already typed (App.tsx). */
 export const setPrompt = (fn: (prefill: string) => void) => (promptHook = fn);
+let cardHook: (note: NodeId) => ComponentChildren = () => null;
+/** What a link's card is drawn with, above a menu on touch (App.tsx: the hover preview's body). */
+export const setCard = (fn: (note: NodeId) => ComponentChildren) => (cardHook = fn);
 export const act = pageAct({ command: (t) => store.command(t), prompt: (p) => promptHook(p) });
 
 // ---- what is focused, for the menus ----
@@ -77,7 +80,7 @@ function selCtx(): SelCtx {
   const text = plain(store.selectedText() ?? "");
   const s = store.snap;
   const a = store.aux;
-  if (a?.kind === "wiki") return { text, article: true, link: store.auxLink(a) ? "wiki" : undefined, note: !!store.articleNoteHere(), panes: store.panes };
+  if (a?.kind === "wiki") return { text, article: true, link: store.auxLink(a) ? "wiki" : undefined, note: !!store.articleNoteHere(), panes: store.panes, pages: store.pages };
   const f = store.focus;
   const id = store.noteAt(f.range);
   const r = id ? store.targetOf(id) : undefined;
@@ -92,6 +95,7 @@ function selCtx(): SelCtx {
       return { title: x.title, where: t && t !== x.node ? s.nodes[t].title : undefined };
     }),
     panes: store.panes,
+    pages: store.pages,
   };
 }
 
@@ -107,7 +111,7 @@ export function menuHere(where: Where): Entry[] {
   if (a?.kind === "wiki") {
     const h = store.wikiHost(a.host);
     if (store.panes && (where === "pane" || a.row.t === "head")) return paneEntries(a.host.startsWith("n") ? { node: nodeCtx(a.host.slice(1) as NodeId), pinned } : { article: h?.title, pinned }, act);
-    if (a.row.t === "sec" || a.row.t === "sense") return articleRowEntries(h?.title ?? "Wikipedia", store.panes, act);
+    if (a.row.t === "sec" || a.row.t === "sense") return articleRowEntries(h?.title ?? "Wikipedia", store.panes, act, store.pages);
     return [];
   }
   if (a) return [];
@@ -221,7 +225,9 @@ export function menuAt(target: HTMLElement, at: { x: number; y: number } | HTMLE
   if (!where) return false;
   const entries = menuHere(where);
   if (!entries.length) return false;
-  showMenu(entries, at);
+  // On touch there is no hover to preview a link: a long press on one shows what it opens above its menu.
+  const note = touch() && !store.aux && store.selectedText() !== null ? store.noteAt(store.focus.range) : undefined;
+  showMenu(entries, at, note && store.snap.nodes[note]?.ref ? note : undefined);
   return true;
 }
 
@@ -230,6 +236,8 @@ export function menuAt(target: HTMLElement, at: { x: number; y: number } | HTMLE
 interface Shown {
   entries: Entry[];
   at: { x: number; y: number } | HTMLElement;
+  /** A link whose card shows above the items (a long press on it, on touch). */
+  card?: NodeId;
   /** Where the focus was, to go back to when the menu closes. */
   restore: HTMLElement | null;
 }
@@ -240,12 +248,12 @@ const changed = () => watchers.forEach((f) => f());
 /** The button whose menu a press on it just closed: the click that follows that press is not one to open it again. */
 let closedBy: { el: HTMLElement; at: number } | null = null;
 
-export function showMenu(entries: Entry[], at: Shown["at"]) {
+export function showMenu(entries: Entry[], at: Shown["at"], card?: NodeId) {
   if (at instanceof HTMLElement && closedBy?.el === at && performance.now() - closedBy.at < 1000) return void (closedBy = null);
   closedBy = null;
   if (shown?.at instanceof HTMLElement) shown.at.removeAttribute("aria-expanded");
   const active = document.activeElement as HTMLElement | null;
-  shown = { entries, at, restore: active && active !== document.body && !active.closest(".menu") ? active : shown?.restore ?? null };
+  shown = { entries, at, card, restore: active && active !== document.body && !active.closest(".menu") ? active : shown?.restore ?? null };
   if (at instanceof HTMLElement) at.setAttribute("aria-expanded", "true");
   changed();
 }
@@ -271,7 +279,7 @@ export const keyText = (k: string) => KEY_TEXT[k] ?? (k.startsWith("A-") ? `Alt+
  * hangs from; on touch, a sheet from the foot of the screen. ↑ ↓ (and Home End) move, Enter runs,
  * Esc closes and puts the focus back where it was; a press outside closes it too.
  */
-export function Menu({ entries, at, sheet, onClose }: { entries: Entry[]; at: Shown["at"]; sheet: boolean; onClose: (refocus: boolean) => void }) {
+export function Menu({ entries, at, sheet, card, onClose }: { entries: Entry[]; at: Shown["at"]; sheet: boolean; card?: NodeId; onClose: (refocus: boolean) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = ref.current!;
@@ -335,6 +343,7 @@ export function Menu({ entries, at, sheet, onClose }: { entries: Entry[]; at: Sh
   };
   return (
     <div class={`menu${sheet ? " sheet" : ""}`} role="menu" tabIndex={-1} ref={ref} onKeyDown={onKey} onContextMenu={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()}>
+      {card && store.snap.nodes[card] && <div class="menu-card">{cardHook(card)}</div>}
       {entries.map((x, i) => {
         if (x.t === "sep") return <div key={i} class="sep" role="separator" />;
         if (x.t === "head") return <div key={i} class="mh">{x.text}</div>;
@@ -377,7 +386,7 @@ export function MenuHost() {
     return () => void watchers.delete(f);
   }, []);
   if (!shown) return null;
-  return <Menu entries={shown.entries} at={shown.at} sheet={touch()} onClose={closeMenu} />;
+  return <Menu entries={shown.entries} at={shown.at} sheet={touch()} card={shown.card} onClose={closeMenu} />;
 }
 
 // ---- the selection bar ----
@@ -418,7 +427,7 @@ function placeBar(el: HTMLElement | null, shown = false) {
   const host = pane ? pane.getBoundingClientRect() : null;
   // The room it has: below the top bar, and in a pane below its tab when the tab shows (folded, or scrolled past its title) and above what covers its foot.
   const tabbed = pane && (pane.hasAttribute("data-scrolled") || pane.hasAttribute("data-covered"));
-  const roof = Math.max(bar, host ? host.top + (tabbed ? 30 : 0) : 0) + 4;
+  const roof = Math.max(bar, host ? host.top + (tabbed ? (pane.querySelector<HTMLElement>(":scope > .tabline")?.offsetHeight ?? 30) : 0) : 0) + 4;
   const next = pane?.parentElement?.classList.contains("crowded") ? (pane.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top : undefined;
   const floor = Math.min(window.innerHeight - 28, host?.bottom ?? Infinity, next ?? Infinity) - 4;
   // Over the words if it fits there, else under them; never on them.
@@ -581,7 +590,7 @@ export function FirstRun() {
   if (!firstRun) return null;
   return (
     <span class="firstrun">
-      {touch() ? "Tap a sentence for what you can do with it" : <>Click a sentence for what you can do with it · <Key k="?" what="lists every key" /></>}
+      {touch() ? (store.pages ? "Tap a sentence for what you can do with it · swipe, or tap the trail below, to go from pane to pane" : "Tap a sentence for what you can do with it") : <>Click a sentence for what you can do with it · <Key k="?" what="lists every key" /></>}
     </span>
   );
 }

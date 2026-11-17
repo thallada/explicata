@@ -39,8 +39,9 @@ import { remoteLLM } from "./remote";
 import { Session } from "./session";
 import { refreshAfterCalls } from "./usage";
 import { Linker, type AutoMode, type JobState, type LinkRow, type Status, type Sugg } from "./linker";
-import { all, besideInColumn, close as closeIn, columns as columnsOf, reorder, focus as focusIn, focused, open as openIn, path, pin as pinIn, prune, restore as restoreForest, rooted, save as saveTree, setSources, updateIn, withBranch, type Forest, type Placed, type Tree } from "./forks";
+import { all, besideInColumn, close as closeIn, columns as columnsOf, find as findPane, reorder, focus as focusIn, focused, open as openIn, path, pin as pinIn, prune, restore as restoreForest, rooted, save as saveTree, setSources, updateIn, withBranch, type Forest, type Placed, type Tree } from "./forks";
 import { stripMarks, type Mark } from "../core/marks";
+import { arrived, findKey, loadVisits, paneKey, visit, type Visits } from "./pages";
 
 export type Grain = "node" | "sentence" | "word";
 export interface Focus {
@@ -119,7 +120,7 @@ export type View = "auto" | "column" | "panes";
 /** Where a fork's colour shows in the panes view: along its curves and title rules, across its panes' tops, down their left edges, or nowhere. */
 export type Colors = "line" | "top" | "edge" | "off";
 const COLORS: Colors[] = ["line", "top", "edge", "off"];
-/** The narrowest window, in CSS px, on which `auto` chooses panes. */
+/** The narrowest window, in CSS px, on which `auto` shows panes side by side; below it, `auto` shows them as pages (pages.ts). */
 export const PANES_MIN_WIDTH = 900;
 
 /** Text being generated that is not in the library yet. */
@@ -433,11 +434,19 @@ class Store {
     return this.llm.kind !== "off";
   }
 
-  /** The layout on screen now. */
+  /** Whether the panes are on screen (side by side, or as pages): the forest of forks is what the keys move through. Not in the one column. */
   get panes(): boolean {
     const v = this.settings.view;
-    return v === "panes" || (v === "auto" && this.wide);
+    return v === "panes" || v === "auto";
   }
+
+  /** The pages layout (pages.ts): the panes one column at a time, swiped like pages; `auto` on a window narrower than PANES_MIN_WIDTH, a phone's. */
+  get pages(): boolean {
+    return this.settings.view === "auto" && !this.wide;
+  }
+
+  /** The map of every open pane (the pages layout's trail opens it). */
+  paneMap = false;
 
   /**
    * The node the reader is on, for what acts on a node and everything under it (export, duplicate,
@@ -677,6 +686,20 @@ class Store {
     const b = hit.node.seen;
     if (b && b.pane === hit.depth && this.snap.nodes[b.focus.node] && (b.aux ? this.auxValid(b.aux) : this.holds(b.pane, b.focus))) return this.restore(b);
     this.land(hit.depth);
+  }
+
+  /** Make any open pane the active one (the pages layout's swipes, trail and map): back where the reader was in it, or at its head. */
+  toPane(id: number) {
+    this.syncTrail();
+    if (!this.forkNode(id) || this.branchNodes[this.paneAt]?.id === id) return;
+    this.goPane(id);
+  }
+
+  /** The map of open panes (pages): shown or put away. */
+  showMap(on = !this.paneMap) {
+    if (this.paneMap === on) return;
+    this.paneMap = on;
+    this.emit();
   }
 
   /**
@@ -1185,7 +1208,7 @@ class Store {
       sessionStorage.removeItem("ie:switch");
       const at = splitLibrary(location.pathname).part;
       if (switched && (at === "/" || at === "")) {
-        window.history.replaceState(null, "", this.here());
+        window.history.replaceState(window.history.state, "", this.here());
         this.setTitle();
       } else this.navigate(at, "replace");
       this.ready = true;
@@ -1208,13 +1231,8 @@ class Store {
         document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && this.session.flush());
         this.session.connect();
       }
-      // Back and forward move between places in the library.
-      addEventListener("popstate", () => {
-        const at = splitLibrary(location.pathname);
-        // Another library's address (one this page did not push): that library, by a page load.
-        if (at.library && at.library !== this.library) location.reload();
-        else this.navigate(at.part, "none");
-      });
+      // Back and forward move between places in the library (as pages, between panes).
+      addEventListener("popstate", () => this.popped());
     } catch (err) {
       this.fatal = err instanceof Error ? err.message : String(err);
       this.emit();
@@ -1501,20 +1519,118 @@ class Store {
   /**
    * Put the address in the bar. Moving the focus replaces the entry (after a pause: browsers
    * throttle a page that rewrites its address on every keystroke); changing the page (hoisting,
-   * stepping out) or jumping makes a new one, so Back returns to where the reader was.
+   * stepping out) or jumping makes a new one, so Back returns to where the reader was. As pages,
+   * the entries are made pane by pane instead (trackPane), and this only writes the address.
    */
   private remember(push = false) {
     clearTimeout(this.addressTimer);
     if (this.preview || !this.ready) return;
+    const pushing = push && !this.pages;
     const write = () => {
       const path = this.here();
       this.setTitle();
       if (location.pathname === path) return;
-      if (push) window.history.pushState(null, "", path);
-      else window.history.replaceState(null, "", path);
+      if (pushing) window.history.pushState(null, "", path);
+      else window.history.replaceState(window.history.state, "", path);
     };
-    if (push) write();
+    if (pushing) write();
     else this.addressTimer = setTimeout(write, 250);
+  }
+
+  // ---- the pages layout's history ----
+
+  /** The entries this tab's history has for panes, as the page knows them (pages.ts). */
+  private visits: Visits = { keys: [], i: 0 };
+  /** Back or Forward steps the page has asked the browser for that it has not yet made. */
+  private traversing = 0;
+  private traverseTimer: ReturnType<typeof setTimeout> | undefined;
+  private visitsKey() {
+    return `ie:visits:${this.library}`;
+  }
+
+  /** The active pane's name in the history (pages.ts paneKey). */
+  private activeKey(): string | null {
+    const n = this.branchNodes[this.paneAt];
+    const hit = n && findPane(this.forest, n.id);
+    return hit ? paneKey(hit.path, refKey) : null;
+  }
+
+  /** Name the entry the browser is on after the active pane; `fresh`: the entries the page knew are forgotten, and this one starts them. */
+  private markEntry(fresh = false) {
+    const key = this.activeKey();
+    if (!key) return;
+    const v = this.visits;
+    this.visits = fresh || !v.keys.length ? { keys: [key], i: 0 } : { keys: v.keys.map((k, j) => (j === v.i ? key : k)), i: v.i };
+    this.saveVisits();
+    window.history.replaceState({ ie: "pane", key, i: this.visits.i }, "", location.pathname);
+  }
+  private saveVisits() {
+    try {
+      sessionStorage.setItem(this.visitsKey(), JSON.stringify(this.visits));
+    } catch {
+      /* storage may be unavailable: Back still works within this page load */
+    }
+  }
+
+  /**
+   * As pages, after each render: when the active pane has changed, the history takes a step, so
+   * the browser's Back (its button, or the edge swipe) goes back a pane. Going to the pane of the
+   * entry just before is Back itself, to the one just after is Forward; anything else is a new entry.
+   */
+  trackPane() {
+    if (!this.pages || !this.ready || this.preview || this.traversing > 0) return;
+    const key = this.activeKey();
+    if (!key) return;
+    const st = window.history.state as { ie?: string; key?: string; i?: number } | null;
+    const here = st?.ie === "pane" && st.i === this.visits.i && this.visits.keys[this.visits.i] === st.key;
+    if (!here) {
+      // The entry the browser is on is not the one the page thinks (the first render as pages, a reload, a step made as panes side by side).
+      let kept: Visits | null = null;
+      try {
+        kept = loadVisits(JSON.parse(sessionStorage.getItem(this.visitsKey()) ?? "null"));
+      } catch {
+        /* none kept */
+      }
+      if (kept && st?.ie === "pane" && typeof st.key === "string" && typeof st.i === "number" && kept.keys[st.i] === st.key) {
+        this.visits = { keys: kept.keys, i: st.i };
+        if (st.key === key) return;
+      } else return this.markEntry(true);
+    }
+    const { step, visits } = visit(this.visits, key);
+    if (step === "same") return;
+    this.visits = visits;
+    this.saveVisits();
+    if (step === "push") return window.history.pushState({ ie: "pane", key, i: visits.i }, "", this.here());
+    this.traversing++;
+    clearTimeout(this.traverseTimer);
+    // Should the browser not make the step (it always does, for an entry this page made), the page carries on.
+    this.traverseTimer = setTimeout(() => (this.traversing = 0), 1500);
+    if (step === "back") window.history.back();
+    else window.history.forward();
+  }
+
+  /** Back or Forward, by the browser (its buttons, a gesture, or a step trackPane asked for). */
+  private popped() {
+    const at = splitLibrary(location.pathname);
+    // Another library's address (one this page did not push): that library, by a page load.
+    if (at.library && at.library !== this.library) return location.reload();
+    if (!this.pages) return this.navigate(at.part, "none");
+    if (this.traversing > 0) {
+      // A step the page asked for: it shows that pane already.
+      if (--this.traversing === 0) this.trackPane();
+      return;
+    }
+    // As pages each entry names a pane, so Back goes back a pane, even one with no address of its own (an article's).
+    const st = window.history.state as { ie?: string; key?: string; i?: number } | null;
+    const named = st?.ie === "pane" && typeof st.key === "string";
+    this.visits = named ? arrived(this.visits, st.key!, typeof st.i === "number" ? st.i : -1) : { keys: [], i: 0 };
+    const id = named ? findKey(this.forest, st.key!, refKey) : null;
+    this.paneMap = false;
+    if (id !== null) {
+      this.toPane(id);
+      this.emit();
+    } else this.navigate(at.part, "none");
+    this.markEntry(!named);
   }
 
   /** Show what a path within the library names (`/`, `/n/<id>`, `/w/<lang>/<title>`): on boot, and on Back and Forward. */
@@ -1531,7 +1647,7 @@ class Store {
       }
       title = title.replace(/_/g, " ");
       if (this.colWiki?.title !== title) this.openColWiki(title, w[1], false);
-      if (history === "replace") window.history.replaceState(null, "", this.here());
+      if (history === "replace") window.history.replaceState(window.history.state, "", this.here());
       return this.emit();
     }
     if (this.colWiki) {
@@ -1566,7 +1682,7 @@ class Store {
     this.repairView();
     this.saveView();
     this.prefetchLinks(this.focus.node);
-    if (history === "replace") window.history.replaceState(null, "", this.here());
+    if (history === "replace") window.history.replaceState(window.history.state, "", this.here());
     this.setTitle();
     this.emit();
   }
@@ -1706,7 +1822,9 @@ class Store {
         }
         this.open.add(f.node);
         this.openPane(i, { kind: "node", id: f.node });
-        this.remember();
+        // As pages, what opens is gone to: the page on screen is always the active pane's column.
+        if (this.pages) this.land(i + 1);
+        else this.remember();
         return this.onOpened(f.node);
       }
       // A head: into its first row.
@@ -1777,8 +1895,11 @@ class Store {
     if (!this.panes) return;
     this.syncTrail();
     const p = this.trail[this.paneAt];
-    if (open && p?.kind === "node" && this.snap.nodes[id]?.parent === p.id && this.snap.nodes[id].kind === "section") this.openPane(this.paneAt, { kind: "node", id });
-    else if (!open) this.closeRow(this.paneAt, id);
+    if (open && p?.kind === "node" && this.snap.nodes[id]?.parent === p.id && this.snap.nodes[id].kind === "section") {
+      const i = this.paneAt;
+      this.openPane(i, { kind: "node", id });
+      if (this.pages) this.land(i + 1);
+    } else if (!open) this.closeRow(this.paneAt, id);
   }
 
   setOpen(id: NodeId, open: boolean) {
@@ -2831,6 +2952,7 @@ class Store {
       return this.setFocus(this.focus, { kind: "wiki", host: `p${i + 1}`, row: { t: "head" } });
     }
     this.openPane(i, { kind: "wiki", title: h.title, lang: h.lang, sec: row.id });
+    if (this.pages) this.land(i + 1);
   }
 
   /** h on an aux row: up to its head, then out of the view, back to where it was opened from. */
@@ -2991,14 +3113,14 @@ class Store {
     lsSet("ie:settings", this.settings);
     this.repairView();
     this.say(
-      view === "auto" ? `view: auto (${this.panes ? "panes" : "one column"} at this width)`
+      view === "auto" ? `view: auto (${this.pages ? "panes as pages, one column at a time" : "panes"} at this width)`
         : view === "panes" ? "view: panes (v for one column)"
         : "view: one column (v for panes)",
     );
   }
-  /** v: switch to whichever layout is not on screen. */
+  /** v: switch to whichever layout is not on screen: from the panes (side by side or as pages) to one column, and back to the panes this width shows. */
   cycleView() {
-    this.setView(this.panes ? "column" : "panes");
+    this.setView(this.panes ? "column" : this.wide ? "panes" : "auto");
   }
 
   private set(key: "auto" | "speculate" | "curves", on: boolean) {

@@ -9,10 +9,11 @@ import { DocBar, LibrariesPanel } from "./Menu";
 import { LinkCard, LinkPicker, LinksPanel, NodeBacklinks, NodeRelated, TargetRow } from "./Links";
 import { NodeBody, Outline, PendingSections, TopMatter } from "./Node";
 import { Panes } from "./Panes";
+import { PaneMap, Trail } from "./Pages";
 import { PANES_MIN_WIDTH, store, type Aux, type WRow } from "./store";
 import { WikiPage, WikiView } from "./Wiki";
 import { Usage } from "./Usage";
-import { FirstRun, Hints, Key, MenuHost, SelBar, closeMenu, hideBar, locate, locateIn, menuAt, menuShown, setPrompt, showBar, type Hint } from "./Mouse";
+import { FirstRun, Hints, Key, MenuHost, SelBar, closeMenu, hideBar, locate, locateIn, menuAt, menuShown, setCard, setPrompt, showBar, type Hint } from "./Mouse";
 import { press } from "./press";
 
 function Page() {
@@ -479,8 +480,15 @@ export function App() {
       setPrefill(text);
       store.setMode("command");
     });
+    // A long press on a link (touch) shows what it opens above its menu.
+    setCard((note) => <PopupBody note={note} />);
     const onKey = (e: KeyboardEvent) => {
       clearTimeout(hover);
+      // Esc puts the map of panes away first.
+      if (e.key === "Escape" && store.paneMap) {
+        e.preventDefault();
+        return store.showMap(false);
+      }
       // The keys take over from the pointer: its bar and menu go (not for a modifier, or the copy key).
       if (!e.ctrlKey && !e.metaKey && !e.altKey && !["Shift", "Control", "Alt", "Meta"].includes(e.key)) {
         hideBar();
@@ -527,10 +535,29 @@ export function App() {
       const wide = window.innerWidth >= PANES_MIN_WIDTH;
       if (wide === store.wide) return;
       store.wide = wide;
+      store.paneMap = false;
       if (store.settings.view === "auto") store.emit();
     };
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    // An on-screen keyboard covers the foot of the screen without resizing the page (iOS): what sits
+    // at the foot (the status line, the command line, the selection bar) is raised above it.
+    const vv = window.visualViewport;
+    const onViewport = () => {
+      if (!vv) return;
+      const typing = (document.activeElement as HTMLElement | null)?.matches?.("input, textarea, [contenteditable]");
+      const kb = typing && Math.abs(vv.scale - 1) < 0.01 ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) : 0;
+      const v = `${kb}px`;
+      if (document.documentElement.style.getPropertyValue("--kb") !== v) document.documentElement.style.setProperty("--kb", v);
+    };
+    vv?.addEventListener("resize", onViewport);
+    window.addEventListener("focusin", onViewport);
+    window.addEventListener("focusout", onViewport);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      vv?.removeEventListener("resize", onViewport);
+      window.removeEventListener("focusin", onViewport);
+      window.removeEventListener("focusout", onViewport);
+    };
   }, []);
 
   // Keep the focused thing in view, and time keypress → paint.
@@ -696,7 +723,11 @@ export function App() {
         store.go(id);
         store.open.add(id);
         const holder = store.trail[paneIndex];
-        if (store.snap.nodes[id]?.kind === "section" && holder?.kind === "node" && store.snap.nodes[id].parent === holder.id) store.openPane(paneIndex, { kind: "node", id });
+        if (store.snap.nodes[id]?.kind === "section" && holder?.kind === "node" && store.snap.nodes[id].parent === holder.id) {
+          store.openPane(paneIndex, { kind: "node", id });
+          // As pages, a tap on a row goes to its pane: the next page.
+          if (store.pages) store.land(paneIndex + 1);
+        }
         return;
       }
       store.go(id);
@@ -740,7 +771,7 @@ export function App() {
   };
 
   return (
-    <div class={`app mode-${store.mode}${store.mode === "history" || store.mode === "review" ? " with-panel" : ""}${store.libs ? " with-left" : ""}${panes ? " view-panes" : ""}`} onMouseOver={onOver} onContextMenu={onContext}>
+    <div class={`app mode-${store.mode}${store.mode === "history" || store.mode === "review" ? " with-panel" : ""}${store.libs ? " with-left" : ""}${panes ? " view-panes" : ""}${store.pages ? " view-pages" : ""}`} onMouseOver={onOver} onContextMenu={onContext}>
       <main
         class="page"
         onClick={onClick}
@@ -755,8 +786,10 @@ export function App() {
           </div>
         )}
         {panes ? <Panes /> : <Page />}
+        {store.pages && <Trail />}
       </main>
       <LibrariesPanel />
+      <PaneMap />
       {store.mode === "history" && <HistoryPanel verdict={verdict} />}
       {store.mode === "review" && <LinksPanel />}
       {store.mode === "help" && <Help />}

@@ -27,6 +27,8 @@
   --col: 700px;
   --margin: 300px;
   --gap: 44px;
+  /* Where what sits at the foot of the screen starts: above the status line, the home indicator (safe area) and an on-screen keyboard (--kb, App.tsx). All 1.75rem on a desktop. */
+  --foot-at: calc(1.75rem + env(safe-area-inset-bottom, 0px) + var(--kb, 0px));
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -63,12 +65,12 @@ body {
 }
 ::selection { background: var(--sel-strong); }
 
-.app { min-height: 100vh; }
+.app { min-height: 100vh; min-height: 100dvh; }
 .loading, .fatal { max-width: 34em; margin: 20vh auto; padding: 0 20px; font-family: var(--sans); color: var(--dim); }
 
 /* The page's widest: the column, its gap and the margin for notes (only the column where no margin fits). */
 :root { --page-w: calc(var(--col) + var(--gap) + var(--margin) + 40px); }
-.page { max-width: var(--page-w); margin: 0 auto; padding: 44px 20px 30vh; }
+.page { max-width: var(--page-w); margin: 0 auto; padding: 44px max(20px, env(safe-area-inset-right, 0px)) 30vh max(20px, env(safe-area-inset-left, 0px)); }
 article { width: min(100%, var(--col)); }
 
 /* ---- the top of the page ---- */
@@ -212,7 +214,7 @@ article > .outline > .node { margin-top: 0.12rem; }
 article.preview { opacity: 0.92; }
 
 .panel {
-  position: fixed; top: 0; right: 0; bottom: 1.75rem; width: min(440px, 92vw); overflow-y: auto;
+  position: fixed; top: 0; right: 0; bottom: var(--foot-at); width: min(440px, 92vw); overflow-y: auto;
   background: var(--bg); border-left: 3px double var(--rule); padding: 0 0.9rem 2rem; font-family: var(--sans); font-size: 0.74rem; line-height: 1.4; z-index: 5;
 }
 .panel-head { position: sticky; top: 0; background: var(--bg); padding: 0.7rem 0 0.45rem; display: flex; justify-content: space-between; align-items: baseline; gap: 1em; border-bottom: 1px solid var(--hair); font-weight: 600; z-index: 1; }
@@ -281,18 +283,18 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .popup {
   position: fixed; width: 440px; max-height: 320px; overflow: auto; z-index: 15;
   background: var(--bg); border: 3px double var(--rule); box-shadow: 1px 2px 8px 0 color-mix(in srgb, var(--fg) 16%, transparent);
-  padding: 0.6rem 0.85rem 0.7rem; font-size: 0.82rem; line-height: 1.45; pointer-events: none;
+  padding: 0.6rem 0.85rem 0.7rem; font-size: 0.82rem; line-height: 1.45; pointer-events: none; max-width: calc(100vw - 24px);
 }
 
 /* ---- the command bar and status line ---- */
-.command { position: fixed; left: 0; right: 0; bottom: 1.75rem; display: flex; align-items: baseline; gap: 0.7em; background: var(--bg); border-top: 1px solid var(--fg); padding: 0.4rem 0.9rem; font-family: var(--sans); font-size: 0.8rem; z-index: 12; }
+.command { position: fixed; left: 0; right: 0; bottom: var(--foot-at); display: flex; align-items: baseline; gap: 0.7em; background: var(--bg); border-top: 1px solid var(--fg); padding: 0.4rem 0.9rem; font-family: var(--sans); font-size: 0.8rem; z-index: 12; }
 .command .prompt { color: var(--faint); font-size: 0.7rem; white-space: nowrap; }
 .command .prompt::after { content: " ›"; }
 .command input { flex: 1; font: inherit; border: 0; outline: none; background: transparent; color: var(--fg); }
 
 .status {
-  position: fixed; left: 0; right: 0; bottom: 0; height: 1.75rem; display: flex; align-items: center; gap: 0.9em;
-  background: var(--wash); border-top: 1px solid var(--hair); padding: 0 0.9rem; font-family: var(--sans); font-size: 0.66rem; color: var(--dim); white-space: nowrap; z-index: 10;
+  position: fixed; left: 0; right: 0; bottom: var(--kb, 0px); height: calc(1.75rem + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; gap: 0.9em;
+  background: var(--wash); border-top: 1px solid var(--hair); padding: 0 max(0.9rem, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(0.9rem, env(safe-area-inset-left, 0px)); font-family: var(--sans); font-size: 0.66rem; color: var(--dim); white-space: nowrap; z-index: 10;
 }
 .grain { font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--bg); background: var(--fg); padding: 0 0.5em; border-radius: 2px; }
 .grain.sentence, .grain.word { background: var(--dim); }
@@ -313,7 +315,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 
 /* ---- the editor's research run, above the status line (AgentPanel in App.tsx) ---- */
 .agent-panel {
-  position: fixed; left: 0; right: 0; bottom: 1.75rem; max-height: 11rem; overflow: auto; z-index: 11;
+  position: fixed; left: 0; right: 0; bottom: var(--foot-at); max-height: 11rem; overflow: auto; z-index: 11;
   background: var(--wash); border-top: 1px solid var(--hair); padding: 0.35rem 0.9rem 0.4rem;
   font-family: var(--sans); font-size: 0.7rem; line-height: 1.5; color: var(--dim);
 }
@@ -369,7 +371,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
   }
 }
 .view-panes .page {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 1.75rem;
+  position: fixed; top: 0; left: 0; right: 0; bottom: var(--foot-at);
   max-width: none; margin: 0; padding: 0; display: flex; flex-direction: column;
 }
 .view-panes.with-panel .page { right: min(440px, 92vw); }
@@ -517,7 +519,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
     --hue-none: oklch(80% 0 0);
   }
 }
-:where(.pane, .curves path) { --hue: var(--hue-none); }
+:where(.pane, .curves path, .trail-step, .map-row) { --hue: var(--hue-none); }
 [data-hue="0"] { --hue: var(--hue-0); }
 [data-hue="1"] { --hue: var(--hue-1); }
 [data-hue="2"] { --hue: var(--hue-2); }
@@ -526,7 +528,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 [data-hue="5"] { --hue: var(--hue-5); }
 [data-hue="6"] { --hue: var(--hue-6); }
 /* Fainter off the focused branch. Both are fixed per pane, so moving the branch changes no custom property (which every element in the pane would inherit). */
-.pane, .curves path { --hue-faint: color-mix(in oklab, var(--hue) 70%, transparent); }
+.pane, .curves path, .trail-step, .map-row { --hue-faint: color-mix(in oklab, var(--hue) 70%, transparent); }
 .panes:not([data-colors="off"]) .curves path { stroke: var(--hue-faint); stroke-width: var(--hair, 1px); }
 .panes:not([data-colors="off"]) .curves path.on { stroke: var(--hue); }
 /*
@@ -854,13 +856,13 @@ html { scroll-padding-top: 48px; }
 
 /* Touch: no hover, no right-click, no keys. The bar docks at the foot; a menu is a sheet. */
 .selbar.docked {
-  left: 0; right: 0; bottom: 1.75rem; top: auto !important; border-width: 1px 0 0; border-radius: 0; box-shadow: none;
+  left: 0; right: 0; bottom: var(--foot-at); top: auto !important; border-width: 1px 0 0; border-radius: 0; box-shadow: none;
   padding: 0.3rem 0.4rem; background: var(--bg); flex-wrap: wrap; justify-content: center;
 }
 .selbar.docked::after, .selbar.docked .k, .selbar.docked .bar-sep { display: none; }
-.selbar.docked button { padding: 0.45rem 0.6rem; font-size: 0.95rem; }
+.selbar.docked button { padding: 0.45rem 0.6rem; font-size: 0.95rem; min-height: 44px; min-width: 44px; }
 .menu.sheet {
-  left: 0; right: 0; bottom: 1.75rem; top: auto; max-width: none; max-height: 70vh; overflow-y: auto;
+  left: 0; right: 0; bottom: var(--foot-at); top: auto; max-width: none; max-height: 70vh; max-height: 70dvh; overflow-y: auto;
   border-width: 3px 0 0; padding-bottom: 0.4rem; font-size: 0.86rem; box-shadow: 0 -2px 10px 0 color-mix(in srgb, var(--fg) 12%, transparent);
 }
 .menu.sheet .mi { padding: 0.62rem 1rem; }
@@ -923,3 +925,126 @@ html { scroll-padding-top: 48px; }
   .panel.left { width: auto; right: 0; border-right: 0; }
 }
 /* ---- end libraries panel ---- */
+
+/* ---- pages (src/ui/Pages.tsx, pages.ts) ----
+ * The panes on a phone (auto, narrower than 900 px): each column of the panes view is a page as
+ * wide as the screen, its panes stacked down it as on a wide screen, and the pages are swiped
+ * sideways, snapping one at a time. No curves (the panes are never side by side): what a pane was
+ * opened from takes its colour instead, the colour of the rule under its title, its tab and its
+ * step in the trail. Everything a finger presses is at least 40 px each way; nothing waits for a
+ * hover. The trail and the map's button sit at the foot, where a thumb reaches.
+ */
+.view-pages { --spine: 16px; --pane-pad: 16px; }
+.view-pages .page { padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px); }
+.panes[data-layout="pages"] { --tab: 44px; }
+.panes[data-layout="pages"] .strip { scroll-snap-type: x mandatory; scrollbar-width: none; }
+.panes[data-layout="pages"] .strip::-webkit-scrollbar { display: none; }
+.panes[data-layout="pages"] .col { position: relative; width: 100%; scroll-snap-align: start; scroll-snap-stop: always; }
+.panes[data-layout="pages"] .pane { border-right: 0; }
+/* Room above the title for the pane's buttons, a finger's size; on a tablet the text keeps its measure. */
+.panes[data-layout="pages"] .pane-scroll { padding-top: 46px; }
+.panes[data-layout="pages"] .col.split .pane-scroll { padding-bottom: 1.4rem; }
+.panes[data-layout="pages"] .pane-body { max-width: var(--pane-text); margin: 0 auto; }
+.panes[data-layout="pages"] .pane-ctl { top: 2px; right: 4px; gap: 0; }
+.panes[data-layout="pages"] .pane-btn { width: 40px; height: 40px; padding: 12px; color: var(--faint); }
+.panes[data-layout="pages"] .pane-btn.more { padding: 0; margin: 0; font-size: 1rem; opacity: 1; pointer-events: auto; }
+/* The first pane never closes. */
+.panes[data-layout="pages"] .pane.root > .pane-ctl > .close { display: none; }
+.panes[data-layout="pages"] .pane-btn.pin.on { color: var(--fg); }
+.panes[data-layout="pages"] .grip { display: none; }
+/* A tab: a swipe across it still turns the page; one down it drags the pane up or down its column. */
+.panes[data-layout="pages"] .tabline { padding: 0 128px 0 var(--spine); font-size: 0.8rem; touch-action: pan-x; }
+/* The heavy rule marks the active pane among others in its column; alone on its page it needs none. */
+.panes[data-layout="pages"] .pane.active::after,
+.panes[data-layout="pages"][data-curves="off"] .pane.active::after { bottom: auto; height: 3px; border: 0; background: var(--fg); }
+.panes[data-layout="pages"] .col:not(.split) > .pane::after { height: 0; }
+/* Rows a finger opens. (Links in running text are words, and stay as tall as the line.) */
+.panes[data-layout="pages"] :is(.rows, .wrows) .row { min-height: 40px; align-items: center; }
+.panes[data-layout="pages"] :is(.backlinks, .related-list) li { min-height: 40px; align-content: center; }
+.panes[data-layout="pages"] .target-row { min-height: 40px; }
+/* What a pane was opened from, in that pane's colour (Panes.tsx pageMarks): fainter for a pane off the focused branch. */
+[data-src-hue] { --src-hue: var(--hue-none); }
+[data-src-hue="0"] { --src-hue: var(--hue-0); }
+[data-src-hue="1"] { --src-hue: var(--hue-1); }
+[data-src-hue="2"] { --src-hue: var(--hue-2); }
+[data-src-hue="3"] { --src-hue: var(--hue-3); }
+[data-src-hue="4"] { --src-hue: var(--hue-4); }
+[data-src-hue="5"] { --src-hue: var(--hue-5); }
+[data-src-hue="6"] { --src-hue: var(--hue-6); }
+[data-src-hue]:not([data-src-on]) { --src-hue-now: color-mix(in oklab, var(--src-hue) 70%, transparent); }
+[data-src-hue][data-src-on] { --src-hue-now: var(--src-hue); }
+.panes[data-layout="pages"]:not([data-colors="off"]) :is(.lnk, .wiki-text a)[data-src-hue] { text-decoration-color: var(--src-hue-now); text-decoration-thickness: 2px; }
+.panes[data-layout="pages"]:not([data-colors="off"]) .anchor[data-src-hue] { background-image: linear-gradient(var(--src-hue-now), var(--src-hue-now)); background-size: 1px 2px; }
+.panes[data-layout="pages"]:not([data-colors="off"]) :is(.node, .wrow)[data-src-hue] > .row { box-shadow: inset 2px 0 0 var(--src-hue-now); }
+.panes[data-layout="pages"]:not([data-colors="off"]) :is(.node, .wrow)[data-src-hue] > .row::after { color: var(--src-hue-now); }
+.panes[data-layout="pages"]:not([data-colors="off"]) :is(.backlinks, .related-list) li[data-src-hue] { box-shadow: inset 2px 0 0 var(--src-hue-now); }
+
+/* A tap shows where it landed, quietly, in the text's ink. */
+.view-pages { -webkit-tap-highlight-color: color-mix(in srgb, var(--fg) 10%, transparent); }
+/* A panel's key buttons (the libraries': new, close, delete's yes and no), a finger's size too. */
+.view-pages .panel .key { min-height: 40px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; }
+.view-pages .panel-head { padding: 0.1rem 0; align-items: center; }
+
+/* The top bar: each tool a finger's height. */
+.view-pages .docbar { min-height: 44px; align-items: center; padding: 0 8px 0 4px; }
+.view-pages .docbar .tool { min-height: 44px; min-width: 44px; justify-content: center; display: inline-flex; align-items: center; padding: 0 6px; }
+.view-pages .docbar .tools { align-items: center; gap: 0.2em; }
+.view-pages .docbar .lib-name { align-items: center; }
+/* The status line keeps what is said and whether it is saved; the branch, the model and the key list are in the menu and the history. */
+.view-pages .status .right > :is(.usage, [title="branch"], [title="model"], .q) { display: none; }
+
+/* The trail: the focused branch, a step per pane, each underlined in its pane's colour; the one on screen in the text's ink. */
+.trail {
+  flex: none; display: flex; align-items: stretch; height: 44px; border-top: 1px solid var(--hair); background: var(--bg);
+  font-family: var(--sans); font-size: 0.74rem; letter-spacing: 0.02em;
+}
+.trail-steps { flex: 1; min-width: 0; display: flex; align-items: stretch; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; padding: 0 4px; }
+.trail-steps::-webkit-scrollbar { display: none; }
+.trail-step {
+  position: relative; flex: none; display: flex; align-items: center; gap: 0.3em; min-width: 44px; max-width: 11em; padding: 0 12px;
+  font: inherit; color: var(--dim); background: none; border: 0; border-radius: 0; cursor: pointer;
+}
+.trail-step:hover { border: 0; color: var(--fg); }
+.trail-step::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 10px; height: 1px; background: var(--hue-faint); }
+.trail-step.here { color: var(--fg); font-weight: 600; }
+.trail-step.here::after { height: 2px; background: var(--hue); }
+.trail-step.ahead { color: var(--faint); }
+.trail-step + .trail-step::before { content: "›"; position: absolute; left: -0.2em; color: var(--rule); font-weight: 400; }
+.trail-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trail-step .wmark { flex: none; font-size: 0.95em; }
+.trail-map { flex: none; min-width: 64px; padding: 0 14px; font: inherit; color: var(--dim); background: none; border: 0; border-left: 1px solid var(--hair); border-radius: 0; cursor: pointer; }
+.trail-map:hover, .trail-map[aria-expanded="true"] { border-color: var(--hair); color: var(--fg); }
+.trail-n { color: var(--faint); font-variant-numeric: tabular-nums; margin-left: 0.15em; }
+
+/* The map: every open pane, as an outline of the forest, in a sheet from the foot. */
+.pane-map {
+  position: fixed; left: 0; right: 0; bottom: var(--foot-at); z-index: 30; max-height: 70vh; max-height: 70dvh; overflow-y: auto; outline: none;
+  background: var(--bg); border-top: 3px double var(--rule); box-shadow: 0 -2px 10px 0 color-mix(in srgb, var(--fg) 12%, transparent);
+  padding: 0 env(safe-area-inset-right, 0px) 0.4rem env(safe-area-inset-left, 0px); font-family: var(--sans); font-size: 0.86rem; line-height: 1.35;
+}
+.map-head {
+  position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: baseline; gap: 1em; padding: 0.6rem 1rem 0.35rem;
+  background: var(--bg); font-size: 0.6rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint);
+}
+.map-hint { font-weight: 400; letter-spacing: 0.02em; text-transform: none; text-align: right; }
+.map-rows { list-style: none; margin: 0; padding: 0; }
+.map-row { display: flex; align-items: stretch; min-height: 44px; padding-left: calc(6px + var(--depth, 0) * 14px); }
+.map-go { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.55em; padding: 0 8px; font: inherit; color: var(--dim); text-align: left; background: none; border: 0; border-radius: 0; cursor: pointer; }
+.map-go:hover { border: 0; color: var(--fg); }
+.map-dash { flex: none; width: 1.1rem; height: 0; border-top: 1px solid var(--hue-faint); }
+.map-row.on-branch .map-dash { border-top: 2px solid var(--hue); }
+.map-row.on-branch .map-go { color: var(--fg); }
+.map-row.here .map-go { font-weight: 600; background: var(--sel); }
+.map-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-sub { flex: none; color: var(--faint); font-size: 0.66rem; font-style: italic; }
+.map-btn { flex: none; display: block; width: 44px; height: 44px; padding: 14px; color: var(--faint); background: none; border: 0; border-radius: 0; cursor: pointer; }
+.map-btn.none { cursor: default; }
+.map-btn svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.map-btn:hover { border: 0; color: var(--fg); background: var(--sel); }
+.map-btn.pin.on { color: var(--fg); }
+.map-btn.pin.on svg { fill: currentColor; }
+
+/* A long press on a link (touch): what it opens, above its menu. */
+.menu-card { padding: 0.5rem 1rem 0.6rem; border-bottom: 1px solid var(--hair); font-family: var(--serif); font-size: 0.82rem; line-height: 1.45; max-height: 40vh; overflow-y: auto; }
+.menu-card:has(.l-wiki) { background: var(--wiki-bg); }
+/* ---- end pages ---- */

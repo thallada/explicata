@@ -21,6 +21,7 @@ import { ancestors, label, sections, staleness, type NodeId } from "../core/mode
 import { LANES, LANE_FIRST, LANE_LAST, LANE_PITCH, laneOrder } from "./lanes";
 import { ACROSS, DOWN, mark, offsets, reveal, starts, stick, unmark, whole } from "./stack";
 import { NodeBacklinks, NodeRelated, PaneCtx, TargetRow } from "./Links";
+import { pageAt, paneOfPage } from "./pages";
 import { Abstract, Flags, NodeBody, PendingSections, Row, TitleEditor, TopMatter, isPrompt } from "./Node";
 import { kidClass, refKey, store, type Aux, type Pane as PaneNode, type PaneRef } from "./store";
 import { WikiView } from "./Wiki";
@@ -81,7 +82,7 @@ export const GEOMETRY = "ie:geometry";
  * observer on the title's rule, against the pane's own scroll box less the tab, so nothing is done
  * per scroll or per key, and the tab comes exactly as the rule goes under it.
  */
-const watched = new Map<number, { io: IntersectionObserver; target: Element }>();
+const watched = new Map<number, { io: IntersectionObserver; target: Element; tab: number }>();
 function watchHead(tid: number) {
   const pane = document.querySelector<HTMLElement>(`.strip .pane[data-tid="${tid}"]`);
   if (!pane || typeof IntersectionObserver === "undefined") return;
@@ -89,7 +90,7 @@ function watchHead(tid: number) {
   const head = pane.querySelector<HTMLElement>(HEADS);
   const target = head?.matches(".top") ? head.querySelector("h1") : head;
   const w = watched.get(tid);
-  if (w && w.target === target) return;
+  if (w && w.target === target && w.tab === TAB) return;
   w?.io.disconnect();
   watched.delete(tid);
   if (!target || !scroll) return void pane.removeAttribute("data-scrolled");
@@ -104,7 +105,7 @@ function watchHead(tid: number) {
     { root: scroll, rootMargin: `-${TAB}px 0px 0px 0px` },
   );
   io.observe(target);
-  watched.set(tid, { io, target });
+  watched.set(tid, { io, target, tab: TAB });
 }
 
 /** The attributes every pane has: which it is, its place in its tree, its id there, and its branch's colour (forks.ts; style.css draws it). */
@@ -294,8 +295,10 @@ const setAttr = (el: Element | undefined, name: string, on: boolean) => {
 
 /** The least height a pane keeps in a column while all its panes fit; below it, the column stacks them. */
 export const PANE_MIN = 260;
-/** A covered pane's tab, the strip a pane leaves down a crowded column (as a spine does across). */
-export const TAB = 30;
+/** A covered pane's tab, the strip a pane leaves down a crowded column (as a spine does across): as pages, a finger's height (PAGE_TAB). Set as the panes are drawn. */
+export let TAB = 30;
+const DESK_TAB = 30;
+export const PAGE_TAB = 44;
 /** How long the mouse rests on a covered pane before it peeks out. */
 export const PEEK_MS = 200;
 
@@ -327,6 +330,9 @@ const kidsKey = (t: PaneNode) => `${t.pick}:${t.kids.map((k) => refKey(k.ref)).j
 
 export function Panes() {
   store.syncTrail();
+  /** As pages (pages.ts): one column at a time, each a page as wide as the strip, swiped from one to the next. */
+  const pages = store.pages;
+  TAB = pages ? PAGE_TAB : DESK_TAB;
   const strip = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const followed = useRef("");
@@ -347,6 +353,14 @@ export function Panes() {
   const latest = useRef<(all?: boolean) => void>(() => {});
   /** The active pane's column when the strip last followed it. */
   const lastCol = useRef(-1);
+  /** As pages: the strip is being scrolled to the active pane's page by the page itself, not a finger. */
+  const programmatic = useRef(false);
+  /** As pages: the next scroll to the active pane's page is at once (the window changed size, or the layout became pages). */
+  const instant = useRef(true);
+  /** The follow of the latest render (the swipe handlers use it). */
+  const followNow = useRef<() => void>(() => {});
+  /** The layout last drawn: pages or side by side. */
+  const wasPages = useRef<boolean | null>(null);
 
   const branch = store.branchNodes;
   const onBranch = new Set(branch.map((n) => n.id));
@@ -372,13 +386,19 @@ export function Panes() {
     const spine = colEls[0].querySelector<HTMLElement>(".spine")?.offsetWidth ?? 0;
     // With no scrollbar under the panes (none needed, or one drawn over them) their last bottom edge meets the status line's: one line, not two.
     setAttr(el, "data-flush", el.offsetHeight - el.clientHeight < 1);
-    lefts.current = offsets(
-      colEls.map(() => w),
-      colEls.map((c) => c.hasAttribute("data-pinned")),
-      spine,
-      el.clientWidth,
-    );
-    stick(colEls, lefts.current, ACROSS);
+    if (pages) {
+      // As pages nothing is stacked across: each column is a page of its own.
+      lefts.current = colEls.map(() => 0);
+      for (const c of colEls) if (c.style.left) c.style.left = "";
+    } else {
+      lefts.current = offsets(
+        colEls.map(() => w),
+        colEls.map((c) => c.hasAttribute("data-pinned")),
+        spine,
+        el.clientWidth,
+      );
+      stick(colEls, lefts.current, ACROSS);
+    }
     let deferred = false;
     for (const c of colEls) {
       const ps = [...c.children].filter((p): p is HTMLElement => p.classList.contains("pane"));
@@ -466,7 +486,8 @@ export function Panes() {
     const el = strip.current;
     if (!el) return;
     const colEls = [...el.querySelectorAll<HTMLElement>(":scope > .col")];
-    mark(el, colEls, ACROSS, false, colEls[0]?.querySelector<HTMLElement>(".spine")?.offsetWidth ?? 0);
+    if (store.pages) unmark(colEls);
+    else mark(el, colEls, ACROSS, false, colEls[0]?.querySelector<HTMLElement>(".spine")?.offsetWidth ?? 0);
     for (const c of colEls) {
       const ps = [...c.querySelectorAll<HTMLElement>(":scope > .pane")];
       if (!c.classList.contains("crowded")) {
@@ -508,6 +529,20 @@ export function Panes() {
     }
     const colEls = [...el.querySelectorAll<HTMLElement>(":scope > .col")];
     const colOf = (p: HTMLElement | undefined) => (p ? colEls.indexOf(p.parentElement as HTMLElement) : -1);
+    if (store.pages) {
+      // As pages: the page on screen is the active pane's column, whole.
+      const c = colOf(panes[at]);
+      lastCol.current = c;
+      if (c < 0) return;
+      const target = Math.min(c * el.clientWidth, el.scrollWidth - el.clientWidth);
+      const now = instant.current;
+      instant.current = false;
+      if (Math.abs(target - el.scrollLeft) > 1) {
+        programmatic.current = !now;
+        el.scrollTo({ left: target, behavior: now || reducedMotion() ? "auto" : "smooth" });
+      }
+      return;
+    }
     const w = colEls[0].offsetWidth;
     const view = el.clientWidth;
     const max = el.scrollWidth - view;
@@ -530,7 +565,8 @@ export function Panes() {
     if (!frame.current)
       frame.current = requestAnimationFrame(() => {
         frame.current = 0;
-        curves(strip.current, svg.current);
+        if (store.pages) pageMarks(strip.current, svg.current);
+        else curves(strip.current, svg.current);
       });
   };
 
@@ -556,7 +592,15 @@ export function Panes() {
   const watchedBodies = useRef(new WeakSet<Element>());
 
   latest.current = layout;
+  followNow.current = follow;
   useLayoutEffect(() => {
+    if (wasPages.current !== pages) {
+      // The layout changed (the window crossed PANES_MIN_WIDTH): the same panes, laid out again, the active pane's column shown at once.
+      wasPages.current = pages;
+      instant.current = true;
+      followed.current = "";
+      lastCol.current = -1;
+    }
     sources();
     layout();
     follow();
@@ -570,13 +614,54 @@ export function Panes() {
       });
       for (const b of strip.current?.querySelectorAll(".pane-body") ?? []) if (!watchedBodies.current.has(b)) (watchedBodies.current.add(b), bodies.current.observe(b));
     }
+    // As pages, a step from pane to pane is a step in the browser's history.
+    if (pages) store.trackPane();
   });
 
   useEffect(() => {
     const el = strip.current!;
     const wrap = el.parentElement!;
+    /*
+     * As pages, a swipe ends on a page: its pane becomes the active one (the one on the focused
+     * branch there, else the one last on it, else the first), so the page on screen is always the
+     * active pane's column. Read once the scroll has come to rest (scrollend, or a pause where the
+     * browser has none), never per frame.
+     */
+    let rest: ReturnType<typeof setTimeout> | undefined;
+    let touching = false;
+    const settle = () => {
+      clearTimeout(rest);
+      if (!store.pages) return;
+      if (touching) return void (rest = setTimeout(settle, 120));
+      const colEls = [...el.querySelectorAll<HTMLElement>(":scope > .col")];
+      const c = colEls[pageAt(el.scrollLeft, el.clientWidth, colEls.length)];
+      const ours = programmatic.current;
+      programmatic.current = false;
+      if (!c) return;
+      const ids = [...c.querySelectorAll<HTMLElement>(":scope > .pane")].map((p) => Number(p.dataset.tid));
+      const active = store.branchNodes[store.paneAt]?.id;
+      if (active !== undefined && ids.includes(active)) return;
+      // A scroll the page made that ended elsewhere (the active pane changed meanwhile): to the active pane's page.
+      if (ours) {
+        followed.current = "";
+        return followNow.current();
+      }
+      const id = paneOfPage(ids, new Set(store.branchNodes.map((n) => n.id)), lastIn.current.get(Number(c.dataset.col)));
+      if (id !== undefined) store.toPane(id);
+    };
+    const ends = "onscrollend" in window;
+    const onTouch = (e: TouchEvent) => (touching = e.type === "touchstart" || e.touches.length > 0);
+    el.addEventListener("touchstart", onTouch, { passive: true });
+    el.addEventListener("touchend", onTouch, { passive: true });
+    el.addEventListener("touchcancel", onTouch, { passive: true });
+    if (ends) el.addEventListener("scrollend", settle);
     const onScroll = (e: Event) => {
       const t = e.target as HTMLElement;
+      if (t === el && store.pages) {
+        // Only when the swipe has ended; nothing is measured while it moves.
+        if (!ends) (clearTimeout(rest), (rest = setTimeout(settle, 150)));
+        return;
+      }
       // The strip, a crowded column, or a pane in one (whose title's rule may come or go under its tab).
       if (t === el || t.classList?.contains("col") || t.parentElement?.parentElement?.classList.contains("crowded")) measure();
       // A scroll inside what peeks (the wheel over it) keeps it out; any other moves things from under it.
@@ -586,7 +671,8 @@ export function Panes() {
     const onResize = () => {
       latest.current(true);
       followed.current = "";
-      follow();
+      instant.current = true;
+      followNow.current();
       measure();
       schedule();
     };
@@ -811,6 +897,11 @@ export function Panes() {
       cancelAnimationFrame(frame.current);
       clearTimeout(later.current);
       clearTimeout(timer);
+      clearTimeout(rest);
+      el.removeEventListener("touchstart", onTouch);
+      el.removeEventListener("touchend", onTouch);
+      el.removeEventListener("touchcancel", onTouch);
+      if (ends) el.removeEventListener("scrollend", settle);
       wrap.removeEventListener("scroll", onScroll, { capture: true });
       window.removeEventListener(GEOMETRY, schedule);
       wrap.removeEventListener("transitionrun", onRun);
@@ -833,7 +924,7 @@ export function Panes() {
   }, []);
 
   return (
-    <div class="panes" data-colors={store.settings.colors} data-curves={store.settings.curves ? undefined : "off"}>
+    <div class="panes" data-layout={pages ? "pages" : undefined} data-colors={store.settings.colors} data-curves={store.settings.curves ? undefined : "off"}>
       <div class="strip" ref={strip}>
         {order.map((c) => {
           const items = cols.get(c)!;
@@ -936,6 +1027,8 @@ const lanesUsed = new Map<number, string[]>();
  */
 function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
   if (!el || !svg) return;
+  if (store.pages) return pageMarks(el, svg);
+  if (tinted.size) untint();
   if (!store.settings.curves) {
     for (const p of svg.querySelectorAll("path")) p.remove();
     for (const s of underlined) s.removeAttribute("data-curved");
@@ -1283,6 +1376,47 @@ function layers(svg: SVGSVGElement, area: DOMRect, holes: { x: number; y: number
   fill("ie-curve-holes", under, holes);
   fill("ie-curve-bar", over, barHoles);
   return { under, over };
+}
+
+/** The words, rows and links the panes were opened from, coloured as pages (pageMarks). */
+let tinted = new Set<HTMLElement>();
+
+/**
+ * As pages, the panes are not side by side, so no curve runs between them: what each pane was
+ * opened from (the words, a row, a link) takes that pane's colour instead, the colour of the rule
+ * under its title, of its tab and of its place in the trail (style.css, data-src-hue). Drawn when
+ * the panes change, not as anything scrolls.
+ */
+function pageMarks(el: HTMLElement | null, svg: SVGSVGElement | null) {
+  if (!el) return;
+  if (svg) for (const p of svg.querySelectorAll("path")) p.remove();
+  for (const s of underlined) s.removeAttribute("data-curved");
+  underlined = new Set();
+  const els = paneEls(el);
+  markRuled(els, new Map());
+  const branch = new Set(store.branchNodes.map((n) => n.id));
+  const now = new Set<HTMLElement>();
+  for (const x of store.panesPlaced) {
+    const pe = x.parent && els.get(x.parent.id);
+    if (!pe) continue;
+    const hue = x.node.hue === undefined ? "none" : String(x.node.hue);
+    for (const s of pe.querySelectorAll<HTMLElement>(`.${kidClass(refKey(x.node.ref))}`)) {
+      now.add(s);
+      if (s.dataset.srcHue !== hue) s.dataset.srcHue = hue;
+      setAttr(s, "data-src-on", branch.has(x.node.id));
+    }
+  }
+  untint(now);
+}
+
+/** Take the colour off what no longer opens a pane (all of it, when the panes are side by side again). */
+function untint(keep = new Set<HTMLElement>()) {
+  for (const s of tinted)
+    if (!keep.has(s)) {
+      delete s.dataset.srcHue;
+      s.removeAttribute("data-src-on");
+    }
+  tinted = keep;
 }
 
 /** A pane's own head, whose rule a curve into it lands in: a section's, a page's title, an article's (not an article set under a node). */

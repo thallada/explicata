@@ -86,6 +86,9 @@ describe("actions", () => {
     expect(labels(link).slice(1, 8)).toEqual(["Copy", "--", "Open the link beside", "Open it in place", "Open on wikipedia.org", "Retarget…", "Remove the link"]);
     expect(find(link, "Open it in place")).toMatchObject({ key: "Enter", shift: true, keyText: "⇧⏎" });
     expect(labels(link)).not.toContain("Link to…");
+    // As pages (a phone) an open goes to the next page, not beside; in place is still there.
+    expect(labels(selectionEntries(sel({ link: "wiki", panes: true, pages: true }), act)).slice(3, 5)).toEqual(["Open the link", "Open it in place"]);
+    expect(labels(articleRowEntries("Octopus", true, act, true)).slice(1, 3)).toEqual(["Open", "Open in place"]);
     // Removing a link is D, and says it is for good; a library link the same; a note that also links can lose only its target.
     expect(find(link, "Remove the link")).toMatchObject({ key: "D", sub: "and do not link these words again here" });
     expect(find(selectionEntries(sel({ link: "node" }), act), "Remove the link")).toMatchObject({ key: "D" });
