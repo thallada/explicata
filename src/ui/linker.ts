@@ -13,9 +13,9 @@ import type { JobState } from "../../server/links/jobs";
 import type { ReviewReport } from "../../server/links/review";
 import type { Related as RelatedRow, Suggestion as Sugg } from "../../server/links/scan";
 import { inArticles } from "../core/article";
-import { applyLinks, nodeRef, phraseKey } from "../core/links";
+import { applyLinks, nodeRef, phraseKey, targetTitle } from "../core/links";
 import type { Mark } from "../core/marks";
-import { ancestors, isLibraryRoot, isLink, label, notesOf, topOf, tops, type Doc, type NodeId, type Op, type Snap } from "../core/model";
+import { ancestors, isLibraryRoot, isLink, notesOf, topOf, tops, type Doc, type NodeId, type Op, type Snap } from "../core/model";
 import { describeTarget, sameTarget, type Ref } from "../core/ref";
 import { libApi } from "./api";
 import { clip, overlaps, type Range } from "../core/text";
@@ -109,12 +109,6 @@ function locate(body: string, s: Sugg): Range | null {
   return at < 0 ? null : [at, at + s.quote.length];
 }
 
-/** A target's title, for a row. */
-function titleOf(snap: Snap, r: Ref): string {
-  if (r.kind === "node") return r.id && snap.nodes[r.id] ? label(snap, r.id) : (r.path ?? []).join(" › ") || "a note";
-  return r.kind === "wiki" ? r.title : (r.title ?? r.url);
-}
-
 /** A stored suggestion as a row, as things stand in the text now; null if its words are gone or carry another link. */
 function rowOf(snap: Snap, s: Sugg): LinkRow | null {
   const n = snap.nodes[s.node];
@@ -201,7 +195,7 @@ export class Linker {
         const a = note.anchors[0];
         if (!note.ref || !a || mine.some((x) => x.note === c)) continue;
         const quote = n.body.slice(a.start, a.end);
-        mine.push({ key: `note:${c}`, node: id, range: [a.start, a.end], quote, target: note.ref, title: titleOf(snap, note.ref), status: "linked", by: null, reason: null, verdict: null, note: c });
+        mine.push({ key: `note:${c}`, node: id, range: [a.start, a.end], quote, target: note.ref, title: targetTitle(snap, note.ref), status: "linked", by: null, reason: null, verdict: null, note: c });
         seen.add(phraseKey(quote));
       }
       for (const k of n.nolink ?? []) {

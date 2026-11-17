@@ -11,9 +11,8 @@
  * and the report says why. Only phrases and titles ever go to Wikipedia; the text goes only to the
  * model, as it does when the model writes.
  */
-import { ownerSection } from "../../src/core/links";
+import { ownerSection, targetTitle } from "../../src/core/links";
 import { ancestors, descendants, label, notesOf, sections, topOf, tops, type NodeId, type Snap } from "../../src/core/model";
-import type { Ref } from "../../src/core/ref";
 import { clip, plain, sentences } from "../../src/core/text";
 import type { LinkVerdicts, LLM } from "../../src/llm/types";
 import type { WikiClient } from "../wiki";
@@ -117,8 +116,6 @@ const linkedTitles = (snap: Snap, id: NodeId): string[] =>
     const r = snap.nodes[c].ref;
     return r ? [targetTitle(snap, r)] : [];
   });
-
-const targetTitle = (snap: Snap, r: Ref) => (r.kind === "wiki" ? r.title : r.kind === "url" ? (r.title ?? r.url) : r.id && snap.nodes[r.id] ? label(snap, r.id) : (r.path ?? []).join(" › ") || "a note");
 
 /** Everything already linked under a top, in reading order, each title once. */
 function linkedInTop(snap: Snap, top: NodeId): string[] {

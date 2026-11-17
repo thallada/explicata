@@ -5,11 +5,17 @@
  * A link is a note with a target and no body, so it is anchored, orphaned, healed, merged, undone
  * and versioned like any note. Nothing here is stored except through ops; the index is derived.
  */
-import { Doc, ancestors, notesOf, sections, topOf, type Actor, type NodeId, type NodeSnap, type Op, type Snap } from "./model";
+import { Doc, ancestors, label, notesOf, sections, topOf, type Actor, type NodeId, type NodeSnap, type Op, type Snap } from "./model";
 import { sameTarget, wikiKey, type Ref } from "./ref";
 import { clip, type Range } from "./text";
 
 // ---- finding a node target ----
+
+/** A target's title, as the links list and the reviewer name it: a node's (its titles down to it when it is gone), an article's or a page's. */
+export function targetTitle(snap: Snap, r: Ref): string {
+  if (r.kind === "node") return r.id && snap.nodes[r.id] ? label(snap, r.id) : (r.path ?? []).join(" › ") || "a note";
+  return r.kind === "wiki" ? r.title : (r.title ?? r.url);
+}
 
 /** The nearest section at or above a node: the place a note's text is read in. */
 export function ownerSection(snap: Snap, id: NodeId): NodeId {
