@@ -5,11 +5,13 @@ phrase and word can be opened further. The first levels are written ahead of tim
 instantly; past them, a model writes the expansion on request. Everything is editable, by you or
 by a model, and the tree is versioned like git.
 
-Everything is a node of one library: a single versioned tree whose root is the library itself.
+Everything is a node of a library: a single versioned tree whose root is the library itself.
 Any node, with everything under it, can be moved under any other, copied, saved to a file, or
 given a file's tree under it, and reading goes from one place to the next without closing
-anything. The first tree is this project describing itself, grown from the prompt that started it;
-a set of starter trees (`library/*.md`) comes with it.
+anything. There can be several libraries, each a tree of its own: nothing in one links to, moves
+into or is found from another. The first tree of the first library is this project describing
+itself, grown from the prompt that started it; a set of starter trees (`library/*.md`) comes with
+it.
 
 ## Run it
 
@@ -33,8 +35,8 @@ use on their own machine.
 | `CLAUDE_CODE_OAUTH_TOKEN` | unset | A subscription token, used when no API key is set. A token put in `ANTHROPIC_API_KEY` by mistake is moved here. |
 | `IE_MODEL` | `claude-opus-5-5` | Model for every call. |
 | `IE_LLM` | `claude` with a key, `subscription` with a token, else `off` | `mock`: a deterministic stand-in (the tests). |
-| `IE_DATA` | `.data` | Where the library and its caches are kept. Delete it to start again from the seed and the starter trees. |
-| `IE_LIBRARY` | `library` | Starter trees (`.md` files in the text format), each imported once. |
+| `IE_DATA` | `.data` | Where the libraries and their caches are kept. Delete it to start again from the seed and the starter trees. |
+| `IE_LIBRARY` | `library` | Starter trees (`.md` files in the text format), written into the first library when `IE_DATA` is empty. |
 | `IE_USER` | your login name | The name on commits the server makes for you (the page lets you change yours with `/user`). |
 | `IE_WIKI` | `live` | `mock`: built-in test articles, no network (the browser tests); `off`: every `/api/wiki/*` route answers 503. |
 | `IE_HOSTS` | (none) | Extra host names the dev server answers to, comma-separated. `localhost` and `*.ts.net` (Tailscale) are always allowed. |
@@ -97,6 +99,12 @@ Press `?` for every key. The short version:
   mark, `[` `]` up and down a column (a click on a pane does it), and the commands typed at `:`
   that no menu lists (`/branch`, `/switch`, `/merge`, `/user`, `/link`, …), which the menu's
   Command line… opens for typing.
+- **Libraries.** `:/library` lists the libraries, `:/library name` opens one and `:/library new
+  name` makes one (its root alone) and opens it. Each library is a page of its own, at its own
+  address (`/l/<id>`); opening another loads the page. `/` opens the library last used in this
+  browser. A library's name is its root's title (`r` on the root renames it). Nothing crosses
+  between libraries: links, the jump box, Related, the link scanner and reviewer, and the editor
+  agent see only the library they are in; export then import carries a tree across.
 - On a window 900 px wide or more, a laptop's too, the page opens as panes side by side, after
   Andy Matuschak's notes: the library, then each open node in a pane of its own. `v` switches between
   panes and the single column, `/view auto|column|panes` sets it.
@@ -289,10 +297,12 @@ What is sent where:
   nodes, anchors and finding them again in a new revision; an article's HTML as text to select in.
 - **`src/core/format.ts`, `seed.ts`, `address.ts`** The text format, writing a parsed tree into the
   library under any node (an import), and a node's address.
-- **`server/`** Relays updates between replicas and persists them (`library.ts`), proxies model
-  calls (`claude.ts`, `subscription.ts`, `usage.ts`, `web.ts`), Wikipedia (`wiki.ts`, `wikiHtml.ts`,
-  `wikiRoutes.ts`, `wikiMock.ts`), local embeddings (`embed.ts`), link discovery and its model reviewer (`links/`), and
-  migrates data from older layouts (`migrate.ts`).
+- **`server/`** Keeps the libraries (`libraries.ts`, each library on disk in `library.ts`, and
+  per library its routes, notices, link discovery and reviewer in `bundle.ts`), relays updates
+  between replicas and persists them, proxies model calls (`claude.ts`, `subscription.ts`,
+  `usage.ts`, `web.ts`), Wikipedia (`wiki.ts`, `wikiHtml.ts`, `wikiRoutes.ts`, `wikiMock.ts`), local
+  embeddings (`embed.ts`), link discovery and its model reviewer (`links/`), and brings data from the
+  single-library layout over when asked (`migrateLibraries.ts`, `npm run migrate`).
 - **`src/ui/`** The browser's replica of the library (`session.ts`, kept in IndexedDB), the store
   and keymap, and the page. The mouse acts through the keymap: `actions.ts` builds what the
   selection bar and the menus offer for each kind of target, every item pressing its key
@@ -300,37 +310,71 @@ What is sent where:
   the store's `trail` is its focused branch); `stack.ts` is the stacking shared by the strip and its
   columns, `lanes.ts` orders the curves' lanes.
 
-## The library
+## The libraries
 
 On disk:
 
 ```
-IE_DATA/library/<branch>.loro      the library, one Loro snapshot per branch
-IE_DATA/library.json               starter files already imported
-IE_DATA/links/pending.json         link suggestions, the reviewer's verdicts and your decisions (derived)
-IE_DATA/vectors/nodes.*            the library's sections as vectors (derived)
-IE_DATA/wiki-cache/                Wikipedia answers (derived)
-IE_DATA/models/                    the embedding model
+IE_DATA/libraries/index.json                 the libraries, in order: id, title, when made, whether deleted
+IE_DATA/libraries/<id>/<branch>.loro         a library, one Loro snapshot per branch
+IE_DATA/libraries/<id>/links/pending.json    its link suggestions, the reviewer's verdicts and your decisions (derived)
+IE_DATA/libraries/<id>/vectors/nodes.*       its sections as vectors (derived)
+IE_DATA/libraries/.deleted/<id>-<time>/      a deleted library, moved aside whole
+IE_DATA/wiki-cache/                          Wikipedia answers (derived, shared)
+IE_DATA/models/                              the embedding model (shared)
+IE_DATA/server.lock                          the running server's pid
 ```
+
+A library's id is its database's own id (base 36); its name is its root's title. Each library is a
+Loro database of its own, so a node id of one never resolves in another, and every route finds its
+library first and is given only that library's data.
 
 | | |
 |---|---|
-| `/` | the library root |
-| `/n/<node id>` | any other node (by its id alone, so a moved or renamed node is still found) |
-| `/w/<lang>/<title>` | a Wikipedia article as a page of its own (the column) |
+| `/` | the library last used in this browser (else the first) |
+| `/l/<id>` | a library's root |
+| `/l/<id>/n/<node id>` | any other node of it (by its id alone, so a moved or renamed node is still found) |
+| `/l/<id>/w/<lang>/<title>` | a Wikipedia article as a page of its own (the column) |
 
 The address follows the focus; changing the page (hoisting, stepping out) or jumping makes a
-history entry. An address that names nothing, or one from before (`/doc/…`), shows the library.
+history entry. An address that names nothing shows the library's root; one without a library
+(`/n/…`, `/doc/…`) is read in the library last used; a library the server does not have goes to
+the first one.
 
-On startup every `library/*.md` whose file name has not been imported before is
-imported at the end of the library, so a starter tree you delete stays deleted. A file that
-does not parse is logged and skipped.
+When `IE_DATA` is empty, the first library is made with the seed and every `library/*.md`; a file
+that does not parse is logged and skipped. A library made later starts with its root alone.
 
-A data directory from an older layout (one database per document under `IE_DATA/docs/`, or a
-single document at `IE_DATA/*.loro`) is migrated into one library, histories kept, on the first
-start that finds no `IE_DATA/library/`; the old files are moved aside unchanged. If a browser still
-holds edits to such a document that never reached the server, the page says so and `:/recover`
-saves each as a `.md` file.
+### From the single-library layout
+
+A data directory written before libraries (`IE_DATA/library/main.loro`) is not opened: the server
+says, in one line, to run the migration, which only ever runs when asked. Stop the server (and let
+every open page say `saved` first: a page of the old library cannot send its edits to the new one),
+then:
+
+```sh
+npm run migrate -- --check   # a dry run: builds and verifies the new library in memory, writes nothing
+npm run migrate              # the same, then writes it
+```
+
+Both take another directory as an argument (`npm run migrate -- --check /path/to/data`); without
+one, `IE_DATA`, else `.data`. The migration copies the tree into a new library (a new id, a history
+of one commit): titles, bodies, notes with their anchors, locks, authorship, targets, declined
+phrases, the Wikipedia container with its articles' notes, the order of everything, and what each
+node was last reconciled with, so nothing turns stale. Every node target is rewritten to the new
+ids (a target already naming nothing keeps its titles as a hint), open conflicts come along, and
+the reviewer's verdicts and your decisions (`links/pending.json`) are re-keyed; vectors are rebuilt
+when first needed. Before writing, it checks the copy node by node against the original (tree,
+count, text, notes, anchors, flags, staleness, and every target that resolved resolving to the same
+node) and again from the file it wrote; any difference stops it with a report and leaves the
+directory as it was. Then `libraries/` is put in place in one rename, and `library/`,
+`library.json`, `links/` and `vectors/` are moved, unchanged, to `IE_DATA/backup-<time>/`. History,
+branches other than main (listed, and kept in the backup) and resolved conflicts are not carried.
+It refuses while a server has the directory open, and a second run does nothing. A directory
+older still (`IE_DATA/docs/`) must first be opened once by a version from before libraries
+(commit c4d6856).
+
+To go back: stop the server, move `libraries/` away and the backup's contents back, and check out
+the commit before libraries.
 
 ### The text format
 
@@ -380,27 +424,35 @@ same tree.
 
 ### HTTP API
 
-`<branch>` defaults to `main`. Node ids are the library's, so one batch of ops can work anywhere in it.
+Every route that reads or writes a library is under `/api/l/<id>/`; the same routes without the
+prefix act on the first library (so the examples below need no id). `<branch>` defaults to `main`.
+Node ids are the library's, so one batch of ops can work anywhere in it.
 
 | | |
 |---|---|
-| `GET /api/tree[/<branch>]` | the whole library as JSON, with conflicts and recent history |
-| `POST /api/ops[/<branch>]` | `{ ops, message?, author?, actor? }`, applied as one commit. `create` and `update` take `ref`: `{ "kind": "wiki", "title", "lang" }`, `{ "kind": "node", "id", "doc", "path" }` or `{ "kind": "url", "url", "title" }`; `"ref": null` removes it |
-| `GET /api/nodes/<id>/tree[/<branch>]` | one node and everything under it, with their conflicts |
-| `GET /api/nodes/<id>/export[/<branch>]` | the same in the text format; header `x-skipped` counts what was left out |
-| `POST /api/nodes/<id>/import?name=file.md` | body: the file (2 MB at most), read in as the node's last child on main; 422 with `problems` if it does not parse |
+| `GET /api/libraries` | `{ libraries: [{ id, title, created, nodes, branches }] }`, in order |
+| `POST /api/libraries` `{ title }` | a new library, its root alone, at the end: 201 `{ library }` |
+| `PATCH /api/libraries/<id>` `{ title }` | rename it (a commit on its root's title) |
+| `DELETE /api/libraries/<id>` | move it aside whole to `libraries/.deleted/`; 409 for the last one |
+| `GET /api/l/<id>/tree[/<branch>]` | the whole library as JSON, with conflicts and recent history |
+| `POST /api/l/<id>/ops[/<branch>]` | `{ ops, message?, author?, actor? }`, applied as one commit. `create` and `update` take `ref`: `{ "kind": "wiki", "title", "lang" }`, `{ "kind": "node", "id", "path" }` or `{ "kind": "url", "url", "title" }`; `"ref": null` removes it |
+| `GET /api/l/<id>/nodes/<node>/tree[/<branch>]` | one node and everything under it, with their conflicts |
+| `GET /api/l/<id>/nodes/<node>/export[/<branch>]` | the same in the text format; header `x-skipped` counts what was left out |
+| `POST /api/l/<id>/nodes/<node>/import?name=file.md` | body: the file (2 MB at most), read in as the node's last child on main; 422 with `problems` if it does not parse |
 | `GET /api/wiki/…` | Wikipedia through the server's cache: `summary`, `article` (`&full=1` for every section), `section`, `senses`, `suggest`, `search`, `lookup` (server/wikiRoutes.ts) |
-| `POST /api/links/scan` `{ node, review? }` | scan a node and record what is found as pending; with `review`, the model reviewer judges what is new, and the approved links are handed back to be made |
-| `GET /api/links/pending?node=<id>&subtree=1&tier=auto\|suggest&all=1&claim=1` | pending suggestions with the context a reviewer needs; `all` with every determination; `claim` hands out the approved links no page has made |
-| `POST /api/links/accept` / `reject` `{ ids, author? }` | link them in one commit, or record them as declined |
-| `POST /api/links/decide` `{ ids, link, by }` | record a person's decision made in their own replica |
-| `POST` / `GET` / `DELETE /api/links/jobs` `{ scope: "node" \| "library", node?, review? }` | a background scan (reviewed, with `review`): start, progress, cancel |
-| `GET /api/links/related?node=`, `/nearby?node=`, `/status` | the Related list, the nearby list a model is given, the scanner's state |
-| `GET /api/state`, `/api/usage`, `/api/events`, `/api/branch/<b>`, `POST /api/sync/<b>`, `POST /api/llm/…` | what the page uses |
+| `POST /api/l/<id>/links/scan` `{ node, review? }` | scan a node and record what is found as pending; with `review`, the model reviewer judges what is new, and the approved links are handed back to be made |
+| `GET /api/l/<id>/links/pending?node=<node>&subtree=1&tier=auto\|suggest&all=1&claim=1` | pending suggestions with the context a reviewer needs; `all` with every determination; `claim` hands out the approved links no page has made |
+| `POST /api/l/<id>/links/accept` / `reject` `{ ids, author? }` | link them in one commit, or record them as declined |
+| `POST /api/l/<id>/links/decide` `{ ids, link, by }` | record a person's decision made in their own replica |
+| `POST` / `GET` / `DELETE /api/l/<id>/links/jobs` `{ scope: "node" \| "library", node?, review? }` | a background scan (reviewed, with `review`): start, progress, cancel |
+| `GET /api/l/<id>/links/related?node=`, `/nearby?node=`, `/status` | the Related list, the nearby list a model is given, the scanner's state |
+| `GET /api/l/<id>/state`, `/events`, `/branch/<b>`, `POST /api/l/<id>/sync/<b>`; `GET /api/usage`, `POST /api/llm/…` | what the page uses (the model, Wikipedia and usage are shared by every library) |
 
 An outside agent reads and writes with the same ops the keyboard uses:
 
 ```sh
+curl localhost:4747/api/libraries
+curl localhost:4747/api/l/<library id>/nodes/<node id>/tree     # or, in the first library, /api/nodes/<node id>/tree
 curl localhost:4747/api/nodes/<node id>/tree
 curl localhost:4747/api/ops -H 'content-type: application/json' -d '{
   "author": "my-agent", "message": "Add a remark",
