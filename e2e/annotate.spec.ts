@@ -96,9 +96,13 @@ test("an annotation is a note: Enter steps into it, and it is edited, undone, de
   await jump(page, "Recursion without names");
   await tabTo(page, "fixed-point combinator");
   await keys(page, "Enter");
-  await keys(page, "i");
-  await tabTo(page, "Haskell Curry");
   const art = page.locator(".wiki-pane").last();
+  // Keys pressed while the article is still arriving wait for it and then all act at once; tabTo
+  // looks after each Tab, so it waits for the article's text first.
+  await expect(art.locator(".wiki-text").first()).toBeVisible();
+  await keys(page, "i");
+  await expect.poll(() => articleSelection(page)).not.toBeNull();
+  await tabTo(page, "Haskell Curry");
   // Its words carry the dotted underline; e opens and closes it, as on a node; Enter opens it, and Enter again steps into it.
   await expect(art.locator(".wiki-text .anchor.a-gloss")).toHaveText("Haskell Curry");
   await expect(art.locator(".wiki-text .gloss")).toHaveCount(0);
