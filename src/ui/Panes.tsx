@@ -576,7 +576,8 @@ export function Panes() {
     const wrap = el.parentElement!;
     const onScroll = (e: Event) => {
       const t = e.target as HTMLElement;
-      measure();
+      // The strip, a crowded column, or a pane in one (whose title's rule may come or go under its tab).
+      if (t === el || t.classList?.contains("col") || t.parentElement?.parentElement?.classList.contains("crowded")) measure();
       // A scroll inside what peeks (the wheel over it) keeps it out; any other moves things from under it.
       if (peeked.length && !peeked.some((p) => p !== t && p.contains(t)) && !(t === peeked[0] && peeked.length === 1 && !t.classList.contains("pane"))) hide();
       schedule();
@@ -915,6 +916,9 @@ function underline(s: HTMLElement, r: DOMRect): number {
 /** Where a curve arrives, from its column's left edge: just short of the title. */
 const ARRIVE = 36;
 
+/** The links whose underline the curves drew last time. */
+let underlined = new Set<HTMLElement>();
+
 /** The lane order last used in each gutter, by the curves' keys. */
 const lanesUsed = new Map<number, string[]>();
 
@@ -933,7 +937,8 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
   if (!el || !svg) return;
   if (!store.settings.curves) {
     for (const p of svg.querySelectorAll("path")) p.remove();
-    for (const s of document.querySelectorAll("[data-curved]")) s.removeAttribute("data-curved");
+    for (const s of underlined) s.removeAttribute("data-curved");
+    underlined = new Set();
     markRuled(paneEls(el), new Map());
     return;
   }
@@ -1158,7 +1163,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
   const peeked = [...el.querySelectorAll<HTMLElement>("[data-peek]")];
   const local = (r: DOMRect) => ({ x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height });
   const holes = peeked.map((p) => local(p.getBoundingClientRect()));
-  const bar = document.querySelector<HTMLElement>(".pane > .selbar");
+  const bar = el.querySelector<HTMLElement>(".pane > .selbar");
   const barHole = bar && bar.style.visibility !== "hidden" ? [local(bar.getBoundingClientRect())] : [];
   const owned = (id: number) => {
     const p = els.get(id);
@@ -1192,8 +1197,9 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     if (g.children[k] !== p) g.insertBefore(p, g.children[k] ?? null);
   });
   for (const p of had.values()) p.remove();
-  for (const s of document.querySelectorAll<HTMLElement>("[data-curved]")) if (!curved.has(s)) s.removeAttribute("data-curved");
+  for (const s of underlined) if (!curved.has(s)) s.removeAttribute("data-curved");
   for (const s of curved) if (!s.hasAttribute("data-curved")) s.setAttribute("data-curved", "");
+  underlined = curved;
   markRuled(els, rules);
 }
 
