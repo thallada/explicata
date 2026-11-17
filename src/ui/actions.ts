@@ -206,6 +206,16 @@ export function paneEntries(c: PaneCtx, act: Act): Entry[] {
   return tidy([
     ...own,
     SEP,
+    {
+      t: "choices",
+      label: "Go to the pane",
+      options: [
+        { label: "left", key: "A-h", run: () => act.press("A-h") },
+        { label: "right", key: "A-l", run: () => act.press("A-l") },
+        { label: "above", key: "A-k", run: () => act.press("A-k") },
+        { label: "below", key: "A-j", run: () => act.press("A-j") },
+      ],
+    },
     key(act, "Pin this pane", "P", { checked: c.pinned, sub: "it stays when what opened it closes" }),
     key(act, "Close this pane", "q", { sub: "with what was opened from it" }),
     key(act, "Show as one column", "v"),

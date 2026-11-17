@@ -36,7 +36,7 @@ import { remoteLLM } from "./remote";
 import { Session } from "./session";
 import { refreshAfterCalls } from "./usage";
 import { Linker, type AutoMode, type JobState, type LinkRow, type Status, type Sugg } from "./linker";
-import { all, besideInColumn, close as closeIn, columns as columnsOf, reorder, focus as focusIn, focused, open as openIn, path, pin as pinIn, prune, restore as restoreForest, rooted, save as saveTree, updateIn, withBranch, type Forest, type Placed, type Tree } from "./forks";
+import { all, besideInColumn, close as closeIn, columns as columnsOf, reorder, focus as focusIn, focused, open as openIn, path, pin as pinIn, prune, restore as restoreForest, rooted, save as saveTree, setSources, updateIn, withBranch, type Forest, type Placed, type Tree } from "./forks";
 import { stripMarks, type Mark } from "../core/marks";
 import { SEED_SLUG } from "../core/seed";
 
@@ -672,8 +672,8 @@ class Store {
   }
 
   /**
-   * [ and ]: the pane above or below the active one in its column (whichever fork or tree it is in).
-   * The focus goes back where it was when that pane was last left this way, or to the pane's head.
+   * [ and ] (Alt+k, Alt+j): the pane above or below the active one in its column (whichever fork or
+   * tree it is in). The focus goes back where it was when that pane was last left, or to its head.
    */
   focusFork(delta: number) {
     if (!this.panes) return this.say("Forks are side by side in the panes view (v); one column shows one page.");
@@ -684,12 +684,52 @@ class Store {
       const alone = here && besideInColumn(this.forest, here.id, -delta) === null;
       return this.say(alone ? "This is the only pane in its column. Shift+Enter, or a Shift- or Ctrl-click, opens a fork below the pane to the right." : `No pane ${delta < 0 ? "above" : "below"} this one in its column.`);
     }
+    this.goPane(next);
+  }
+
+  /** Make a pane the active one, from the active one: the focus goes back where it was when that pane was last left, or to its head. */
+  private goPane(id: number) {
+    const here = this.branchNodes[this.paneAt];
     const seen = this.backHere();
-    this.setForest(focusIn(updateIn(this.forest, here.id, (n) => ({ ...n, seen })), next));
-    const hit = this.forkNode(next)!;
+    this.setForest(focusIn(here ? updateIn(this.forest, here.id, (n) => ({ ...n, seen })) : this.forest, id));
+    const hit = this.forkNode(id)!;
     const b = hit.node.seen;
     if (b && b.pane === hit.depth && this.snap.nodes[b.focus.node] && (b.aux ? this.auxValid(b.aux) : this.holds(b.pane, b.focus))) return this.restore(b);
     this.land(hit.depth);
+  }
+
+  /**
+   * Alt+h and Alt+l: the pane the active one was opened from (left), or one opened from it (right):
+   * the one opened from the focused row or link if it is open, else the one last visited there.
+   * Left then right comes back to the same pane.
+   */
+  paneSide(delta: number) {
+    if (!this.panes) return this.say("Panes are side by side in the panes view (v).");
+    this.syncTrail();
+    const here = this.branchNodes[this.paneAt];
+    if (!here) return;
+    if (delta < 0) {
+      const parent = this.branchNodes[this.paneAt - 1];
+      if (!parent) return this.say(this.paneAt === 0 && this.forest.at > 0 ? "This pane's source has closed; nothing to its left." : "Nothing to the left of this pane.");
+      return this.goPane(parent.id);
+    }
+    if (!here.kids.length) return this.say("Nothing opened from this pane yet: Enter or l on a row or link opens it to the right.");
+    const f = this.focus;
+    const a = this.aux;
+    const key =
+      a?.kind === "wiki" && a.row.t === "sec" ? refKey({ kind: "wiki", title: this.wikiHost(a.host)?.title ?? "", lang: "", sec: a.row.id }) : !a && f.grain === "node" ? refKey({ kind: "node", id: f.node }) : this.selectionTargetKey();
+    const k = here.kids.find((c) => refKey(c.ref) === key) ?? here.kids[here.pick];
+    this.goPane(k.id);
+  }
+
+  /** What the selected words link to, as a pane's key (refKey), if they link. */
+  private selectionTargetKey(): string | undefined {
+    const f = this.focus;
+    if (f.grain === "node" || !f.range) return undefined;
+    const n = this.snap.nodes[f.node];
+    const note = n?.children.map((c) => this.snap.nodes[c]).find((c) => c?.kind === "note" && c.ref && c.anchors[0] && c.anchors[0].start <= f.range![0] && c.anchors[0].end >= f.range![1]);
+    if (!note?.ref) return undefined;
+    return this.targetKey(note.ref);
   }
 
   /** Whether the focus is a row whose pane is open next to it (so that pane is the one the reader is looking at). */
@@ -738,6 +778,15 @@ class Store {
   }
 
   /** A pane dragged up or down its column, to just above another (or to the bottom). */
+  /** The page has measured where panes were opened from in their parents: their columns stand in that order (forks.ts columns). */
+  setPaneSources(srcs: Map<number, number>) {
+    const f = setSources(this.forest, srcs);
+    if (f === this.forest) return;
+    this.setForest(f);
+    this.saveView();
+    this.emit();
+  }
+
   reorderPane(id: number, before: number | null) {
     const f = reorder(this.forest, id, before);
     if (f === this.forest) return;

@@ -171,15 +171,15 @@ test("a click, a Ctrl- and a middle click open beside; a Shift-click in place; a
   expect(await trail(page)).toEqual(["Infinispand", "Borrowed from Gwern", kids[0]]);
   expect(await focusedTitle(page)).toBe(kids[0]);
   await expect(page.locator(".pane.active .pane-head h2")).toHaveText(kids[0]);
-  // The first pane's rows too: beside, in the next column; and a click on a row already open keeps it.
+  // The first pane's rows too: beside, in the next column (above, as its row is above); and a click on a row already open keeps it.
   await row("Display forms").click();
-  expect(await columns(page)).toEqual([["Infinispand"], ["Borrowed from Gwern", "Display forms"], kids.slice(0, 3)]);
+  await expect.poll(() => columns(page)).toEqual([["Infinispand"], ["Display forms", "Borrowed from Gwern"], kids.slice(0, 3)]);
   await row("Display forms").click();
-  expect((await columns(page))[1]).toEqual(["Borrowed from Gwern", "Display forms"]);
+  expect((await columns(page))[1]).toEqual(["Display forms", "Borrowed from Gwern"]);
   // A Shift-click opens in place of the focused one (Display forms), and selects no text on the way.
   await row("Editing and regeneration").click({ modifiers: ["Shift"] });
   expect(await trail(page)).toEqual(["Infinispand", "Editing and regeneration"]);
-  expect((await columns(page))[1]).toEqual(["Borrowed from Gwern", "Editing and regeneration"]);
+  await expect.poll(async () => (await columns(page))[1]).toEqual(["Editing and regeneration", "Borrowed from Gwern"]);
   expect(await page.evaluate(() => window.getSelection()?.isCollapsed ?? true)).toBe(true);
 });
 
@@ -197,14 +197,15 @@ test("a link and an article's link open beside by default, in place with Shift; 
   await keys(page, "h");
   await tabTo(page, "lambda calculus");
   await keys(page, "Shift+Enter");
-  expect((await columns(page))[3]).toEqual(["Fixed-point combinator", "“lambda calculus”"]); // a note on the words, with the article beneath
+  // A note on the words, with the article beneath; above, as its words come first in the text.
+  await expect.poll(async () => (await columns(page))[3]).toEqual(["“lambda calculus”", "Fixed-point combinator"]);
   // In an article: a click opens beside, a Shift-click in place.
   const art = pane(page, "Fixed-point combinator");
   await art.locator('.wiki-text a[data-wiki="Haskell Curry"]').click();
   await art.locator('.wiki-text a[data-wiki="Recursion (computer science)"]').click();
   expect((await columns(page))[4]).toEqual(["Haskell Curry", "Recursion (computer science)"]);
   await art.locator('.wiki-text a[data-wiki="Lambda calculus"]').first().click({ modifiers: ["Shift"] });
-  expect((await columns(page))[4]).toEqual(["Haskell Curry", "Lambda calculus"]);
+  await expect.poll(async () => (await columns(page))[4]).toEqual(["Lambda calculus", "Haskell Curry"]);
   // Twenty opens in a row: each a pane of its own, the column stacked, the keys still quick.
   await open(page);
   await page.evaluate(() => ((globalThis as any).__ie.samples.length = 0));

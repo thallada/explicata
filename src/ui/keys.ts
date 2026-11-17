@@ -19,6 +19,8 @@ export const HELP: [string, [string, string][]][] = [
       ["P", "in panes: pin or unpin the active pane (or its pin, top right). A pinned pane stays where it is when a pane it came from closes, is never replaced by a Shift open, and is never covered, in its column or along the strip"],
       ["Enter l", "in panes: open into the next column, beside what is open there (so does a click, and a Ctrl-, Cmd- or middle click); on something open already, focus it"],
       ["Shift+Enter", "in panes: open in place of the focused branch's pane in the next column (so does a Shift-click)"],
+      ["Alt+h Alt+l", "in panes: the pane this one was opened from (left) / one opened from it (right): the one opened from the focused row or link if it is open, else the one last visited; from a node, a selection or an article alike. Left then right comes back"],
+      ["Alt+k Alt+j", "in panes: the pane above / below in the same column, across forks (Alt+↑ ↓ and [ ] too)"],
       ["[ ]", "in panes: the pane above / below in the same column (back where you were in it, or at its head); at the top or bottom nothing moves. A crowded column stacks its panes as the strip stacks columns, covered to a tab; resting the mouse on a covered pane peeks it out; its grip or tab drags it up or down. A faint curve runs from where each pane was opened to its title"],    ],
   ],
   [
@@ -154,8 +156,28 @@ interface KeyHooks {
   verify(): void;
 }
 
+/**
+ * Between panes, whatever the focus (a node, a sentence, an article): Alt with h j k l, or with ↑ ↓.
+ * By the key's place on the keyboard (e.code), so a layout or Option producing another letter still works.
+ */
+const PANE_KEYS: Record<string, () => void> = {
+  KeyH: () => store.paneSide(-1),
+  KeyL: () => store.paneSide(1),
+  KeyK: () => store.focusFork(-1),
+  KeyJ: () => store.focusFork(1),
+  ArrowUp: () => store.focusFork(-1),
+  ArrowDown: () => store.focusFork(1),
+};
+
 export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
-  if (!store.ready || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (!store.ready || isTyping(e) || e.metaKey || e.ctrlKey) return;
+  if (e.altKey) {
+    const go = !e.shiftKey && store.mode === "normal" ? PANE_KEYS[e.code] : undefined;
+    if (!go) return;
+    e.preventDefault();
+    store.t0 = { what: `A-${e.code}`, at: e.timeStamp };
+    return go();
+  }
   const k = e.key;
   const done = () => {
     e.preventDefault();

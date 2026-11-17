@@ -261,8 +261,10 @@ function nearestY(el: Element | null | false) {
   const r = el.getBoundingClientRect();
   const c = box.getBoundingClientRect();
   const pad = 28;
-  if (r.top < c.top + pad) box.scrollTop += r.top - c.top - pad;
-  else if (r.bottom > c.bottom - pad) box.scrollTop += Math.min(r.bottom - c.bottom + pad, r.top - c.top - pad);
+  // Not under the tab a pane scrolled past its title shows at its top.
+  const top = pad + TAB;
+  if (r.top < c.top + top) box.scrollTop += r.top - c.top - top;
+  else if (r.bottom > c.bottom - pad) box.scrollTop += Math.min(r.bottom - c.bottom + pad, r.top - c.top - top);
 }
 
 const setAttr = (el: Element | undefined, name: string, on: boolean) => {
@@ -360,7 +362,7 @@ export function Panes() {
     for (const c of colEls) {
       const ps = [...c.children].filter((p): p is HTMLElement => p.classList.contains("pane"));
       if (ps.length < 2) {
-        for (const p of ps) if (p.style.height) (p.style.height = ""), (p.style.flex = ""), (p.style.top = "");
+        for (const p of ps) if (p.style.height) (p.style.height = ""), (p.style.flex = ""), (p.style.top = ""), (p.style.bottom = "");
         c.classList.remove("crowded");
         unmark(ps);
         continue;
@@ -382,6 +384,8 @@ export function Panes() {
       const crowded = need.reduce((s, x) => s + Math.min(x, PANE_MIN), 0) > h;
       let heights: number[];
       let tops: number[] = [];
+      /** What the panes after each leave at the column's foot: a tab each, a pinned one its whole height. */
+      let below: number[] = [];
       if (!crowded) heights = fill(h, need);
       else {
         // Each pane what its text needs, up to the column less a tab for each other pane; a pinned one, at most a third of it, but its least.
@@ -389,6 +393,7 @@ export function Panes() {
         const free = h - pin.reduce((s, x) => s + x, 0) - (pinned.filter((x) => !x).length - 1) * TAB;
         heights = need.map((x, i) => (pinned[i] ? pin[i] : Math.min(x, Math.max(PANE_MIN, free))));
         tops = offsets(heights, pinned, TAB, h);
+        below = heights.map((_, i) => heights.slice(i + 1).reduce((s, x, j) => s + (pinned[i + 1 + j] ? x : TAB), 0));
       }
       c.classList.toggle("crowded", crowded);
       // Only a crowded column is marked (measure): one that has room again is uncovered here.
@@ -396,13 +401,19 @@ export function Panes() {
       ps.forEach((p, i) => {
         if (p.style.height !== `${heights[i]}px`) (p.style.height = `${heights[i]}px`), (p.style.flex = "none");
       });
-      if (crowded) stick(ps, tops, DOWN);
-      else for (const p of ps) p.style.top = "";
+      if (crowded) {
+        stick(ps, tops, DOWN);
+        // Stuck at the foot as well, each a tab above those after it, so every pane shows at least its tab, above or below the one looked at.
+        ps.forEach((p, i) => {
+          const v = `${below[i] + (pinned[i] ? 0 : TAB - heights[i])}px`;
+          if (p.style.bottom !== v) p.style.bottom = v;
+        });
+      } else for (const p of ps) (p.style.top = ""), (p.style.bottom = "");
       // The pane to show whole: on the focused branch, or the one last on it here.
       const here = tids.find((t) => onBranch.has(t)) ?? (tids.includes(lastIn.current.get(col)!) ? lastIn.current.get(col)! : tids[0]);
       const k = tids.indexOf(here);
       const st = starts(heights);
-      const want = crowded ? reveal(c.scrollTop, h, st[k], heights[k], tops[k], st[st.length - 1] + heights[heights.length - 1] - h) : 0;
+      const want = crowded ? reveal(c.scrollTop, h - below[k], st[k], heights[k], tops[k], st[st.length - 1] + heights[heights.length - 1] - h) : 0;
       // As the focus moves, the active pane's column scrolls at once and the others once the keys pause (each brings whole panes into view, which costs a frame's painting); any other change, at once.
       const sig = tids.map((t, i) => `${t}${pinned[i] ? "^" : ""}`).join();
       const same = laid.current.get(c) === sig;
@@ -492,12 +503,42 @@ export function Panes() {
       });
   };
 
+  /** Where each newly opened pane came from in its parent, down the parent's text (its column's order goes by it). */
+  const sources = () => {
+    const el = strip.current;
+    if (!el) return;
+    const srcs = new Map<number, number>();
+    const els = paneEls(el);
+    for (const x of store.panesPlaced) {
+      if (!x.parent || x.node.src !== undefined) continue;
+      const pe = els.get(x.parent.id);
+      const s = pe?.querySelector<HTMLElement>(`.${kidClass(refKey(x.node.ref))}`);
+      const body = pe?.querySelector<HTMLElement>(".pane-body");
+      const r = s?.getBoundingClientRect();
+      if (r && body && r.height) srcs.set(x.node.id, Math.round(r.top - body.getBoundingClientRect().top));
+    }
+    if (srcs.size) store.setPaneSources(srcs);
+  };
+
+  /** A pane's text growing or shrinking (an article arriving, notes opening) lays the columns out again and redraws the curves. */
+  const bodies = useRef<ResizeObserver | null>(null);
+  const watchedBodies = useRef(new WeakSet<Element>());
+
   latest.current = layout;
   useLayoutEffect(() => {
+    sources();
     layout();
     follow();
     measure();
     schedule();
+    if (typeof ResizeObserver !== "undefined") {
+      bodies.current ??= new ResizeObserver(() => {
+        latest.current(true);
+        measure();
+        schedule();
+      });
+      for (const b of strip.current?.querySelectorAll(".pane-body") ?? []) if (!watchedBodies.current.has(b)) (watchedBodies.current.add(b), bodies.current.observe(b));
+    }
   });
 
   useEffect(() => {
@@ -519,6 +560,23 @@ export function Panes() {
     };
     // Panes and crowded columns scroll on their own: their scroll events are caught on the way down.
     wrap.addEventListener("scroll", onScroll, { passive: true, capture: true });
+    // While anything animates, the curves are drawn every frame, so they follow it.
+    let moving = 0;
+    const tick = () => {
+      if (!moving) return;
+      curves(strip.current, svg.current);
+      requestAnimationFrame(tick);
+    };
+    const onRun = () => {
+      if (!moving++) requestAnimationFrame(tick);
+    };
+    const onEnd = () => {
+      moving = Math.max(0, moving - 1);
+      if (!moving) schedule();
+    };
+    wrap.addEventListener("transitionrun", onRun);
+    wrap.addEventListener("transitionend", onEnd);
+    wrap.addEventListener("transitioncancel", onEnd);
     // The strip changes size with the window and when the history panel opens or closes.
     const sizes = new ResizeObserver(onResize);
     sizes.observe(el);
@@ -538,28 +596,46 @@ export function Panes() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const lower = (it: HTMLElement) => {
       it.removeAttribute("data-peek");
+      it.removeAttribute("data-peek-h");
+      it.style.removeProperty("--peek-h");
+      it.style.removeProperty("--peek-extra");
       it.style.transform = "";
     };
     function hide() {
+      if (!peeked.length) return;
       for (const it of peeked) lower(it);
       peeked = [];
       peekedFor = null;
+      schedule();
     }
     function unpeek() {
       clearTimeout(timer);
       pending = null;
       hide();
     }
-    /** What must come out for a pane to show whole: its column, if later columns cover it; the pane, if later panes in a crowded column do, or the column's foot cuts it. */
+    /**
+     * How tall a pane would be shown whole (what its text needs, up to its column's height), if it is
+     * cut off now (0 if not): shown shorter than that for any reason, covered by the pane after it, given
+     * too small a share of its column, or running past the column's foot.
+     */
+    const cutOff = (pane: HTMLElement): number => {
+      const col = pane.parentElement as HTMLElement;
+      const r = pane.getBoundingClientRect();
+      const c = col.getBoundingClientRect();
+      const next = col.classList.contains("crowded") ? ((pane.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top ?? Infinity) : Infinity;
+      const shown = Math.max(0, Math.min(r.bottom, c.bottom, next) - Math.max(r.top, c.top));
+      const sc = pane.querySelector<HTMLElement>(".pane-scroll")!;
+      const cs = getComputedStyle(sc);
+      const need = needs.current.get(Number(pane.dataset.tid)) ?? pane.querySelector<HTMLElement>(".pane-body")!.offsetHeight + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 1;
+      const full = Math.min(Math.ceil(need), Math.floor(c.height));
+      return shown < full - 2 ? full : 0;
+    };
+    /** What must come out for a pane to show whole: its column, if later columns cover it; the pane, if it is cut off down its column. */
     const peekable = (pane: HTMLElement): HTMLElement[] => {
       const col = pane.parentElement as HTMLElement;
       const out: HTMLElement[] = [];
       if (col.hasAttribute("data-covered") || (col.nextElementSibling as HTMLElement | null)?.hasAttribute("data-over")) out.push(col);
-      if (col.classList.contains("crowded")) {
-        const r = pane.getBoundingClientRect();
-        const c = col.getBoundingClientRect();
-        if (pane.hasAttribute("data-covered") || (pane.nextElementSibling as HTMLElement | null)?.hasAttribute("data-over") || r.bottom > c.bottom + 1) out.push(pane);
-      }
+      if (col.children.length > 1 && cutOff(pane)) out.push(pane);
       return out;
     };
     const peek = (pane: HTMLElement, its: HTMLElement[]) => {
@@ -569,12 +645,21 @@ export function Panes() {
         peeked.push(it);
         it.setAttribute("data-peek", "");
         if (it === pane) {
+          // As tall as it needs, without moving the panes around it (the extra height takes no room), then lifted into the column.
+          const full = cutOff(it);
+          if (full) {
+            const h = it.offsetHeight;
+            it.style.setProperty("--peek-h", `${full}px`);
+            it.style.setProperty("--peek-extra", `${Math.max(0, full - h)}px`);
+            it.setAttribute("data-peek-h", "");
+          }
           const r = it.getBoundingClientRect();
           const c = (it.parentElement as HTMLElement).getBoundingClientRect();
           const dy = Math.max(c.top - r.top, Math.min(0, c.bottom - r.bottom));
           if (dy) it.style.transform = `translateY(${Math.round(dy)}px)`;
         }
       }
+      schedule();
     };
     const onMove = (e: PointerEvent) => {
       if (e.pointerType !== "mouse" || e.buttons || drag) return;
@@ -694,6 +779,10 @@ export function Panes() {
       clearTimeout(later.current);
       clearTimeout(timer);
       wrap.removeEventListener("scroll", onScroll, { capture: true });
+      wrap.removeEventListener("transitionrun", onRun);
+      wrap.removeEventListener("transitionend", onEnd);
+      wrap.removeEventListener("transitioncancel", onEnd);
+      bodies.current?.disconnect();
       sizes.disconnect();
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerleave", unpeek);
@@ -755,6 +844,8 @@ interface Edge {
   sy: number;
   /** For words: the right end of their underline, which a short step joins to the lead-out. */
   under?: { x: number; y: number };
+  /** For a source out of sight in its pane: the point on the pane's edge, over it, where the curve ends turned toward it. */
+  hint?: { x: number; y: number };
   textRight: number;
   ex: number;
   ey: number;
@@ -862,7 +953,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
       const t = ce.querySelector<HTMLElement>(".pane-head h2, .top h1, .wiki-head h2");
       const tr = t?.getBoundingClientRect();
       ey = folded ? cbox.top + TAB / 2 : tr && tr.bottom > scroll.top + 4 ? Math.max(scroll.top + 6, tr.top + Math.min(tr.height, 32) / 2) : scroll.top + 14;
-      // The rule: under the pane's own head (a section's, a page's title, an article's), not an article's set under a node; and not while that head holds the focus (its rule is then the text's ink).
+      // The rule: under the pane's own head (a section's, a page's title, an article's), not an article's set under a node; the focused head's too (the heavy rule on top marks the active pane).
       const head = ruled ? ce.querySelector<HTMLElement>(HEADS) : null;
       const ruleEl = head?.matches(".top") ? head.querySelector<HTMLElement>("h1") : head;
       const rs = (ruleEl ?? ce.querySelector<HTMLElement>(".pane-head, .top h1, .wiki-head"))?.getBoundingClientRect();
@@ -870,7 +961,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
         folded = true;
         ey = cbox.top + TAB / 2;
       }
-      const rr = ruleEl && !head!.classList.contains("focused") ? rs : undefined;
+      const rr = ruleEl ? rs : undefined;
       const below = ccol.classList.contains("crowded") ? ((ce.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top ?? Infinity) : Infinity;
       if (rr && rr.bottom > top + 4 && rr.bottom < Math.min(scroll.bottom, below) && rr.left < shownRight) {
         ey = level(rr.bottom - 0.5);
@@ -882,11 +973,13 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     // Folded or scrolled so far that its title's rule does not show: into its tab's foot.
     if (folded && !rule && ruled) {
       ey = level(cbox.top + TAB - 0.5);
-      rule = { x0: cbox.left, x1: Math.round(Math.min(cbox.right - 1, nextCol) * dpr) / dpr };
+      // From where the curve meets it, on under the tab: the curve becomes the tab's line.
+      rule = { x0: ex, x1: Math.round(Math.min(cbox.right - 1, nextCol) * dpr) / dpr };
       rules.set(x.node.id, "tab");
       tabbed.add(x.node.id);
     }
-    if (ey > ccolBox.bottom - 4) {
+    // Below the column's foot (every pane leaves at least its tab there now, so this is only a pane still being laid out).
+    if (ey > ccolBox.bottom) {
       ey = ccolBox.bottom - 4;
       lost = true;
     }
@@ -896,11 +989,12 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     let sx = textRight;
     let sy: number;
     let under: { x: number; y: number } | undefined;
+    let hint: { x: number; y: number } | undefined;
     // What of the pane shows: its own scroll box (below its tab, if folded), less what the pane after it in a crowded column covers, down to the column's foot.
     const pfolded = pe.hasAttribute("data-covered");
     const pscroll = pe.querySelector<HTMLElement>(".pane-scroll")!.getBoundingClientRect();
     const nextTop = pcol.classList.contains("crowded") ? (pe.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top : undefined;
-    const sc = { top: pfolded ? Math.max(pscroll.top, pbox.top + TAB) : pscroll.top, bottom: Math.min(pscroll.bottom, nextTop ?? Infinity, pcol.getBoundingClientRect().bottom) };
+    const sc = { top: pfolded || pe.hasAttribute("data-scrolled") ? Math.max(pscroll.top, pbox.top + TAB) : pscroll.top, bottom: Math.min(pscroll.bottom, nextTop ?? Infinity, pcol.getBoundingClientRect().bottom) };
     const cands = pe.hasAttribute("data-buried") ? [] : pe.querySelectorAll<HTMLElement>(`.${kidClass(refKey(x.node.ref))}`);
     let src: HTMLElement | undefined;
     for (const c of cands) {
@@ -910,7 +1004,8 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
         break;
       }
     }
-    if (pfolded && !src) {
+    // Folded to its tab (no more than a line or so of it showing) with its source out of sight.
+    if (pfolded && !src && sc.bottom - sc.top < 48) {
       // Folded with its source out of sight: out of the right end of its tab's foot, carrying that line on (its foot drawn here too, so they join exactly).
       const footRight = Math.round(Math.min(pbox.right - 1, left) * dpr) / dpr;
       sy = level(pbox.top + TAB - 0.5);
@@ -941,8 +1036,18 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
       if (sy < sc.top + 2 || sy > sc.bottom - 2 || sx > textRight + 1) {
         lost = true;
         under = undefined;
-        sx = textRight;
-        sy = Math.max(sc.top + 2, Math.min(sc.bottom - 2, sy));
+        const dir = sy > sc.bottom - 2 ? 1 : sy < sc.top + 2 ? -1 : 0;
+        if (dir && sc.bottom - sc.top > 40) {
+          // Out of sight above or below in its pane: the dotted curve turns at its end toward it, ending at the pane's edge over where it is.
+          const hx = Math.max(pbox.left + 40, Math.min(r.right, textRight - 16));
+          const edge = dir > 0 ? sc.bottom - 1 : sc.top + 1;
+          sy = level(edge - dir * 14);
+          hint = { x: hx, y: edge };
+          sx = hx + 6;
+        } else {
+          sx = textRight;
+          sy = Math.max(sc.top + 2, Math.min(sc.bottom - 2, sy));
+        }
       }
       sy = level(sy);
       if (under) under.y = level(under.y);
@@ -955,7 +1060,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
       tabbed.delete(x.node.id);
     }
     const gutter = colEls.indexOf(ccol);
-    edges.push({ from: parent.id, to: x.node.id, gutter, left: left - box.left, sx: sx - box.left, sy: sy - box.top, under: under && { x: under.x - box.left, y: under.y - box.top }, textRight: textRight - box.left, ex: ex - box.left, ey: ey - box.top, on: branch.has(x.node.id) && branch.has(parent.id), lost, hue: x.node.hue, rule: rule && { x0: rule.x0 - box.left, x1: rule.x1 - box.left } });
+    edges.push({ from: parent.id, to: x.node.id, gutter, left: left - box.left, sx: sx - box.left, sy: sy - box.top, under: under && { x: under.x - box.left, y: under.y - box.top }, hint: hint && { x: hint.x - box.left, y: hint.y - box.top }, textRight: textRight - box.left, ex: ex - box.left, ey: ey - box.top, on: branch.has(x.node.id) && branch.has(parent.id), lost, hue: x.node.hue, rule: rule && { x0: rule.x0 - box.left, x1: rule.x1 - box.left } });
   }
   // Lanes, gutter by gutter.
   const lane = new Map<Edge, number>();
@@ -981,7 +1086,11 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     const g = e.left + LANE_LAST - i * LANE_PITCH;
     const dy = e.ey - e.sy;
     let d: string;
-    const join = e.under ? `M${fx(e.under.x)} ${fx(e.under.y)}C${fx((e.under.x + e.sx) / 2)} ${fx(e.under.y)} ${fx((e.under.x + e.sx) / 2)} ${fx(e.sy)} ${fx(e.sx)} ${fx(e.sy)}` : `M${fx(e.sx)} ${fx(e.sy)}`;
+    const join = e.under
+      ? `M${fx(e.under.x)} ${fx(e.under.y)}C${fx((e.under.x + e.sx) / 2)} ${fx(e.under.y)} ${fx((e.under.x + e.sx) / 2)} ${fx(e.sy)} ${fx(e.sx)} ${fx(e.sy)}`
+      : e.hint
+        ? `M${fx(e.hint.x)} ${fx(e.hint.y)}V${fx(e.sy + Math.sign(e.hint.y - e.sy) * 6)}Q${fx(e.hint.x)} ${fx(e.sy)} ${fx(e.sx)} ${fx(e.sy)}`
+        : `M${fx(e.sx)} ${fx(e.sy)}`;
     if (Math.abs(dy) < 1.5) d = `${join}H${fx(e.ex)}`;
     else {
       // A lead-out to the lane, a quarter turn, the lane, a quarter turn into the title. Each turn's radius grows by a pitch per lane outwards, so a bundle turning together stays parallel; a turn never starts inside the text.

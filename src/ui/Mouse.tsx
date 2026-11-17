@@ -258,7 +258,7 @@ export const menuShown = () => !!shown;
 
 const KEY_TEXT: Record<string, string> = { Enter: "⏎", Escape: "Esc", ArrowUp: "↑", ArrowDown: "↓" };
 /** How a key is written beside what it does. */
-export const keyText = (k: string) => KEY_TEXT[k] ?? k;
+export const keyText = (k: string) => KEY_TEXT[k] ?? (k.startsWith("A-") ? `Alt+${k.slice(2)}` : k);
 
 /**
  * A menu: a small list of text, every item with its key. A popover by the pointer or the button it
@@ -402,11 +402,20 @@ function placeBar(el: HTMLElement | null, shown = false) {
   const w = el.offsetWidth;
   const h = el.offsetHeight;
   const bar = document.querySelector(".docbar")?.getBoundingClientRect().bottom ?? 0;
-  const below = first.top - h - 9 < bar + 4;
+  // In the panes view it is set in its pane (so whatever covers the pane covers it), placed from the pane's box.
+  const pane = el.parentElement?.classList.contains("pane") ? el.parentElement : null;
+  const host = pane ? pane.getBoundingClientRect() : null;
+  // The room it has: below the top bar, and in a pane below its tab when the tab shows (folded, or scrolled past its title) and above what covers its foot.
+  const tabbed = pane && (pane.hasAttribute("data-scrolled") || pane.hasAttribute("data-covered"));
+  const roof = Math.max(bar, host ? host.top + (tabbed ? 30 : 0) : 0) + 4;
+  const next = pane?.parentElement?.classList.contains("crowded") ? (pane.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top : undefined;
+  const floor = Math.min(window.innerHeight - 28, host?.bottom ?? Infinity, next ?? Infinity) - 4;
+  // Over the words if it fits there, else under them; never on them.
+  const above = first.top - 9 - roof;
+  const under = floor - (last.bottom + 9);
+  const below = above < h && (under >= h || under > above);
   const top = below ? last.bottom + 9 : first.top - h - 9;
   const mid = (left + right) / 2;
-  // In the panes view it is set in its pane (so whatever covers the pane covers it), placed from the pane's box.
-  const host = el.parentElement?.classList.contains("pane") ? el.parentElement.getBoundingClientRect() : null;
   const x = Math.round(Math.max((host?.left ?? 0) + 8, Math.min((host?.right ?? window.innerWidth) - w - 8, mid - w / 2)));
   el.classList.toggle("below", below);
   el.style.left = `${x - (host?.left ?? 0)}px`;

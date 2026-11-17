@@ -13,6 +13,7 @@ import { PANES_MIN_WIDTH, store, type Aux, type WRow } from "./store";
 import { WikiPage, WikiView } from "./Wiki";
 import { Usage } from "./Usage";
 import { FirstRun, Hints, Key, MenuHost, SelBar, closeMenu, hideBar, locate, locateIn, menuAt, menuShown, setPrompt, showBar, type Hint } from "./Mouse";
+import { press } from "./press";
 
 function Page() {
   if (store.colWiki) return <WikiPage />;
@@ -672,9 +673,15 @@ export function App() {
     const hit = at && store.sentenceAt(at.id, at.at);
     if (at && hit) return store.go(at.id, "sentence", hit), showBar();
     const node = target.closest<HTMLElement>("[data-node]");
-    if (!node) return;
-    // A pane's head makes that pane the active one.
-    if (panes && paneEl && node.matches(".pane-head, .top")) store.paneAt = paneIndex;
+    if (!node) {
+      // Anywhere else in a pane (its margins, under its text, a list's gaps): that pane becomes the active one, and any selection goes.
+      if (panes && paneEl) return store.land(paneIndex);
+      // Anywhere else on the page: the selection goes.
+      for (let i = 0; i < 3 && (store.focus.grain !== "node" || store.inArticleText); i++) press("Escape");
+      return;
+    }
+    // Anything else of a node in a pane makes that pane the active one.
+    if (panes && paneEl) store.paneAt = paneIndex;
     store.go(node.dataset.node as NodeId);
   };
 

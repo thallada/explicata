@@ -157,3 +157,70 @@ export function pixels(buf: Buffer): { w: number; h: number; px: (x: number, y: 
   }
   return { w, h, px: (x, y) => [out[y * stride + x * bpp], out[y * stride + x * bpp + 1], out[y * stride + x * bpp + 2]] };
 }
+
+/**
+ * The curves' invariant, measured from the page: every curve drawn starts at what its pane was
+ * opened from (the row, the words, or a link: within a few pixels of it), or, when that is out of
+ * sight, on its pane's edge over it (dotted), or at the end of its folded pane's tab foot; and ends
+ * in its pane's landing line: the rule under its title, along to the rule's end, or its tab's foot,
+ * or just before its title. Returns what fails, as text (empty when all hold).
+ */
+export const curveFaults = (page: Page) =>
+  page.evaluate(() => {
+    const ie = (globalThis as any).__ie;
+    const refKey = (p: any) => (p.kind === "node" ? `n:${p.id}` : `w:${p.title}${p.sec !== undefined ? `#${p.sec}` : ""}`);
+    const kidClass = (key: string) => {
+      let h = 5381;
+      for (let i = 0; i < key.length; i++) h = ((h * 33) ^ key.charCodeAt(i)) >>> 0;
+      return `k${h.toString(36)}`;
+    };
+    const TAB = 30;
+    const faults: string[] = [];
+    const svg = document.querySelector<SVGSVGElement>(".curves")!.getBoundingClientRect();
+    const box = { left: Math.round(svg.left), top: Math.round(svg.top) };
+    const placed = new Map<number, any>(ie.panesPlaced.map((x: any) => [x.node.id, x]));
+    for (const p of document.querySelectorAll<SVGPathElement>(".curves path:not(.foot)")) {
+      const to = Number(p.dataset.to);
+      const from = Number(p.dataset.from);
+      const ce = document.querySelector<HTMLElement>(`.pane[data-tid="${to}"]`);
+      const pe = document.querySelector<HTMLElement>(`.pane[data-tid="${from}"]`);
+      const x = placed.get(to);
+      if (!ce || !pe || !x) {
+        faults.push(`${from}>${to}: no pane`);
+        continue;
+      }
+      const a0 = p.getPointAtLength(0);
+      const b0 = p.getPointAtLength(p.getTotalLength());
+      const a = { x: a0.x + box.left, y: a0.y + box.top };
+      const b = { x: b0.x + box.left, y: b0.y + box.top };
+      const lost = p.classList.contains("lost");
+      const name = `${from}>${to} ${ce.querySelector(".pane-head h2, .top h1, .wiki-head h2")?.textContent?.trim()}`;
+      const cr = ce.getBoundingClientRect();
+      const col = ce.parentElement!.getBoundingClientRect();
+      const nextCol = (ce.parentElement!.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().left ?? Infinity;
+      // The end.
+      const ruled = ce.dataset.ruled ?? "";
+      if (ruled.includes("head")) {
+        const head = ce.querySelector<HTMLElement>(":scope > .pane-scroll > .pane-body > .pane-head, :scope > .pane-scroll > .pane-body > .top h1, :scope > .pane-scroll > .pane-body > .wiki:not(.embedded) > .wiki-head")!;
+        const r = head.getBoundingClientRect();
+        if (Math.abs(b.y - (r.bottom - 0.5)) > 1.2) faults.push(`${name}: ends at y ${b.y}, its title's rule at ${r.bottom - 0.5}`);
+        if (Math.abs(b.x - Math.min(r.right, nextCol, cr.right)) > 1.6) faults.push(`${name}: ends at x ${b.x}, its rule's end at ${Math.min(r.right, nextCol)}`);
+      } else if (ruled.includes("tab") && !lost) {
+        if (Math.abs(b.y - (cr.top + TAB - 0.5)) > 1.2) faults.push(`${name}: ends at y ${b.y}, its tab's foot at ${cr.top + TAB - 0.5}`);
+      } else if (!lost) {
+        if (b.x < col.left - 1 || b.x > col.left + 60 || b.y < cr.top - 1 || b.y > Math.min(cr.bottom, col.bottom) + 1) faults.push(`${name}: ends at ${b.x},${b.y}, outside its pane's head (${cr.top}..${cr.bottom})`);
+      }
+      // The start.
+      const pr = pe.getBoundingClientRect();
+      if (a.x < pr.left - 1 || a.x > Math.max(pr.right, pr.right) + 1) faults.push(`${name}: starts at x ${a.x}, outside its source pane ${pr.left}..${pr.right}`);
+      const footStart = Math.abs(a.y - (pr.top + TAB - 0.5)) <= 1.2 && Math.abs(a.x - Math.min(pr.right - 1, col.left)) <= 2;
+      if (lost || footStart) continue;
+      const cands = [...pe.querySelectorAll<HTMLElement>(`.${kidClass(refKey(x.node.ref))}`)];
+      const near = cands.some((c) => {
+        const el = c.matches("li") ? (c.querySelector<HTMLElement>(":scope > .row") ?? c) : c;
+        return [...el.getClientRects()].some((r) => a.x >= r.left - 2 && a.x <= r.right + 10 && a.y >= r.top - 4 && a.y <= r.bottom + 6);
+      });
+      if (!near) faults.push(`${name}: starts at ${a.x},${a.y}, not at its source (${cands.length} candidates)`);
+    }
+    return faults;
+  });

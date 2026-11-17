@@ -419,6 +419,9 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .col.crowded > .pane[data-covered] > .tabline { opacity: 1; pointer-events: auto; }
 /* A pane scrolled past its own title shows its tab at its top as well, over its text (Panes.tsx watchHead). */
 .pane[data-scrolled] > .tabline { opacity: 1; pointer-events: auto; }
+/* Its title centred between the rule across the pane's top (heavy on the active pane) and its foot. */
+.pane.active > .tabline { padding-top: 3px; }
+.pane.on-branch:not(.active) > .tabline { padding-top: 1px; }
 .pane[data-scrolled] > .pane-ctl { top: 2px; }
 .pane[data-scrolled] > .grip { display: none; }
 @media (prefers-reduced-motion: reduce) {
@@ -430,6 +433,8 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 
 /* Peeking: a covered pane or column, the mouse resting on it, raised over its neighbours whole. */
 .col[data-peek], .pane[data-peek] { z-index: 6; box-shadow: 0 3px 18px 0 var(--shade); }
+/* A pane peeking down its column is shown as tall as its text needs; the extra height takes no room, so nothing around it moves. */
+.pane[data-peek-h] { height: var(--peek-h) !important; margin-bottom: calc(-1 * var(--peek-extra, 0px)); }
 .col[data-peek] .spine, .col.crowded > .pane[data-peek] > .tabline { opacity: 0; pointer-events: none; }
 /* The wheel over what peeks scrolls its text, not the column under it. */
 .col[data-peek] .pane-scroll, .pane[data-peek] > .pane-scroll { overscroll-behavior: contain; }
@@ -517,13 +522,13 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
  * rule itself (Panes.tsx curves; the pane's own is left out, data-ruled), so the two are one stroke.
  * Where no curve lands (curves off, a covered source), the pane's own rule takes its colour.
  */
-:where([data-colors="line"] .pane[data-hue]) > .pane-scroll > .pane-body > .pane-head:not(.focused),
-:where([data-colors="line"] .pane[data-hue]) > .pane-scroll > .pane-body > .top:not(.focused) h1,
-:where([data-colors="line"] .pane[data-hue]) > .pane-scroll > .pane-body > .wiki:not(.embedded) > .wiki-head:not(.focused),
+:where([data-colors="line"] .pane[data-hue]) > .pane-scroll > .pane-body > .pane-head,
+:where([data-colors="line"] .pane[data-hue]) > .pane-scroll > .pane-body > .top h1,
+:where([data-colors="line"] .pane[data-hue]) > .pane-scroll > .pane-body > .wiki:not(.embedded) > .wiki-head,
 :where([data-colors="line"] .pane[data-hue]) > .tabline { border-bottom-color: var(--hue-faint); }
-:where([data-colors="line"] .pane.on-branch[data-hue]) > .pane-scroll > .pane-body > .pane-head:not(.focused),
-:where([data-colors="line"] .pane.on-branch[data-hue]) > .pane-scroll > .pane-body > .top:not(.focused) h1,
-:where([data-colors="line"] .pane.on-branch[data-hue]) > .pane-scroll > .pane-body > .wiki:not(.embedded) > .wiki-head:not(.focused),
+:where([data-colors="line"] .pane.on-branch[data-hue]) > .pane-scroll > .pane-body > .pane-head,
+:where([data-colors="line"] .pane.on-branch[data-hue]) > .pane-scroll > .pane-body > .top h1,
+:where([data-colors="line"] .pane.on-branch[data-hue]) > .pane-scroll > .pane-body > .wiki:not(.embedded) > .wiki-head,
 :where([data-colors="line"] .pane.on-branch[data-hue]) > .tabline { border-bottom-color: var(--hue); }
 .pane[data-ruled~="head"] > .pane-scroll > .pane-body > .pane-head,
 .pane[data-ruled~="head"] > .pane-scroll > .pane-body > .top h1,
@@ -817,7 +822,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 }
 .selbar.below::after { bottom: auto; top: -5px; transform: rotate(225deg); }
 /* In the panes view the bar is set in its pane, so a pane or column over that pane covers it too. */
-.pane > .selbar { position: absolute; }
+.pane > .selbar { position: absolute; z-index: 1; }
 
 /* The ⋯ by a row, a pane's head, a page's head or a note: invisible until wanted, never moving the text. */
 .more {

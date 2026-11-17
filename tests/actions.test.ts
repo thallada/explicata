@@ -126,6 +126,9 @@ describe("actions", () => {
     expect(labels(pane).slice(-3)).toEqual(["Pin this pane", "Close this pane", "Show as one column"]);
     expect(find(pane, "Pin this pane").checked).toBe(true);
     expect(labels(paneEntries({ article: "Octopus", pinned: false }, act)).slice(0, 2)).toEqual(["# Octopus", "Open on wikipedia.org"]);
+    // Its menu goes to the panes around it, by the keys that do.
+    const go = paneEntries({ article: "Octopus", pinned: false }, act).find((e) => e.t === "choices" && e.label === "Go to the pane") as Extract<Entry, { t: "choices" }>;
+    expect(go.options.map((o) => `${o.label} ${o.key}`)).toEqual(["left A-h", "right A-l", "above A-k", "below A-j"]);
   });
 
   it("the top menu: documents, history, undo and redo, links, the layout and settings as commands", () => {
