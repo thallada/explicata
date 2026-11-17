@@ -2,7 +2,7 @@
   "name": "infinispand",
   "version": "1.0.0",
   "private": true,
-  "description": "A document you can expand without limit: an outline whose every node, sentence and word opens further, written ahead or by a model, versioned like git.",
+  "description": "A tree of writing you can expand without limit: an outline whose every node, sentence and word opens further, written ahead or by a model, versioned like git.",
   "type": "module",
   "scripts": {
     "test": "vitest run",

@@ -64,7 +64,7 @@ const hoistHere = (page: Page) => state(page, (s) => void (!s.panes && s.setHois
 
 /**
  * The section at these titles as the page: in the column hoisted to it (as z does), with the
- * library one step out; in panes, in its own pane beside the library's. What `/doc/<name>` used to open.
+ * library one step out; in panes, in its own pane beside the library's.
  */
 export async function openPage(page: Page, ...path: string[]) {
   await openAt(page, ...path);

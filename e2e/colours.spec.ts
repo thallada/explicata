@@ -288,7 +288,7 @@ test("a pane covered across and down peeks out whole on both axes; the wheel scr
   await open(page, "Recursion without names", "fixed-point combinator", ".lnk, .anchor");
   await expect(pane(page, "Fixed-point combinator").locator(".wrow").first()).toBeVisible();
   await still(page);
-  // The documents' column is covered to spines, and folded down: hover the spine of a folded pane in it.
+  // The top-level trees' column is covered to spines, and folded down: hover the spine of a folded pane in it.
   const col = pane(page, "The tides").locator("xpath=..");
   expect(await col.evaluate((c) => c.hasAttribute("data-covered") || !!c.nextElementSibling?.hasAttribute("data-over"))).toBe(true);
   const tides = pane(page, "The tides");
@@ -334,7 +334,7 @@ test("a pane covered across and down peeks out whole on both axes; the wheel scr
   const b = (await bar.boundingBox())!;
   const at = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
   expect(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest(".selbar"), at)).toBe(true);
-  // Peek the documents' column (to the left, covered): it slides out over the pane with the bar.
+  // Peek the top-level trees' column (to the left, covered): it slides out over the pane with the bar.
   await page.mouse.move(sp.x + sp.width / 2, sp.y + 60);
   await expect(col).toHaveAttribute("data-peek", "");
   const over = await page.evaluate(({ x, y }) => {

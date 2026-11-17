@@ -65,7 +65,7 @@ test("each kind of link has its mark; a note that also links keeps its dotted un
   await expect(wiki).toBeVisible();
   expect(await wiki.evaluate((el) => getComputedStyle(el).textDecorationLine)).toContain("underline");
   await expect(sec.locator(".lmark.l-wiki").first()).toHaveText("W");
-  // Another note in the library: §, with the document in its tooltip.
+  // Another note in the library: §, with its top in its tooltip.
   await expect(sec.locator(".lnk.l-node", { hasText: "Y combinator" })).toBeVisible();
   const nodeMark = sec.locator(".lmark.l-node").first();
   await expect(nodeMark).toHaveText("§");
@@ -101,7 +101,7 @@ test("hovering a link shows its preview and leaving or a key takes it away; focu
   await page.mouse.move(5, 5);
   await page.waitForTimeout(700);
   await expect(page.locator(".popup")).toHaveCount(0);
-  // The node link's preview names its document and shows its first lines.
+  // The node link's preview names its top and shows its first lines.
   await page.locator(".lnk.l-node", { hasText: "Y combinator" }).hover();
   await expect(popup).toContainText("Fixed points");
   await expect(popup).toContainText("How Y works");
@@ -309,7 +309,7 @@ test("Linked from and Mentioned in list what links here, reachable by j and Ente
   await expect(back.locator("li.focused")).toHaveCount(1);
   await keys(page, "Enter");
   expect(await selected(page)).toBe("Several of the leading systems");
-  // Lambda calculus is linked from two documents: its pane lists both, and either leads back.
+  // Lambda calculus is linked from two top-level trees: its pane lists both, and either leads back.
   await inPane(page, "Recursion without names", "lambda calculus");
   await keys(page, "Enter j l");
   const art = page.locator(".wiki-pane").last();
@@ -333,13 +333,13 @@ test("linking by hand: the picker links to the library, to Wikipedia and to an a
     const s = (globalThis as any).__ie.snap;
     return s.nodes[d].children.map((c: string) => s.nodes[c]).filter((n: any) => n.ref).map((n: any) => `${n.anchors[0].text}|${n.ref.kind}|${n.ref.title ?? n.ref.url ?? n.ref.path?.join("/")}`);
   }, doc);
-  // A word in the document's text: i i selects it; w opens the picker filled with it.
+  // A word in the page's text: i i selects it; w opens the picker filled with it.
   await keys(page, "i i");
   const word = await selected(page);
   await keys(page, "w");
   const picker = page.locator(".picker");
   await expect(picker.locator("input")).toHaveValue(word);
-  // Library: a document by title.
+  // Library: a top-level node by title.
   await page.keyboard.press("Control+a");
   await page.keyboard.type("Octopus minds");
   await expect(picker.locator(".choice.selected .t")).toHaveText("Octopus minds");
@@ -368,7 +368,7 @@ test("linking by hand: the picker links to the library, to Wikipedia and to an a
   await expect(picker.locator(".choice.selected")).toContainText("example.org");
   await keys(page, "Enter");
   expect(await linkCount()).toEqual([`${word}|wiki|Octopus`, `${second}|url|https://example.org/tides`]);
-  // /link with a target in the text form, on the node itself: the document is about something.
+  // /link with a target in the text form, on the node itself: the node is about something.
   await keys(page, "Escape Escape");
   await command(page, "/link w:Tide");
   expect(await state(page, (s) => s.snap.nodes[s.focus.node].ref)).toEqual({ kind: "wiki", title: "Tide", lang: "en" });
@@ -536,7 +536,7 @@ test("keypress → paint stays within one frame budget through links and article
     const warm = await measure(3);
     report[view] = { cold, warm };
     // One frame for nearly every key; a rare second frame (a preview appearing, the column's
-    // article page giving way to the document) is allowed, as the other latency tests allow it.
+    // article page giving way to the node's page) is allowed, as the other latency tests allow it.
     expect(warm.keystrokes).toBeGreaterThan(30);
     expect(warm.median).toBeLessThan(17.5);
     expect(warm.p95).toBeLessThan(34);

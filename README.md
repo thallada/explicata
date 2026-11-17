@@ -1,6 +1,6 @@
 # Infinispand
 
-A document you can expand without limit. It opens as an outline of titles; every node, sentence,
+A tree of writing you can expand without limit. It opens as an outline of titles; every node, sentence,
 phrase and word can be opened further. The first levels are written ahead of time and open
 instantly; past them, a model writes the expansion on request. Everything is editable, by you or
 by a model, and the tree is versioned like git.
@@ -90,21 +90,31 @@ Press `?` for every key. The short version:
   on words, a row, a link, a note or a pane opens what can be done with it, Copy first (Shift+right-
   click is the browser's own menu); so does the `⋯` beside a row, a pane's pin, a page's byline or a
   note, shown only when pointed at, and a stale flag. The top bar, which stays at the top, has
-  `undo`, `redo` when there is something to redo, and `menu` (jump, history, links, layout and
-  settings); on its left, the library's name. Keys named in the status line or a panel's head are buttons. On a phone the
-  bar sits at the foot of the screen and menus rise from it. Every item acts by pressing its key
+  `undo`, `redo` when there is something to redo, and `menu` (libraries, jump, history, links,
+  layout and settings); on its left, the library's name, which opens the libraries panel. Keys
+  named in the status line or a panel's head are buttons. On a phone the selection bar sits at the
+  foot of the screen and menus rise from it. Every item acts by pressing its key
   (`src/ui/press.ts`), so a click and a key cannot do different things. The first visit says, once,
   in the status line, that a click on a sentence offers actions and `?` lists the keys. Left to the
   keys: stepping by grain (`j` `k` `i`; a click or a drag goes straight there), `Tab` from mark to
   mark, `[` `]` up and down a column (a click on a pane does it), and the commands typed at `:`
   that no menu lists (`/branch`, `/switch`, `/merge`, `/user`, `/link`, …), which the menu's
   Command line… opens for typing.
-- **Libraries.** `:/library` lists the libraries, `:/library name` opens one and `:/library new
-  name` makes one (its root alone) and opens it. Each library is a page of its own, at its own
-  address (`/l/<id>`); opening another loads the page. `/` opens the library last used in this
-  browser. A library's name is its root's title (`r` on the root renames it). Nothing crosses
-  between libraries: links, the jump box, Related, the link scanner and reviewer, and the editor
-  agent see only the library they are in; export then import carries a tree across.
+- **Libraries.** `m`, or a click on the library's name at the top left, opens the libraries panel
+  on the left: every library, with how many nodes it holds, ● the one open here. `j` `k` move,
+  `Enter` (or a click on a row) opens one, `n` names a new one (its root alone) and opens it, `r`
+  renames one, `D` deletes one after a `y` (`n` keeps it; the last library cannot be deleted, and
+  where a deleted one goes is below); `Esc`, `m`, the name again or a press outside closes the
+  panel. A row's `⋯`, or a right-click on it, offers the same. Beside the panel the column moves
+  over and the panes narrow; on a phone it covers the page. Each library is a page of its own, at
+  its own address (`/l/<id>`); opening another loads the page, where you left it in this browser.
+  `/` opens the library last used in this browser. A library's name is its root's title (`r` on
+  the root renames it too). Nothing crosses between libraries: links, the jump box, Related, the
+  link scanner and reviewer, and the editor agent see only the library they are in; export then
+  import carries a tree across. A page whose library is deleted, by another page or while it was
+  away, stops sending, says so (`deleted · not saved` in the top bar) and opens the panel on the
+  others. On the command line, `:/library name` opens a library by name and `:/library new name`
+  makes one.
 - On a window 900 px wide or more, a laptop's too, the page opens as panes side by side, after
   Andy Matuschak's notes: the library, then each open node in a pane of its own. `v` switches between
   panes and the single column, `/view auto|column|panes` sets it.
@@ -219,7 +229,7 @@ Press `?` for every key. The short version:
 - A **suggestion** has a faint dashed underline. `Tab` reaches suggestions; `y` links one, `n`
   declines it (remembered in the node, on every replica). `/autolink suggest` leaves every
   candidate to you; `/autolink on` makes the scanner's surest links unreviewed (they measured 0.84
-  precision on unseen documents); `/autolink off` scans nothing by itself.
+  precision on unseen trees); `/autolink off` scans nothing by itself.
 - `S` opens the **links list** of the node you are on and everything under it (on the library
   root, of the whole library), beside the text: every link found or made, what
   was rejected and what waits, each with who decided (the reviewer or you) and the reviewer's
@@ -306,7 +316,8 @@ What is sent where:
 - **`src/ui/`** The browser's replica of the library (`session.ts`, kept in IndexedDB), the store
   and keymap, and the page. The mouse acts through the keymap: `actions.ts` builds what the
   selection bar and the menus offer for each kind of target, every item pressing its key
-  (`press.ts`); `Mouse.tsx` draws the one menu, the bar and the key hints. The panes view's panes are a forest of forks (`forks.ts`, pure functions;
+  (`press.ts`); `Mouse.tsx` draws the one menu, the bar and the key hints; `Menu.tsx` the top bar
+  and the libraries panel (its state in `libraries.ts`). The panes view's panes are a forest of forks (`forks.ts`, pure functions;
   the store's `trail` is its focused branch); `stack.ts` is the stacking shared by the strip and its
   columns, `lanes.ts` orders the curves' lanes.
 
@@ -343,6 +354,15 @@ the first one.
 
 When `IE_DATA` is empty, the first library is made with the seed and every `library/*.md`; a file
 that does not parse is logged and skipped. A library made later starts with its root alone.
+
+### Deleting a library
+
+`D` in the libraries panel (or `DELETE /api/libraries/<id>`) moves the library's directory, whole
+and unchanged, to `IE_DATA/libraries/.deleted/<id>-<time>/` and marks its entry in `index.json`
+deleted; the page says where it went. The last library cannot be deleted, and `u` cannot undo a
+deletion. To bring one back: stop the server, move the directory back to `IE_DATA/libraries/<id>/`,
+remove the `"deleted"` and `"movedTo"` fields from its entry in `IE_DATA/libraries/index.json`, and
+start the server. Nothing ever empties `.deleted/`.
 
 ### From the single-library layout
 
@@ -430,10 +450,10 @@ Node ids are the library's, so one batch of ops can work anywhere in it.
 
 | | |
 |---|---|
-| `GET /api/libraries` | `{ libraries: [{ id, title, created, nodes, branches }] }`, in order |
+| `GET /api/libraries` | `{ libraries: [{ id, title, created, nodes, branches }] }`, in order; `nodes` counts what is under the root (not the root, nor the Wikipedia container) |
 | `POST /api/libraries` `{ title }` | a new library, its root alone, at the end: 201 `{ library }` |
 | `PATCH /api/libraries/<id>` `{ title }` | rename it (a commit on its root's title) |
-| `DELETE /api/libraries/<id>` | move it aside whole to `libraries/.deleted/`; 409 for the last one |
+| `DELETE /api/libraries/<id>` | `{ deleted, movedTo }`: moved aside whole to `libraries/.deleted/` (see Deleting a library); 409 for the last one |
 | `GET /api/l/<id>/tree[/<branch>]` | the whole library as JSON, with conflicts and recent history |
 | `POST /api/l/<id>/ops[/<branch>]` | `{ ops, message?, author?, actor? }`, applied as one commit. `create` and `update` take `ref`: `{ "kind": "wiki", "title", "lang" }`, `{ "kind": "node", "id", "path" }` or `{ "kind": "url", "url", "title" }`; `"ref": null` removes it |
 | `GET /api/l/<id>/nodes/<node>/tree[/<branch>]` | one node and everything under it, with their conflicts |

@@ -49,7 +49,7 @@ test("/research shows its searches and pages, writes a section, and links its cl
   await expect(page.locator(".status .message")).toContainText("sources: How tides work (example.org)");
   await idle(page);
 
-  // The section is in the document, with the phrase linked to the page: a web link, marked ↗.
+  // The section is in the library, with the phrase linked to the page: a web link, marked ↗.
   const link = await state(page, (s) => {
     const snap = s.snap;
     const sec = Object.values(snap.nodes).find((n: any) => n.title === "On how tides work") as any;

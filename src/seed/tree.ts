@@ -24,7 +24,7 @@ export const seed: SeedNode[] = [
       "This would be necessary for user selections that weren’t covered by the pre-generations like highlighting certain sentences, phrases, or words.",
       "In general level of detail expands further but the length of the text generated at a deeper level isn’t necessarily deeper.",
     ],
-    body: "A document opens as an outline of titles. Opening a node shows its body and the titles of its children, and each level down is a step denser than the one above. The first levels are written ahead of time and open instantly; past them, or on any selection of text, the model generates the expansion on request. Going deeper makes the text more specific, not longer.",
+    body: "A tree opens as an outline of titles. Opening a node shows its body and the titles of its children, and each level down is a step denser than the one above. The first levels are written ahead of time and open instantly; past them, or on any selection of text, the model generates the expansion on request. Going deeper makes the text more specific, not longer.",
     notes: [
       {
         quote: "a step denser",
@@ -90,7 +90,7 @@ export const seed: SeedNode[] = [
         children: [
           {
             title: "Deepening a leaf",
-            body: "A leaf is a section with no child sections. Pressing `e` on one asks the LLM to write them: a handful of titled children, each a step denser than the leaf's own body. They are committed to the tree like any other edit, so the next reader finds them already there. This is the sense in which the document has no bottom; every leaf is one keystroke from not being a leaf.",
+            body: "A leaf is a section with no child sections. Pressing `e` on one asks the LLM to write them: a handful of titled children, each a step denser than the leaf's own body. They are committed to the tree like any other edit, so the next reader finds them already there. This is the sense in which the tree has no bottom; every leaf is one keystroke from not being a leaf.",
             notes: [
               {
                 quote: "no bottom",
@@ -114,13 +114,13 @@ export const seed: SeedNode[] = [
                 quote: "challenge",
                 form: "note",
                 lens: "elaborate",
-                body: "Challenge asks for the strongest objection to the selected claim. It is the lens most likely to change the document instead of lengthening it.",
+                body: "Challenge asks for the strongest objection to the selected claim. It is the lens most likely to change the text instead of lengthening it.",
               },
             ],
           },
           {
             title: "Context and latency",
-            body: "Generated text streams into place as it is produced, with a budget of under one second to the first token. Each request carries the ancestor path, root to node, together with the outline of the whole document, sent as cached context so that repeated requests in the same region do not pay for it twice. Speculative generation is optional: when enabled, focusing a sentence starts generating its expansion before it is asked for.",
+            body: "Generated text streams into place as it is produced, with a budget of under one second to the first token. Each request carries the ancestor path, root to node, together with the outline of the top-level tree it is in, sent as cached context so that repeated requests in the same region do not pay for it twice. Speculative generation is optional: when enabled, focusing a sentence starts generating its expansion before it is asked for.",
             notes: [
               {
                 quote: "sent as cached context",
@@ -147,7 +147,7 @@ export const seed: SeedNode[] = [
             form: "passage",
             lens: "elaborate",
             body: P(
-              "The failure this guards against is the expansion that grows by padding: the same claim restated with more adjectives, then again with an example nobody asked for. A reader who descends three levels into such a document has read the first level three times.",
+              "The failure this guards against is the expansion that grows by padding: the same claim restated with more adjectives, then again with an example nobody asked for. A reader who descends three levels into such a tree has read the first level three times.",
               "The alternative is to treat each level like a map at a larger scale. The sheet of paper stays the same size; the territory it covers shrinks, and the detail that was below the threshold at the previous scale appears.",
             ),
             notes: [
@@ -331,7 +331,7 @@ export const seed: SeedNode[] = [
       },
       {
         title: "The editor agent",
-        body: "At node grain the command bar takes an instruction instead of a question: tighten this, add a section on that, split this node in two. The instruction goes to an LLM editor agent that works on a fork of the document under its own peer id, using the same operations as the user. When it finishes, its fork is merged back. The user can keep editing in the meantime, because the two sets of changes meet as an ordinary merge.",
+        body: "At node grain the command bar takes an instruction instead of a question: tighten this, add a section on that, split this node in two. The instruction goes to an LLM editor agent that works on a fork of the library under its own peer id, using the same operations as the user. When it finishes, its fork is merged back. The user can keep editing in the meantime, because the two sets of changes meet as an ordinary merge.",
         notes: [
           {
             quote: "peer id",
@@ -470,7 +470,7 @@ export const seed: SeedNode[] = [
       "Another key element to this is that users can actually add, modify, or delete a “node” to the tree.",
       "I think maybe we want something like CDRTs under the hood that would instead use LLMs to resolve logical conflicts.",
     ],
-    body: "A document is a tree of nodes held in a CRDT. Each node has a title, a body, a kind and a provenance, and a note is tied to its parent's text by anchors that survive editing. Every browser holds a full replica, and a small local server relays changes and keeps the API key.",
+    body: "A library is a tree of nodes held in a CRDT, its root the library itself; there can be several, each a tree of its own. Each node has a title, a body, a kind and a provenance, and a note is tied to its parent's text by anchors that survive editing. Every browser holds a full replica, and a small local server relays changes and keeps the API key.",
     notes: [
       {
         quote: "CRDT",
@@ -482,7 +482,7 @@ export const seed: SeedNode[] = [
     children: [
       {
         title: "Nodes",
-        body: "The document lives in a Loro CRDT, using its movable tree for structure and its text type for bodies. A node has a title and a body. It has a kind: a section is a structural child, listed in the outline under its parent, and a note is an expansion anchored to a span of its parent's body. And it has a provenance: whether it was written by a human or by an LLM, and whether it is pinned.",
+        body: "A library lives in a Loro CRDT of its own, using its movable tree for structure and its text type for bodies. A node has a title and a body. It has a kind: a section is a structural child, listed in the outline under its parent, and a note is an expansion anchored to a span of its parent's body. And it has a provenance: whether it was written by a human or by an LLM, and whether it is pinned.",
         notes: [
           {
             quote: "movable tree",
@@ -515,7 +515,7 @@ export const seed: SeedNode[] = [
       },
       {
         title: "Local-first",
-        body: "Each browser holds a full replica of the document in IndexedDB and can read and edit without a connection. A small local server does three things: it relays updates between tabs, people and agents; it persists the document to disk; and it is the only holder of the API key, so the key never reaches a browser.",
+        body: "Each browser holds a full replica of the library in IndexedDB and can read and edit without a connection. A small local server does three things: it relays updates between tabs, people and agents; it persists each library to disk; and it is the only holder of the API key, so the key never reaches a browser.",
         notes: [
           {
             quote: "full replica",
@@ -557,7 +557,7 @@ export const seed: SeedNode[] = [
       },
       {
         title: "History operations",
-        body: "Four operations work on history. Time travel checks out an earlier commit read-only. Revert returns the tree to an earlier state by adding a new commit, so the reverted work stays in history. A branch is a named fork of the document. Merge brings one branch's changes into another. All four are reached from the history view, opened with g.",
+        body: "Four operations work on history. Time travel checks out an earlier commit read-only. Revert returns the tree to an earlier state by adding a new commit, so the reverted work stays in history. A branch is a named fork of the library. Merge brings one branch's changes into another. All four are reached from the history view, opened with g.",
         notes: [
           {
             quote: "by adding a new commit",
@@ -581,7 +581,7 @@ export const seed: SeedNode[] = [
       },
       {
         title: "Semantic conflicts",
-        body: "Some conflicts are invisible to the CRDT because the merged result is well-formed. There are three kinds. They are found by comparing both sides against the merge base, with an LLM scanning for contradictions, and written into the document as conflict records. An LLM then proposes a resolution as an explicit commit that can be reviewed and reverted, never silently; without an LLM the conflict stays open for a person.",
+        body: "Some conflicts are invisible to the CRDT because the merged result is well-formed. There are three kinds. They are found by comparing both sides against the merge base, with an LLM scanning for contradictions, and written into the library as conflict records. An LLM then proposes a resolution as an explicit commit that can be reviewed and reverted, never silently; without an LLM the conflict stays open for a person.",
         children: [
           {
             title: "Three kinds",
@@ -608,7 +608,7 @@ export const seed: SeedNode[] = [
           },
           {
             title: "Detection",
-            body: "At a merge, each node is compared three ways: its state at the merge base, on one side, and on the other. A field changed differently on both sides, or changed on one and deleted on the other, is a conflict. Contradictions between different nodes cannot be found by comparison, so an LLM scans the two sets of changes for them. Every conflict found is recorded in the document itself as a conflict record, which means it is replicated and versioned like everything else.",
+            body: "At a merge, each node is compared three ways: its state at the merge base, on one side, and on the other. A field changed differently on both sides, or changed on one and deleted on the other, is a conflict. Contradictions between different nodes cannot be found by comparison, so an LLM scans the two sets of changes for them. Every conflict found is recorded in the library itself as a conflict record, which means it is replicated and versioned like everything else.",
             notes: [
               {
                 quote: "merge base",
@@ -710,7 +710,7 @@ export const seed: SeedNode[] = [
       "The first example we should use in the editor/explorer should be meta: this project itself.",
       "Break what I have outlined here down into an initial tree we can explore together.",
     ],
-    body: "The tree is a working memory shared by a person and a model. The person steers by attention, the model fills in at the resolution asked for, and either can restructure what is there. The first document is this one.",
+    body: "The tree is a working memory shared by a person and a model. The person steers by attention, the model fills in at the resolution asked for, and either can restructure what is there. The first tree in the library is this one.",
     notes: [
       {
         quote: "working memory",
@@ -737,11 +737,11 @@ export const seed: SeedNode[] = [
       },
       {
         title: "Either can restructure",
-        body: "The tree is a shared working memory in the plain sense that both parties read it and both write it. Neither is confined to filling in. The person can add, move, rewrite and delete nodes, and so can the model, through the same operations; the document can grow in directions that neither started with. What a person writes is kept as written.",
+        body: "The tree is a shared working memory in the plain sense that both parties read it and both write it. Neither is confined to filling in. The person can add, move, rewrite and delete nodes, and so can the model, through the same operations; the tree can grow in directions that neither started with. What a person writes is kept as written.",
       },
       {
-        title: "The first document",
-        body: "The first document is this one. Its root holds the prompt that began the project, verbatim, and each top-level section is tied to the sentences of the prompt it came from, so the description of the tool can be read, questioned and corrected with the tool.",
+        title: "The first tree",
+        body: "The first tree is this one. Its top node holds the prompt that began the project, verbatim, and each section under it is tied to the sentences of the prompt it came from, so the description of the tool can be read, questioned and corrected with the tool.",
       },
     ],
   },
@@ -781,7 +781,7 @@ export const seed: SeedNode[] = [
       },
       {
         title: "Interface",
-        body: "One check covers the interface. A script drives the application through this document using only the keyboard, and records two latencies against their budgets: keypress to paint for pre-generated expansions, under 50 ms, and time to first token for generated ones, under 1 s.",
+        body: "One check covers the interface. A script drives the application through this tree using only the keyboard, and records two latencies against their budgets: keypress to paint for pre-generated expansions, under 50 ms, and time to first token for generated ones, under 1 s.",
       },
     ],
   },

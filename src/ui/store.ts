@@ -2,9 +2,10 @@
  * Application state for the browser: the library's replicas, sync with the server, the focus
  * model, and every action the keyboard, the mouse or the command bar can take.
  *
- * There is one library, a tree of nodes, and every node in it is reachable from anywhere: the
- * library root is the first page, and any node can be made the whole page (hoisted, in the column)
- * or shown in the next pane. Nothing is closed to open something else, so model work carries on
+ * The page holds one library (its address names it; another is opened by a page load from the
+ * libraries panel), a tree of nodes, and every node in it is reachable from anywhere: the library
+ * root is the first page, and any node can be made the whole page (hoisted, in the column) or
+ * shown in the next pane. Nothing is closed to open something else, so model work carries on
  * wherever the reader goes, and writes into the node it was asked about.
  */
 import { UndoManager } from "loro-crdt";

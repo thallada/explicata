@@ -130,7 +130,7 @@ describe("parsing", () => {
     expect(problems("")).toEqual([`doc.md: no "# Title" heading`]);
   });
 
-  it("makes slugs from titles and file names", () => {
+  it("makes safe file names from titles and file names", () => {
     expect(slugify("Tuning & Temperament")).toBe("tuning-temperament");
     expect(slugify("Ça va? Déjà vu!")).toBe("ca-va-deja-vu");
     expect(slugify("../../etc/passwd")).toBe("etc-passwd");
@@ -280,7 +280,7 @@ describe("export and import", () => {
     expect(canonBody("  one  \n two\n\n\n\nthree \n \n")).toBe("one\ntwo\n\nthree");
   });
 
-  it("exports the first document without losing a note", () => {
+  it("exports the first tree without losing a note", () => {
     const prompt = readFileSync(new URL("../src/seed/prompt.txt", import.meta.url), "utf8");
     const doc = Doc.library("test");
     const first = writeSeed(doc, prompt, seed);

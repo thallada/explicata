@@ -173,7 +173,7 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
   await page.setViewportSize({ width: 1920, height: 700 });
   await library(page);
   for (const t of ["Octopus minds", "Infinispand", "The tides", "Fixed points"]) await open(page, "Library", t);
-  /** Hover each pane of the documents' column that is cut off, and check it comes out whole, and the curves with it. */
+  /** Hover each pane of the top-level trees' column that is cut off, and check it comes out whole, and the curves with it. */
   const sweep = async (label: string, across: boolean) => {
     const col = page.locator(".strip > .col").nth(1);
     const n = await col.locator(":scope > .pane").count();
@@ -237,7 +237,7 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
   expect(await col.evaluate((c) => c.hasAttribute("data-covered") || !!c.nextElementSibling?.hasAttribute("data-over"))).toBe(true);
   expect(await sweep("column covered", true)).toBeGreaterThan(0);
 
-  // By its share of a column that is not crowded: a tall window, two documents, one longer than its share.
+  // By its share of a column that is not crowded: a tall window, two top-level trees, one longer than its share.
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("ie:view:")).forEach((k) => localStorage.removeItem(k)));
   await library(page);
@@ -264,14 +264,14 @@ test("the curves keep to their sources and landing lines through every kind of l
   await noFaults(page, "scrolled back");
   await page.locator(".strip").evaluate((el) => (el.scrollLeft = Math.max(0, el.scrollLeft - 300)));
   await noFaults(page, "the strip scrolled");
-  // A resize that folds the documents' column, and back.
+  // A resize that folds the top-level trees' column, and back.
   await page.setViewportSize({ width: 1920, height: 520 });
   await noFaults(page, "folded");
   await page.setViewportSize({ width: 1600, height: 900 });
   await noFaults(page, "resized");
   await page.setViewportSize({ width: 1920, height: 1080 });
   await noFaults(page, "unfolded");
-  // A drag down the documents' column.
+  // A drag down the top-level trees' column.
   await page.evaluate(() => {
     const ie = (globalThis as any).__ie;
     const col = ie.paneColumns.get(1);

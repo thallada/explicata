@@ -81,7 +81,7 @@ describe("the hash and history", () => {
 
   it("a tree without targets hashes as it did before targets existed", () => {
     // The row of a node with no target is unchanged, so old commits still verify: the first
-    // document's seed commits are checked by the seed tests; here, a slug-only row.
+    // tree's seed commits are checked by the seed tests; here, a library made now.
     const { doc } = library();
     expect(verifyHistory(doc).mismatches).toEqual([]);
   });

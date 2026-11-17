@@ -134,7 +134,7 @@ describe("history", () => {
     doc.apply([{ op: "delete", id: one }], "Delete one");
     doc.apply([{ op: "update", id: root, title: "Root!" }], "Rename");
     const h = history(doc);
-    expect(h.map((c) => c.message)).toEqual(["Rename", "Delete one", "Edit one", "Add children", "Create document"]);
+    expect(h.map((c) => c.message)).toEqual(["Rename", "Delete one", "Edit one", "Add children", "Create the tree"]);
     expect(verifyHistory(doc)).toEqual({ checked: 5, unhashed: 0, mismatches: [] });
     expect(at(doc, h[2]).canonical()).toBe(states[0]);
     revertTo(doc, h[2]);
@@ -282,26 +282,26 @@ function library() {
 const staleIds = (doc: Doc) => Object.keys(doc.snap().nodes).filter((id) => isStale(doc.snap(), id as NodeId));
 
 describe("library", () => {
-  it("the root is never stale, and an edit inside a document marks neither the root nor the other documents", () => {
+  it("the root is never stale, and an edit inside a top-level tree marks neither the root nor the other trees", () => {
     const { doc, lib, a, aPart, aLeaf, aNote, b } = library();
     expect(staleIds(doc)).toEqual([]);
-    doc.apply([{ op: "update", id: a, body: "Alpha is now about something else." }], "Edit a document's text");
+    doc.apply([{ op: "update", id: a, body: "Alpha is now about something else." }], "Edit a top's text");
     // Its own sections now elaborate text that changed; nothing outside it does.
     expect(staleIds(doc)).toEqual([aPart]);
     doc.apply([{ op: "bless", id: aPart }], "Accept");
     doc.apply([{ op: "update", id: aLeaf, body: "A rewritten leaf." }], "Edit a leaf");
     expect(staleIds(doc)).toEqual([aPart]);
     doc.apply([{ op: "update", id: aPart, body: "A rewritten part." }], "Edit the part");
-    // Up to its document, which now summarises a changed part; down to its leaf and the note whose words went.
+    // Up to its top, which now summarises a changed part; down to its leaf and the note whose words went.
     const inAlpha = [a, aLeaf, aNote].sort();
     expect(staleIds(doc).sort()).toEqual(inAlpha);
-    // Renaming, adding and deleting documents changes the library's sections, which it does not summarise.
+    // Renaming, adding and deleting top-level nodes changes the library's sections, which it does not summarise.
     doc.apply(retitleOps(doc.snap(), b, "Beta renamed"), "Rename");
-    doc.apply([{ op: "create", parent: lib, title: "Gamma", body: "New." }], "New document");
-    doc.apply([{ op: "delete", id: b }], "Delete a document");
+    doc.apply([{ op: "create", parent: lib, title: "Gamma", body: "New." }], "New top");
+    doc.apply([{ op: "delete", id: b }], "Delete a top");
     expect(staleIds(doc).sort()).toEqual(inAlpha);
     expect(staleness(doc.snap(), lib)).toEqual({ up: false, down: false, orphan: false });
-    // The library's own text is the reader's; editing it marks no document.
+    // The library's own text is the reader's; editing it marks no top.
     doc.apply([{ op: "update", id: lib, body: "My library." }], "Write the library's text");
     expect(staleIds(doc).sort()).toEqual(inAlpha);
     expect(topOf(doc.snap(), lib)).toBeNull();
@@ -309,7 +309,7 @@ describe("library", () => {
     expect(ancestorsBelowRoot(doc.snap(), aLeaf)).toEqual([doc.snap().nodes[aLeaf].parent, a]);
   });
 
-  it("moves a node from one document to another with an ordinary move; its notes keep their anchors and undo moves it back", () => {
+  it("moves a node from one top-level tree to another with an ordinary move; its notes keep their anchors and undo moves it back", () => {
     const { doc, a, aPart, aNote, b } = library();
     const undo = new UndoManager(doc.loro, { mergeInterval: 0, excludeOriginPrefixes: [SYSTEM_ORIGIN] });
     doc.group = { start: () => undo.groupStart(), end: () => undo.groupEnd() };
@@ -319,7 +319,7 @@ describe("library", () => {
     expect(topOf(snap, aPart)).toBe(b);
     expect(snap.nodes[aNote].anchors[0].text).toBe("a phrase worth a note");
     expect(sections(snap, a)).toEqual([]);
-    // Both documents' summaries are now out of date, as with any move.
+    // Both tops' summaries are now out of date, as with any move.
     expect(staleness(snap, a).up && staleness(snap, b).up).toBe(true);
     expect(verifyHistory(doc).mismatches).toEqual([]);
     expect(undo.undo()).toBe(true);
@@ -333,9 +333,9 @@ describe("library", () => {
     expect(tops(doc.snap())).toEqual([a, b, aPart]);
   });
 
-  it("loads a library whose nodes still carry slugs (and node targets a document slug), ignoring them", () => {
+  it("loads a library whose nodes still carry slugs from before step 1 (and node targets naming one), ignoring them", () => {
     const { doc, a, aLeaf, b } = library();
-    // As an older version wrote them: a slug on each top, and a target naming its document.
+    // As an older version wrote them: a slug on each top, and a target naming its top by that slug.
     const old = doc.fork();
     old.apply([{ op: "create", parent: b, kind: "note", quote: "Beta", ref: { kind: "node", id: aLeaf, path: ["Alpha part"] } }], "Link");
     const link = notesOf(old.snap(), b)[0];
@@ -367,13 +367,13 @@ describe("library", () => {
     expect(snap.nodes[note].anchors[0].text).toBe("a phrase worth a note");
   });
 
-  it("reverts one document to a commit and leaves the others as they are now", () => {
+  it("reverts one top-level tree to a commit and leaves the others as they are now", () => {
     const { doc, a, aPart, aLeaf, b, bLeaf } = library();
     const mark = history(doc)[0];
     doc.apply([{ op: "update", id: aLeaf, body: "Changed later." }], "Change a leaf");
     doc.apply([{ op: "delete", id: aPart }], "Delete a part");
     doc.apply([{ op: "create", parent: a, title: "Added later" }], "Add a section");
-    doc.apply([{ op: "update", id: bLeaf, body: "Beta changed later too." }], "Change the other document");
+    doc.apply([{ op: "update", id: bLeaf, body: "Beta changed later too." }], "Change the other top");
     const beta = doc.shape(doc.snap(), b);
     revertSubtreeTo(doc, mark, a);
     const snap = doc.snap();
@@ -384,7 +384,7 @@ describe("library", () => {
     expect(verifyHistory(doc).mismatches).toEqual([]);
   });
 
-  it("names the nodes a commit wrote, and syncs edits in different documents without comparing whole states", () => {
+  it("names the nodes a commit wrote, and syncs edits in different top-level trees without comparing whole states", () => {
     const { doc, aLeaf, bLeaf } = library();
     doc.apply([{ op: "update", id: aLeaf, body: "Edited." }], "Edit");
     expect([...touched(doc, history(doc)[0].spans).nodes]).toContain(aLeaf);

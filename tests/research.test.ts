@@ -89,7 +89,7 @@ describe("a research run with the mock", () => {
     expect(seen[0].messages[0].content).toContain("Web research is on for this request");
   });
 
-  it("is stopped by its signal, and nothing it did reaches the document", async () => {
+  it("is stopped by its signal, and nothing it did reaches the library", async () => {
     const { doc, tides } = fixture();
     const ac = new AbortController();
     const before = doc.snap().nodes[tides].children.length;
@@ -106,7 +106,7 @@ describe("citing only what was retrieved", () => {
     const result = await runAgent(mockLLM(), doc, "tides, unretrieved", tides, (e) => events.push(e), undefined, {}, research);
     const error = events.find((e) => e.kind === "error")!;
     expect(error.text).toMatch(/not among the search results or pages read in this run/);
-    // It corrected itself to a page it did retrieve; the rejected address is nowhere in the document.
+    // It corrected itself to a page it did retrieve; the rejected address is nowhere in the library.
     expect(result.sources.map((s) => s.url)).toEqual([MOCK_RESULTS[0].url]);
     expect(Object.values(doc.snap().nodes).some((n) => n.ref?.kind === "url" && n.ref.url === MOCK_UNRETRIEVED)).toBe(false);
   });

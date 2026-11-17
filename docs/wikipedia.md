@@ -111,7 +111,7 @@ When text is shown in the app it must carry:
   modified". We remove references, boxes and images, so `article()` and `section()` return
   `attribution.modified` and an `attribution.text` that says so.
 - **Share-alike** applies to modified article text that is redistributed. If a node quotes or adapts
-  article text and the document is exported or shared, that part is CC BY-SA. Linking to an
+  article text and that text is exported or shared, that part is CC BY-SA. Linking to an
   article and writing your own prose about it is not affected.
 - **Images** each have their own licence and need their own credit. This is why they are dropped.
 
@@ -215,7 +215,7 @@ considered and set aside:
 ## 7. Caches
 
 `<IE_DATA>/wiki-cache/<lang>/titles.json` (found 30 d, missing 3 d), `small.json` (summaries 14 d,
-senses 14 d, suggest and search 1 d), `articles/` (7 d). Vectors: `<IE_DATA>/vectors/<name>.json`
+senses 14 d, suggest and search 1 d), `articles/` (7 d). Vectors, per library: `<IE_DATA>/libraries/<id>/vectors/<name>.json`
 and `.f32`. An expired entry is still served, marked `stale`, when the network is down. The
 variables that configure all this are in the README.
 
@@ -240,17 +240,17 @@ memory for the page's life only, never in IndexedDB.
    16 distinct phrases per section on average (986 for 60 sections), so one lookup request per
    node scanned alone, a third of one when a job batches nodes together.
 2. **Library titles**: a phrase equal (normalised: case, plurals, hyphens, a leading article) to a
-   section's title of up to four words, never the node itself or an ancestor; other documents
-   preferred.
+   section's title of up to four words, never the node itself or an ancestor; sections in other
+   top-level trees preferred.
 3. **Meaning**: the library's sections in a vector index, re-embedded only when their text hash
-   changes (patches only mark nodes; the embedding runs later, off any request). Sections of other
-   documents at cosine ≥ 0.78 become a link only where a phrase here names them; otherwise they are
+   changes (patches only mark nodes; the embedding runs later, off any request). Sections in other
+   top-level trees at cosine ≥ 0.78 become a link only where a phrase here names them; otherwise they are
    the derived **Related** list.
 4. **Wikipedia**: through the client's serial queue in its own lane: a person's requests (an
    article, a preview) first, background jobs next, the scans that follow edits last (a scan that
    has waited 30 s goes ahead of a job). One batched lookup; at most two disambiguation pages a scan resolved by fit, at
    most one title search for a multi-word miss; every hit scored by cosine between the node in its
-   document and "Title: description".
+   top-level tree and "Title: description".
 5. **Tiers** (`judge()` in `scan.ts`): each kind of phrase has its own bar, and `auto` needs the
    phrase's form to vouch for it as well as the fit:
 
@@ -259,8 +259,8 @@ memory for the page's life only, never in IndexedDB.
    | term (several words) | exact title, one word ranked ≥ 6,000, fit ≥ 0.55 | fit ≥ 0.60 (0.65 for a redirect) |
    | name | exact title, not an ordinary word (rank < 1,000 is dropped), a single word only if unlisted; fit ≥ 0.55 (0.60 single) | fit ≥ 0.60 |
    | one word | rank ≥ 15,000, exact title, fit ≥ 0.70 | rank ≥ 8,000, fit ≥ 0.64 |
-   | library title | a title of several words, fit (node to node) ≥ 0.72 | same document ≥ 0.64 (any title); another document only a multi-word or rare title |
-   | never auto | a sense chosen by fit (suggested for names and terms with a 0.04 margin), a searched title, a one-word section title ("The comma"), a concept already mentioned in an earlier section of the document (applied once per document, where it first appears; later mentions only suggested), a concept central to the document (in its title or in 30 % of its sections: linked once, at its first mention, suggested) | |
+   | library title | a title of several words, fit (node to node) ≥ 0.72 | same top-level tree ≥ 0.64 (any title); another tree only a multi-word or rare title |
+   | never auto | a sense chosen by fit (suggested for names and terms with a 0.04 margin), a searched title, a one-word section title ("The comma"), a concept already mentioned in an earlier section of the same top-level tree (applied once per tree, where it first appears; later mentions only suggested), a concept central to the tree (in its title or in 30 % of its sections: linked once, at its first mention, suggested) | |
    | dropped | countries, surname and list pages, articles about a film, album, band… | |
 
    With a phrase matching both a section and an article, the section wins. Then first mention per
@@ -274,12 +274,12 @@ come from* and *The invention of writing* (64 sections; 444 labelled phrases, 16
 13 of them to a different target than the scanner found), plus 12 sections of *Tuning and
 temperament*, first used as a held-out set and then looked at, so no longer held out. Every
 phrase the scanner resolved was labelled by hand as a careful Wikipedia editor would link
-(MOS:LINK: no everyday words, no countries, a document's own subject once).
+(MOS:LINK: no everyday words, no countries, a tree's own subject once).
 
 Fresh held-out set (`tests/fixtures/link-labels-heldout.json`): 16 sections each of *The
 Antikythera mechanism*, *The one merger* (the eukaryotic cell), *The tides* and *What a proof is*
 (64 sections). It was labelled from the text alone, by a forked copy of the agent, before the
-scanner had ever run on those documents: an exhaustive list of the 165 phrases worth linking, each
+scanner had ever run on those trees: an exhaustive list of the 165 phrases worth linking, each
 with its acceptable targets, so a link not on the list counts as wrong (closed-world scoring;
 `linkEval.ts heldout`). The rule was frozen before it was scored, and was scored once.
 
@@ -287,17 +287,17 @@ Live requests: 299 in all, serial, 6.5 s apart (no contact), no 429s.
 
 | | auto: precision | recall | auto + suggest: precision | recall |
 |---|---|---|---|---|
-| tuning sample (4 documents), first rule | 0.962 (50/52) | 0.303 | 0.809 (89/110) | 0.539 |
+| tuning sample (4 trees), first rule | 0.962 (50/52) | 0.303 | 0.809 (89/110) | 0.539 |
 | *Tuning and temperament*, first rule | 0.818 (9/11) | 0.321 | 0.650 (13/20) | 0.464 |
 | tuning sample, final rule | 1.000 (32/32) | 0.194 | 0.826 (90/109) | 0.545 |
 | *Tuning and temperament*, final rule (looked at before) | 1.000 (5/5) | 0.179 | 0.700 (14/20) | 0.500 |
-| **fresh held-out set (4 documents), final rule** | **0.844 (27/32)** | **0.164** | **0.577 (56/97)** | **0.339** |
+| **fresh held-out set (4 trees), final rule** | **0.844 (27/32)** | **0.164** | **0.577 (56/97)** | **0.339** |
 
 The final rule adds two form rules that the errors pointed to: a concept is applied unasked only
-where it is first mentioned in its document (later mentions are suggested), and a one-word
+where it is first mentioned in its top-level tree (later mentions are suggested), and a one-word
 section title is only ever suggested. A word already linked inside a longer phrase is no longer
 linked again on its own (the "beryllium" beside "beryllium-8" error). On the fresh set the five
-wrong autos were: "front dial" → the section *The front dial* (a real same-document section the
+wrong autos were: "front dial" → the section *The front dial* (a real section of the same tree the
 labeller did not list); "linear chromosomes" → *Linear chromosome* (label: *Chromosome*);
 "complex traits" → *Complex traits* (a genetics article for an ordinary phrase); "Asgard archaea"
 → *Asgard archaea* (label: *Asgard (archaea)*; arguably right); "northern hemisphere" →
@@ -310,7 +310,7 @@ Representative decisions of the first rule (tuning sample unless marked):
 
 - right, auto: "fixed-point theorems" → *Fixed-point theorem* (fit 0.81); "Cephalopod eyes" →
   *Cephalopod eye* (0.81); "cuttlefish" → *Cuttlefish* (0.73); "Uruk" → *Uruk* (0.70); "white dwarf"
-  → *White dwarf* (0.71); "tablets" → the section *The tablet* in the same document (0.81);
+  → *White dwarf* (0.71); "tablets" → the section *The tablet* in the same tree (0.81);
   *Tuning and temperament*: "Andreas Werckmeister" → *Andreas Werckmeister* (0.71), "syntonic comma" → *Syntonic
   comma* (0.73).
 - right, suggest: "incompleteness theorem" → *Gödel's incompleteness theorems* (redirect, 0.76);
@@ -341,19 +341,19 @@ owner's library, accepted about 64 % of `auto` and 17 % of `suggest` candidates,
 the scanner's known blind spots: a parent linked to its own child or sibling, a second mention of
 something linked nearby, everyday words and household names, a fragment of a longer name, the wrong
 sense or the wrong person of the same name, a library section matched on its title alone, and the
-document's own quoted prompt. That reviewer is now built in (`server/links/review.ts`), and
+first tree's own quoted prompt. That reviewer is now built in (`server/links/review.ts`), and
 **`/autolink review`** is the default whenever a model is configured.
 
 **Flow.** After a scan (an edit saved, `/linkhere`, `/linkall`) the candidates nobody has judged
-go to the configured model in batches of up to 60, grouped by document and section. Each proposal
+go to the configured model in batches of up to 60, grouped by top-level tree and section. Each proposal
 carries its sentence, the section's title and path, the target's title and short description (and
 the first sentence of its summary when the cache has one, never a new request), and for a library
-target how it stands to the section (subsection, parent, sibling, elsewhere in the document,
-another document); each document heading lists what is already linked in it, and each section
+target how it stands to the section (subsection, parent, sibling, elsewhere in its tree, in
+another tree); each tree's heading lists what is already linked in it, and each section
 heading what is linked there. The model has no tools; it returns, by structured output, a verdict
 (link or not) and a reason of at most twelve words per proposal. The system prompt names each
 blind spot above as a reason to reject. Verdicts are stored with the suggestion in
-`IE_DATA/links/pending.json`, keyed by node, phrase and target rather than by offsets, so a
+`IE_DATA/libraries/<id>/links/pending.json` (each library its own), keyed by node, phrase and target rather than by offsets, so a
 suggestion found again by a later scan keeps its verdict and is never sent twice. Rejected phrases
 are skipped by later scans of that node, as declined ones are.
 
@@ -365,7 +365,7 @@ library as before (a link, or the phrase in the node's `nolink`) and on the serv
 list can say who decided.
 
 **Cost.** A node scanned after an edit costs at most 2 calls (`SCAN_CALLS`), almost always 1, and
-none when nothing new was found. A document or library job costs ⌈N / 60⌉ calls for N new
+none when nothing new was found. A `/linkhere` or `/linkall` job costs ⌈N / 60⌉ calls for N new
 candidates, at most `IE_REVIEW_CALLS` (default 50, so 3,000 candidates); the status line counts
 them, and a second run asks nothing about what the first judged. Every call uses the configured
 model (`IE_MODEL`) at effort `low`: the app has no per-task model setting, and none was added.

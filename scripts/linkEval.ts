@@ -1,11 +1,11 @@
 /**
  * Evaluate the link scanner (server/links/scan.ts) on the starter library against hand labels.
  *
- *   IE_DATA=/tmp/x npx tsx scripts/linkEval.ts warm [docs…]    live: fill the Wikipedia cache for the
+ *   IE_DATA=/tmp/x npx tsx scripts/linkEval.ts warm [files…]    live: fill the Wikipedia cache for the
  *                                                             sampled sections, write their traces
- *   IE_DATA=/tmp/x npx tsx scripts/linkEval.ts eval [docs…]    offline (cache only): precision and
+ *   IE_DATA=/tmp/x npx tsx scripts/linkEval.ts eval [files…]    offline (cache only): precision and
  *                                                             recall against the labels
- *   IE_DATA=/tmp/x npx tsx scripts/linkEval.ts trace [docs…]   offline: the traces, for labelling
+ *   IE_DATA=/tmp/x npx tsx scripts/linkEval.ts trace [files…]   offline: the traces, for labelling
  *
  * The sample is the first SAMPLE sections (in reading order, the top's own text included) of each
  * named file's tree (by file name, without .md) that have at least 40 words. Labels: tests/fixtures/link-labels.json, one entry per
@@ -29,7 +29,7 @@ const DATA = resolve(process.env.IE_DATA ?? "");
 if (!process.env.IE_DATA) throw new Error("set IE_DATA to a scratch directory");
 const SAMPLE = Number(process.env.IE_EVAL_SAMPLE ?? 12);
 const BUDGET = Number(process.env.IE_EVAL_BUDGET ?? 380);
-const DOCS = rest.length ? rest : ["octopus-minds", "fixed-points", "origin-of-the-elements", "invention-of-writing"];
+const FILES = rest.length ? rest : ["octopus-minds", "fixed-points", "origin-of-the-elements", "invention-of-writing"];
 const LABELS = resolve("tests/fixtures/link-labels.json");
 
 // The whole starter library, so that titles under other tops can be matched as they would be.
@@ -39,9 +39,9 @@ for (const f of readdirSync("library").filter((x) => x.endsWith(".md")).sort()) 
 const snap = doc.snap();
 
 const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
-function sample(snap: Snap, slug: string): NodeId[] {
-  const d = byFile.get(slug);
-  if (!d) throw new Error(`no file library/${slug}.md`);
+function sample(snap: Snap, name: string): NodeId[] {
+  const d = byFile.get(name);
+  if (!d) throw new Error(`no file library/${name}.md`);
   const out: NodeId[] = [];
   const visit = (id: NodeId) => {
     if (out.length < SAMPLE && words(snap.nodes[id].body) >= 40) out.push(id);
@@ -54,8 +54,8 @@ const pathOf = (id: NodeId) => [...ancestorsBelowRoot(snap, id).reverse().slice(
 
 // `sample`: the sampled sections' texts only, for labelling before the scanner has seen them.
 if (mode === "sample") {
-  const out = DOCS.flatMap((slug) => sample(snap, slug).map((id) => ({ doc: slug, node: pathOf(id), text: snap.nodes[id].body })));
-  const file = join(DATA, `sample-${DOCS.join("+")}.json`);
+  const out = FILES.flatMap((name) => sample(snap, name).map((id) => ({ doc: name, node: pathOf(id), text: snap.nodes[id].body })));
+  const file = join(DATA, `sample-${FILES.join("+")}.json`);
   writeFileSync(file, JSON.stringify(out, null, 1));
   console.error(`${out.length} sections → ${file}`);
   process.exit(0);
@@ -76,7 +76,7 @@ await index.refresh();
 const indexMs = Math.round(performance.now() - t0);
 console.error(`index: ${index.vectors.size} sections in ${indexMs} ms${index.degraded ? " (no model: degraded)" : ""}`);
 
-const nodes = DOCS.flatMap((slug) => sample(snap, slug).map((id) => ({ slug, id })));
+const nodes = FILES.flatMap((name) => sample(snap, name).map((id) => ({ name, id })));
 
 if (live) {
   // One deduplicated lookup of every candidate of every sampled section first: 50 phrases a request.
@@ -87,10 +87,11 @@ if (live) {
   console.error(`lookups done: ${wiki.requests} requests`);
 }
 
+/** `doc` (here and in the label files) is the starter file's name, without .md. */
 type Row = TraceRow & { doc: string; node: string; sentence?: string };
 const rows: Row[] = [];
 const perNode: { node: string; ms: number; requests: number }[] = [];
-for (const { slug, id } of nodes) {
+for (const { name, id } of nodes) {
   if (live && wiki.requests >= BUDGET) {
     console.error(`budget of ${BUDGET} requests reached; stopping before ${pathOf(id)}`);
     break;
@@ -102,15 +103,15 @@ for (const { slug, id } of nodes) {
   for (const t of trace) {
     const from = Math.max(body.lastIndexOf(". ", t.start) + 2, body.lastIndexOf("\n", t.start) + 1, 0);
     const to = body.indexOf(". ", t.start);
-    rows.push({ ...t, doc: slug, node: pathOf(id), sentence: body.slice(from, to < 0 ? body.length : to + 1) });
+    rows.push({ ...t, doc: name, node: pathOf(id), sentence: body.slice(from, to < 0 ? body.length : to + 1) });
   }
   if (live) wiki.flush();
-  if (live) console.error(`${slug} › ${pathOf(id)}: ${r.stats.candidates} candidates, ${r.suggestions.length} chosen, ${r.stats.requests} requests (total ${wiki.requests})`);
+  if (live) console.error(`${name} › ${pathOf(id)}: ${r.stats.candidates} candidates, ${r.suggestions.length} chosen, ${r.stats.requests} requests (total ${wiki.requests})`);
 }
 wiki.flush();
 
 if (mode === "warm" || mode === "trace") {
-  const file = join(DATA, `trace-${DOCS.join("+")}.json`);
+  const file = join(DATA, `trace-${FILES.join("+")}.json`);
   writeFileSync(file, JSON.stringify(rows, null, 1));
   console.error(`${rows.length} traced phrases → ${file}; ${wiki.requests} requests`);
   const ms = perNode.map((p) => p.ms).sort((a, b) => a - b);
@@ -123,7 +124,7 @@ if (mode === "warm" || mode === "trace") {
 if (mode === "heldout") {
   // tests/fixtures/link-labels-heldout.json lists, per section, every phrase worth a link and the
   // acceptable targets, written from the text before the scanner ran. A link not on it is wrong.
-  const held: { doc: string; node: string; key: string; phrase: string; targets: string[] }[] = JSON.parse(readFileSync(resolve("tests/fixtures/link-labels-heldout.json"), "utf8")).labels.filter((l: { doc: string }) => DOCS.includes(l.doc));
+  const held: { doc: string; node: string; key: string; phrase: string; targets: string[] }[] = JSON.parse(readFileSync(resolve("tests/fixtures/link-labels-heldout.json"), "utf8")).labels.filter((l: { doc: string }) => FILES.includes(l.doc));
   const label = (r: Row) => held.find((l) => l.doc === r.doc && l.node === r.node && l.key === r.key);
   const ok = (r: Row) => !!label(r)?.targets.includes(r.target);
   const chosen = rows.filter((r) => r.chosen);
@@ -131,7 +132,7 @@ if (mode === "heldout") {
     const right = set.filter(ok).length;
     console.log(`${name.padEnd(16)} ${String(set.length).padStart(4)} chosen  ${String(right).padStart(4)} right  precision ${(set.length ? right / set.length : 1).toFixed(3)}  recall ${(right / held.length).toFixed(3)}`);
   };
-  console.log(`documents: ${DOCS.join(", ")}; ${nodes.length} sections; ${held.length} phrases worth linking`);
+  console.log(`files: ${FILES.join(", ")}; ${nodes.length} sections; ${held.length} phrases worth linking`);
   line("auto", chosen.filter((r) => r.tier === "auto"));
   line("auto + suggest", chosen);
   const fmt = (r: Row) => `  [${r.tier} fit ${r.fit ?? "-"}] ${r.doc} | ${r.node} | “${r.phrase}” → ${r.target}${label(r) ? `   (label: ${label(r)!.targets.join(" or ")})` : "   (not on the list)"}   — ${r.sentence?.trim().slice(0, 140)}`;
@@ -159,7 +160,7 @@ interface Label {
   note?: string;
 }
 const labels: Label[] = JSON.parse(readFileSync(LABELS, "utf8")).labels;
-const mine = labels.filter((l) => DOCS.includes(l.doc));
+const mine = labels.filter((l) => FILES.includes(l.doc));
 const find = (r: Row) => mine.find((l) => l.doc === r.doc && l.node === r.node && l.key === r.key);
 const chosen = rows.filter((r) => r.chosen);
 const unlabelled = chosen.filter((r) => !find(r));
@@ -175,7 +176,7 @@ const report = (name: string, set: Row[]) => {
   const rcl = yes ? right / yes : 0;
   console.log(`${name.padEnd(16)} ${String(set.length).padStart(4)} chosen  ${String(right).padStart(4)} right  precision ${p.toFixed(3)}  recall ${rcl.toFixed(3)}`);
 };
-console.log(`documents: ${DOCS.join(", ")}; ${nodes.length} sections; ${mine.length} labelled phrases (${yes} worth linking)`);
+console.log(`files: ${FILES.join(", ")}; ${nodes.length} sections; ${mine.length} labelled phrases (${yes} worth linking)`);
 report("auto", chosen.filter((r) => r.tier === "auto"));
 report("auto + suggest", chosen);
 if (unlabelled.length) console.log(`unlabelled chosen: ${unlabelled.length}\n${unlabelled.map((r) => `  ${r.doc} | ${r.node} | ${r.key} → ${r.target} [${r.tier}]`).join("\n")}`);

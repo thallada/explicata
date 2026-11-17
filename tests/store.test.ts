@@ -124,7 +124,7 @@ describe("a node and everything under it, wherever it is", () => {
     lib.apply([{ op: "move", id: one, parent: b }, { op: "update", id: one, title: "Renamed" }], "move and rename");
     expect(address(lib.snap(), one)).toBe(`/n/${encodeURIComponent(one)}`);
     expect(resolve(lib.snap(), `/n/${encodeURIComponent(one)}`)).toEqual({ node: one });
-    // What names nothing says so (the page then shows the library): a gone node, an old document address, anything else.
+    // What names nothing says so (the page then shows the library): a gone node, an old `/doc/…` address, anything else.
     expect(resolve(lib.snap(), "/n/999%40999")).toEqual({ missing: "no node 999@999" });
     expect(resolve(lib.snap(), "/doc/tides")).toEqual({ missing: "no page /doc/tides" });
     expect(resolve(lib.snap(), "/n/%E0%A4%A")).toMatchObject({ missing: expect.any(String) });

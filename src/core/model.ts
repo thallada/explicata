@@ -215,9 +215,9 @@ export class Doc {
     const loro = new LoroDoc();
     loro.setPeerId(randomPeer());
     const doc = new Doc(loro, author);
-    doc.begin("Create document", actor);
+    doc.begin("Create the tree", actor);
     initRoot(loro.getTree("tree").createNode(), title, body, actor);
-    doc.commit("Create document", actor);
+    doc.commit("Create the tree", actor);
     return doc;
   }
 

@@ -136,7 +136,7 @@ export function clip(s: string, n: number): string {
   return s.length <= n ? s : s.slice(0, n - 1).trimEnd() + "…";
 }
 
-/** A file name or title as a document's slug: lowercase letters, digits and single hyphens. */
+/** A title or file name as a safe file name (an export's): lowercase letters, digits and single hyphens. */
 export function slugify(s: string): string {
   return (
     s

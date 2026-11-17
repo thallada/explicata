@@ -5,7 +5,7 @@
  * own height among them; when they do not fit it stacks them as the strip stacks columns, covering
  * all but the pane looked at, partly and then down to a tab. Curves run from where each pane was opened to its title; panes close (q, ×)
  * and pin (P, pin). Same build, mock model, mock Wikipedia and shared library as the other specs;
- * the documents are hoisted to (z) as in panes.spec.ts.
+ * the top-level trees are hoisted to (z) as in panes.spec.ts.
  */
 import { expect, test, type Page } from "@playwright/test";
 import { autoLayout, command, focusedTitle, jump, keys, seedLinks, selected, settle, state, visit } from "./helpers";
@@ -398,7 +398,7 @@ test("curves down one gutter take lanes of their own, side by side, up to as man
   await page.goto("/");
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
-  // Ten documents opened from the library: ten curves down the gutter into column 1.
+  // Ten top-level trees opened from the library: ten curves down the gutter into column 1.
   for (let i = 0; i < 10; i++) await keys(page, "j Enter");
   await still(page);
   const runs = await page.evaluate(() =>
@@ -676,7 +676,7 @@ test("q on an article opened from an article in a fork closes that article only 
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
   await jump(page, "Recursion without names");
-  // A fork beside it from the document's pane: Recursion without names starts a fork.
+  // A fork beside it from the top's pane: Recursion without names starts a fork.
   await keys(page, "k Enter j Enter");
   expect((await trail(page)).at(-1)).toBe("Recursion without names");
   await tabTo(page, "fixed-point combinator");

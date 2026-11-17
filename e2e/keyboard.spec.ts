@@ -264,7 +264,7 @@ test("branches merge; a conflict in meaning is found, resolved by the model, and
   await expect(page.locator(".verdict")).toContainText("Verified");
 });
 
-test("two people editing at once converge, and the document survives a reload", async ({ browser }) => {
+test("two people editing at once converge, and the library survives a reload", async ({ browser }) => {
   const a = await (await browser.newContext()).newPage();
   const b = await (await browser.newContext()).newPage();
   await open(a);

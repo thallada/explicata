@@ -99,7 +99,7 @@ test("the library root is the first page and a node like any other: its sections
   expect(await focusTitle(page)).toBe("Infinispand");
 });
 
-test("an address names a node by its id, and survives a reload, Back and Forward; an old document address shows the library", async ({ page }) => {
+test("an address names a node by its id, and survives a reload, Back and Forward; an old /doc/ address shows the library", async ({ page }) => {
   await openAt(page);
   await jump(page, "Amphidromes");
   const amph = await state(page, (s) => s.focus.node);

@@ -1,7 +1,7 @@
 /**
- * A large library in the browser: 100 more documents of 50 nodes each (over 5,000 nodes in all),
+ * A large library in the browser: 100 more top-level trees of 50 nodes each (over 5,000 nodes in all),
  * written over the op API. Keypress → paint is measured as in the other specs, while moving
- * through the library page, inside documents and across them, in the column and in panes, and
+ * through the library page, inside those trees and across them, in the column and in panes, and
  * between four forks of the library pane, each three panes deep; a body edit is timed from the
  * store call to the painted frame. Runs last: it fills the shared library.
  */
@@ -49,12 +49,12 @@ const keySamples = async (page: Page) => (await state(page, (s) => s.samples as 
 test.describe.configure({ mode: "serial" });
 test.setTimeout(300_000);
 
-test("a library of over 5,000 nodes in 100 more documents: keypress → paint and a body edit, in the column and in panes", async ({ page, request }) => {
-  // Write the documents, one commit each, as an outside agent would.
+test("a library of over 5,000 nodes in 100 more top-level trees: keypress → paint and a body edit, in the column and in panes", async ({ page, request }) => {
+  // Write the trees, one commit each, as an outside agent would.
   const tree = await (await request.get("/api/tree")).json();
   let t = Date.now();
   for (let d = 0; d < 100; d++) {
-    const ops: any[] = [{ op: "create", parent: tree.root, title: `Scale document ${d}`, body: SENTENCE.repeat(3) }];
+    const ops: any[] = [{ op: "create", parent: tree.root, title: `Scale tree ${d}`, body: SENTENCE.repeat(3) }];
     let n = 1;
     for (let s = 0; s < 7; s++) {
       const sec = n++;
@@ -63,7 +63,7 @@ test("a library of over 5,000 nodes in 100 more documents: keypress → paint an
     }
     ops.push({ op: "create", parent: "$0", kind: "note", quote: "something that matters", body: "A note." });
     for (let i = 0; i < n; i++) ops.push({ op: "bless", id: `$${i}` });
-    const res = await request.post("/api/ops", { data: { author: "scale", message: `Scale document ${d}`, ops } });
+    const res = await request.post("/api/ops", { data: { author: "scale", message: `Scale tree ${d}`, ops } });
     expect(res.ok()).toBe(true);
   }
   const written = Date.now() - t;
@@ -85,13 +85,13 @@ test("a library of over 5,000 nodes in 100 more documents: keypress → paint an
 
   // ---- the column ----
   await page.evaluate(() => ((globalThis as any).__ie.samples.length = 0));
-  // Down the library page's 113 rows, into documents and out, across to the next.
+  // Down the library page's 113 rows, into trees and out, across to the next.
   for (let i = 0; i < 40; i++) await paced(page, "j");
   for (let i = 0; i < 6; i++) await paced(page, "l j l j l i j Escape h h h j");
   await paced(page, "O");
   const column = stats(await keySamples(page));
-  // A body edit inside a document deep in the library.
-  await visit(page, "Scale document 97");
+  // A body edit inside a tree deep in the library.
+  await visit(page, "Scale tree 97");
   await ready(page);
   await paced(page, "j l j");
   const columnEdit = stats(await editTimes(page, 15));
@@ -110,7 +110,7 @@ test("a library of over 5,000 nodes in 100 more documents: keypress → paint an
   // ---- forks: four documents opened side by side from the library pane, each three panes deep (document, part, leaf) ----
   // A fresh view: the panes opened above stay open (opens go beside), and would be restored here.
   await page.evaluate(() => localStorage.clear());
-  await visit(page, "Scale document 90");
+  await visit(page, "Scale tree 90");
   await ready(page);
   await paced(page, "l l l l");
   for (let d = 1; d < 4; d++) await paced(page, "h h j Enter l l l l");
@@ -126,12 +126,12 @@ test("a library of over 5,000 nodes in 100 more documents: keypress → paint an
   await page.evaluate(() => ((globalThis as any).__ie.samples.length = 0));
   for (let i = 0; i < 8; i++) await paced(page, "[ [ [ ] ] ]");
   const forks = stats(await keySamples(page));
-  await visit(page, "Scale document 98");
+  await visit(page, "Scale tree 98");
   await ready(page);
   await paced(page, "l l j");
   const panesEdit = stats(await editTimes(page, 15));
 
-  const report = { nodes, documents: await state(page, (s) => s.snap.nodes[s.snap.root].children.length), writtenMs: written, bootFreshMs: bootFresh, bootStoredMs: bootStored, column, columnEdit, panes, panesEdit, forks };
+  const report = { nodes, tops: await state(page, (s) => s.snap.nodes[s.snap.root].children.length), writtenMs: written, bootFreshMs: bootFresh, bootStoredMs: bootStored, column, columnEdit, panes, panesEdit, forks };
   console.log("large library:", JSON.stringify(report));
   writeReport("scale", report);
   for (const r of [column, panes]) {

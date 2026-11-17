@@ -1,6 +1,6 @@
 /**
  * Convergence: replicas of a library that apply random concurrent ops through the op API (moving
- * and copying nodes between its documents among them) and exchange updates in random order must
+ * and copying nodes between its top-level trees among them) and exchange updates in random order must
  * end in identical state, with a history that still verifies. Along the way every snapshot, which
  * is patched node by node after each change, must equal one read from scratch.
  */
@@ -39,8 +39,8 @@ function base(): Doc {
       { op: "create", parent: "$0" as NodeId, title: "Two", body: "The second child." },
       { op: "create", parent: "$1" as NodeId, title: "Deep", body: "A grandchild." },
       { op: "create", parent: "$0" as NodeId, kind: "note", quote: "Beta", form: "gloss", body: "second letter" },
-      { op: "create", parent: lib, title: "Doc B", body: "Another document entirely." },
-      { op: "create", parent: "$5" as NodeId, title: "Three", body: "A section of the second document." },
+      { op: "create", parent: lib, title: "Doc B", body: "Another tree entirely." },
+      { op: "create", parent: "$5" as NodeId, title: "Three", body: "A section of the second tree." },
     ],
     "Base",
   );

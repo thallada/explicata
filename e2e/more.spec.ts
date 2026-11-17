@@ -125,9 +125,9 @@ test("deleting the words a note is about orphans the note, visibly", async ({ pa
 test("an outside agent edits over HTTP with the same ops, and the open page follows", async ({ page, request }) => {
   await open(page);
   const tree = await (await request.get("/api/tree/main")).json();
-  // The tree is the whole library; its documents are the root's sections.
+  // The tree is the whole library; its top-level trees are the root's sections.
   expect(Object.values<any>(tree.nodes).filter((n) => n.parent === tree.root).map((n) => n.title)).toContain("Infinispand");
-  const target = Object.values<any>(tree.nodes).find((n) => n.title === "The first document");
+  const target = Object.values<any>(tree.nodes).find((n) => n.title === "The first tree");
   expect(target).toBeTruthy();
   const res = await request.post("/api/ops/main", {
     data: { author: "outside-agent", message: "Add a remark", ops: [{ op: "create", parent: target.id, title: "Written over HTTP", body: "By an agent that is not the browser." }] },

@@ -22,7 +22,7 @@ async function still(page: Page) {
   await frames(page);
 }
 async function open(page: Page, inPane: string | RegExp, text: string | RegExp, sel = ".row") {
-  // A row by its exact title (the shared library has documents whose titles start the same).
+  // A row by its exact title (the shared library has top-level nodes whose titles start the same).
   const it = sel === ".row" && typeof text === "string" ? pane(page, inPane).locator(".row", { has: page.locator(`.title:text-is("${text}")`) }) : pane(page, inPane).locator(sel, { hasText: text });
   await it.first().dispatchEvent("click");
   await still(page);

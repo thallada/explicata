@@ -1,5 +1,5 @@
 /**
- * A library of about 5,000 nodes in 100 documents: an edit must cost what it touches, not the size
+ * A library of about 5,000 nodes in 100 top-level trees: an edit must cost what it touches, not the size
  * of the library. Timings are printed; the assertions are budgets well inside one 16 ms frame for
  * the work a keystroke does, and a comparison with a library a tenth the size.
  */
@@ -14,12 +14,12 @@ import { renderContext } from "../src/llm/prompts";
 
 const SENTENCE = "This sentence is about something that matters here. Another follows it, with a few more words. ";
 
-/** `docs` documents of 50 nodes each: 7 sections of 6 leaves, and a note. */
+/** `docs` top-level trees of 50 nodes each: 7 sections of 6 leaves, and a note. */
 function synthetic(docs: number): Doc {
   const doc = Doc.library("scale");
   const lib = doc.snap().root;
   for (let d = 0; d < docs; d++) {
-    const ops: Op[] = [{ op: "create", parent: lib, title: `Document ${d}`, body: SENTENCE.repeat(3) }];
+    const ops: Op[] = [{ op: "create", parent: lib, title: `Tree ${d}`, body: SENTENCE.repeat(3) }];
     let n = 1;
     for (let s = 0; s < 7; s++) {
       const sec = n++;
@@ -27,10 +27,10 @@ function synthetic(docs: number): Doc {
       for (let k = 0; k < 6; k++, n++) ops.push({ op: "create", parent: `$${sec}` as NodeId, title: `Leaf ${d}.${s}.${k}`, body: SENTENCE.repeat(2) });
     }
     ops.push({ op: "create", parent: "$0" as NodeId, kind: "note", quote: "something that matters", body: "A note." });
-    // And a link to an article, shared by every tenth document, for the backlinks index to follow.
+    // And a link to an article, shared by every tenth tree, for the backlinks index to follow.
     ops.push({ op: "create", parent: "$0" as NodeId, kind: "note", quote: "Another follows", ref: { kind: "wiki", title: `Topic ${d % 10}`, lang: "en" } });
     for (let i = 0; i < n; i++) ops.push({ op: "bless", id: `$${i}` as NodeId });
-    doc.apply(ops, `Document ${d}`, { actor: "llm" });
+    doc.apply(ops, `Tree ${d}`, { actor: "llm" });
   }
   return doc;
 }
@@ -55,7 +55,7 @@ function editCost(doc: Doc, rounds = 25) {
 }
 
 describe("a large library", () => {
-  it("costs what an edit touches: 5,000 nodes in 100 documents", () => {
+  it("costs what an edit touches: 5,000 nodes in 100 top-level trees", () => {
     let t = performance.now();
     const big = synthetic(100);
     const built = performance.now() - t;
@@ -80,7 +80,7 @@ describe("a large library", () => {
     const reread = (performance.now() - t) / 1000;
     expect(loaded.snap()).toBe(first);
 
-    // Server start: open the stored library and list its documents, as server/index.ts does.
+    // Server start: open the stored library and list its top-level nodes, as the server does.
     const data = mkdtempSync(join(tmpdir(), "ie-scale-"));
     mkdirSync(join(data, "library"));
     writeFileSync(join(data, "library", "main.loro"), bytes);
@@ -98,7 +98,7 @@ describe("a large library", () => {
     expect(ix.mentions("en", "Topic 3")).toHaveLength(10);
     const small = editCost(Doc.load(synthetic(10).snapshotBytes(), "reader"));
     console.log(
-      `scale: ${nodes} nodes, ${(bytes.length / 1024).toFixed(0)} KB · built in ${built.toFixed(0)} ms · loaded and read in ${boot.toFixed(0)} ms · first state hash ${firstHash.toFixed(0)} ms · server store opened and listed in ${serverStart.toFixed(0)} ms · cached snapshot ${(reread * 1000).toFixed(1)} µs · backlinks index built in ${indexed.toFixed(1)} ms · body edit (op, commit, snapshot, staleness, context) median ${edit.toFixed(2)} ms at 100 documents, ${small.toFixed(2)} ms at 10`,
+      `scale: ${nodes} nodes, ${(bytes.length / 1024).toFixed(0)} KB · built in ${built.toFixed(0)} ms · loaded and read in ${boot.toFixed(0)} ms · first state hash ${firstHash.toFixed(0)} ms · server store opened and listed in ${serverStart.toFixed(0)} ms · cached snapshot ${(reread * 1000).toFixed(1)} µs · backlinks index built in ${indexed.toFixed(1)} ms · body edit (op, commit, snapshot, staleness, context) median ${edit.toFixed(2)} ms at 100 trees, ${small.toFixed(2)} ms at 10`,
     );
     expect(edit).toBeLessThan(8);
     // An edit at a tenth of the size costs about the same: nothing it does walks the whole library.
