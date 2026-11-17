@@ -425,7 +425,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 }
 .tabline .tabtitle { overflow: hidden; text-overflow: ellipsis; }
 .tabline:hover { color: var(--fg); }
-.col.crowded > .pane[data-tab] > .tabline { opacity: 1; pointer-events: auto; }
+.col.crowded > .pane[data-tab] > .tabline, .col.sized > .pane[data-tab] > .tabline { opacity: 1; pointer-events: auto; }
 /* A pane scrolled past its own title shows its tab at its top as well, over its text (Panes.tsx watchHead). */
 .pane[data-scrolled] > .tabline { opacity: 1; pointer-events: auto; }
 /* Its title centred between the rule across the pane's top (heavy on the active pane) and its foot. */
@@ -452,14 +452,14 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .grip { position: absolute; z-index: 3; top: 0; left: var(--spine); right: 4.6rem; height: 1.15rem; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .grip::before { content: ""; position: absolute; left: 50%; top: 0.42rem; width: 1.1rem; margin-left: -0.55rem; height: 3px; border-top: 1px solid var(--faint); border-bottom: 1px solid var(--faint); opacity: 0; transition: opacity 0.12s; }
 .col.split .grip:hover::before { opacity: 0.8; }
-.col:not(.split) .grip, .col.crowded > .pane[data-tab] > .grip { display: none; }
+.col:not(.split) .grip, .col.crowded > .pane[data-tab] > .grip, .col.sized > .pane[data-tab] > .grip { display: none; }
 .tabline { touch-action: none; }
 .panes.dragging, .panes.dragging * { cursor: grabbing !important; user-select: none; }
 .drop-line { position: absolute; z-index: 7; height: 2px; background: var(--link); pointer-events: none; }
 
 /* A pane's pin and ×, top right, in the margin above its title: quiet until pointed at. A pinned pane's pin is filled. */
 .pane-ctl { position: absolute; z-index: 3; top: 0.25rem; right: 0.3rem; display: flex; gap: 0.05rem; }
-.col.crowded > .pane[data-tab] > .pane-ctl { top: 2px; }
+.col.crowded > .pane[data-tab] > .pane-ctl, .col.sized > .pane[data-tab] > .pane-ctl { top: 2px; }
 .pane-btn { display: block; width: 1.3rem; height: 1.3rem; padding: 0.3rem; border-radius: 2px; cursor: pointer; color: var(--rule); }
 .pane-btn svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 .pane:hover .pane-btn { color: var(--faint); }
@@ -970,11 +970,21 @@ html { scroll-padding-top: 48px; }
 /*
  * A pane in a page shared with others is moved up or down it by a press held on its tab or on the
  * band above its title, left of its buttons (Panes.tsx): two faint lines mark that band. A swipe
- * across either still turns the page, and one down still scrolls; held, the pane lifts.
+ * across either still turns the page; held, the pane lifts; dragged up or down at once, its top
+ * edge moves (below).
  */
 .panes[data-layout="pages"] .grip { left: var(--spine); right: 132px; height: 44px; touch-action: pan-x pan-y; cursor: default; -webkit-touch-callout: none; }
 .panes[data-layout="pages"] .grip::before { top: 20px; opacity: 0.6; }
 .panes[data-layout="pages"] .tabline { padding: 0 128px 0 var(--spine); font-size: 0.8rem; touch-action: pan-x pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+/*
+ * Moved up or down at once, the handle of any pane but a page's first drags the pane's top edge
+ * (Panes.tsx): so the browser may only pan it sideways, a swipe that turns the page. A page too
+ * short for a tab for each of its panes (tight) is never sized so: its handles scroll it, as before.
+ * A page sized by hand lays its panes one under another, filling it, nothing stacked.
+ */
+.panes[data-layout="pages"] .col.split:not(.tight) > .pane:not(:first-child) > :is(.grip, .tabline) { touch-action: pan-x; }
+.panes[data-layout="pages"] .col.sized { overflow-y: hidden; }
+.panes.resizing, .panes.resizing * { user-select: none; -webkit-user-select: none; }
 /* Lifted: the pane fades where it is; its tab rides just above the finger; a line shows where it will go. */
 .pane[data-lifted] { opacity: 0.4; }
 .drag-ghost {

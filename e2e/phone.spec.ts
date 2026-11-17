@@ -970,3 +970,242 @@ test("a tap on a link only opens it: no hover card from the tap's mouse events, 
   await expect(page.locator(".menu.sheet .menu-card .lcard")).toBeVisible();
   await expect(page.locator(".popup")).toHaveCount(0);
 });
+
+// ---- the third round: a pane's handle dragged at once resizes it ----
+
+/** The second page's panes, measured: the page's top, foot and height, and each pane's top and height, whether it shows its tab, and which is active. */
+const column = (page: Page, n = 1) =>
+  page.evaluate((n) => {
+    const col = document.querySelectorAll<HTMLElement>(".strip > .col")[n];
+    const c = col.getBoundingClientRect();
+    const ps = [...col.querySelectorAll<HTMLElement>(":scope > .pane")];
+    return {
+      top: c.top,
+      bottom: c.bottom,
+      h: c.height,
+      sized: col.classList.contains("sized"),
+      crowded: col.classList.contains("crowded"),
+      scroll: col.scrollTop,
+      panes: ps.map((p) => {
+        const r = p.getBoundingClientRect();
+        return { top: r.top, h: r.height, tab: p.hasAttribute("data-tab"), active: p.classList.contains("active"), title: p.querySelector(".tabtitle")!.textContent! };
+      }),
+    };
+  }, n);
+type Column = Awaited<ReturnType<typeof column>>;
+
+/** Where a finger takes pane i's handle: its tab, or the band above its title. */
+const handle = (c: Column, i: number) => ({ x: 70, y: c.panes[i].top + 22 });
+
+/**
+ * A finger put down on pane i's handle and moved at once by dy, a frame a step, then lifted (unless
+ * `lift` is false); after each step past the browser's touch slop, the pane's top edge is where the
+ * finger has taken it (within 1.5 px), the panes fill the page, none shorter than its tab. Returns what the page was before and
+ * at the end of the move.
+ */
+async function edgeDrag(page: Page, i: number, dy: number, opts: { steps?: number; lift?: boolean; shot?: string; dx?: number } = {}) {
+  const before = await column(page);
+  const from = handle(before, i);
+  const lo = before.top + i * 44;
+  const hi = before.bottom - (before.panes.length - i) * 44;
+  const n = opts.steps ?? 12;
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
+  let last = before;
+  for (let k = 1; k <= n; k++) {
+    const d = (dy * k) / n;
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: from.x + ((opts.dx ?? 0) * k) / n, y: from.y + d }] });
+    await page.waitForTimeout(16);
+    last = await column(page);
+    // The browser sends no move inside its touch slop (about 15 px) while the touch may still be a tap or a scroll: from the first it sends, the edge is where the finger is.
+    if (Math.abs(d) <= 16) continue;
+    const want = Math.max(lo, Math.min(hi, before.panes[i].top + d));
+    expect(Math.abs(last.panes[i].top - want), `step ${k}: the edge at ${last.panes[i].top}, the finger took it to ${want}`).toBeLessThanOrEqual(1.5);
+    expect(last.sized).toBe(true);
+    const sum = last.panes.reduce((s, p) => s + p.h, 0);
+    expect(Math.abs(sum - last.h)).toBeLessThanOrEqual(1);
+    for (const p of last.panes) expect(p.h).toBeGreaterThanOrEqual(43.5);
+    // One under another, nothing stacked.
+    for (let j = 1; j < last.panes.length; j++) expect(Math.abs(last.panes[j].top - (last.panes[j - 1].top + last.panes[j - 1].h))).toBeLessThanOrEqual(1);
+  }
+  if (opts.shot) await shot(page, opts.shot);
+  if (opts.lift !== false) await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await cdp.detach();
+  await page.waitForTimeout(200);
+  return { before, last };
+}
+
+/** Make the pane at index i of the second page the active one, by a tap on its tab (or its band). */
+async function tapPane(page: Page, i: number) {
+  const c = await column(page);
+  await touchTap(page, handle(c, i).x, handle(c, i).y);
+  await expect.poll(async () => (await column(page)).panes[i].active).toBe(true);
+}
+
+for (const [width, height] of [
+  [390, 844],
+  [360, 640],
+] as const)
+  test(`at ${width}×${height}, a pane's handle dragged at once moves its edge with the finger: a tab opens, a pane folds, the limits hold; a tap, a hold, a swipe do what they did; the sizes stay`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await start(page);
+    await stackFromLibrary(page, ["Fixed points", "Octopus minds"]);
+    // The first pane looked at: the second folded to its tab at the foot.
+    let c = await column(page);
+    if (!c.panes[0].active) await tapPane(page, 0);
+    c = await column(page);
+    expect(c.crowded).toBe(true);
+    expect(c.panes[1].tab).toBe(true);
+    const H = c.h;
+    // The folded tab dragged up: the pane opens as far as it is dragged, the pane above gives it the room.
+    let r = await edgeDrag(page, 1, -260, { shot: `40-tab-dragged-open-${width}` });
+    c = await column(page);
+    expect(c.sized).toBe(true);
+    expect(c.crowded).toBe(false);
+    expect(Math.abs(c.panes[1].top - (r.before.panes[1].top - 260))).toBeLessThanOrEqual(1);
+    expect(Math.abs(c.panes[0].h - (c.panes[1].top - c.top))).toBeLessThanOrEqual(1);
+    expect(c.panes.map((p) => p.tab)).toEqual([false, false]);
+    expect(c.panes[0].active).toBe(true);
+    // The page neither turned nor scrolled.
+    expect(await pageIndex(page)).toBe(1);
+    expect(c.scroll).toBe(0);
+    await shot(page, `41-two-sized-${width}`);
+    // Its band dragged down: smaller again, the pane above taller.
+    r = await edgeDrag(page, 1, 90);
+    c = await column(page);
+    expect(Math.abs(c.panes[1].top - (r.before.panes[1].top + 90))).toBeLessThanOrEqual(1);
+    // Up past the top: the pane above is a tab, no less; the pane looked at folded hands that to the one across the edge.
+    await edgeDrag(page, 1, -2000, { steps: 16 });
+    c = await column(page);
+    expect(Math.abs(c.panes[1].top - (c.top + 44))).toBeLessThanOrEqual(1);
+    expect(c.panes.map((p) => p.tab)).toEqual([true, false]);
+    await expect.poll(async () => (await column(page)).panes[1].active).toBe(true);
+    expect((await column(page)).sized).toBe(true);
+    await shot(page, `42-dragged-to-the-top-${width}`);
+    // Down past the foot: folded to its tab at the foot, the pane above all the rest.
+    await edgeDrag(page, 1, 2000, { steps: 16 });
+    c = await column(page);
+    expect(Math.abs(c.panes[1].h - 44)).toBeLessThanOrEqual(1);
+    expect(Math.abs(c.panes[1].top - (c.bottom - 44))).toBeLessThanOrEqual(1);
+    expect(c.panes.map((p) => p.tab)).toEqual([false, true]);
+    await expect.poll(async () => (await column(page)).panes[0].active).toBe(true);
+    // Barely opened, it folds back when the finger lifts; dragged down to barely more than a tab, it folds.
+    await edgeDrag(page, 1, -30);
+    await expect.poll(async () => Math.round((await column(page)).panes[1].h)).toBe(44);
+    expect((await column(page)).panes[1].tab).toBe(true);
+    await edgeDrag(page, 1, -300);
+    c = await column(page);
+    expect(c.panes[1].h).toBeGreaterThan(300);
+    await edgeDrag(page, 1, c.panes[1].h - 44 - 25);
+    await expect.poll(async () => Math.round((await column(page)).panes[1].h)).toBe(44);
+    // Open again to a middle height, then: swiped away and back, the sizes stay.
+    await edgeDrag(page, 1, -Math.round(H * 0.45));
+    const kept = await column(page);
+    expect(kept.panes.every((p) => !p.tab)).toBe(true);
+    await swipe(page, 260);
+    await at(page, "Library", 0);
+    await swipe(page, -260);
+    await expect.poll(() => pageIndex(page)).toBe(1);
+    await expect.poll(() => snapped(page)).toBe(true);
+    c = await column(page);
+    expect(c.sized).toBe(true);
+    for (const [j, p] of c.panes.entries()) expect(Math.abs(p.h - kept.panes[j].h)).toBeLessThanOrEqual(1);
+    // A swipe sideways starting on a handle still turns the page, and the sizes stay.
+    await swipe(page, 260, 0, { x: 80, y: c.panes[1].top + 22 });
+    await at(page, "Library", 0);
+    await swipe(page, -260, 0, { x: 310, y: 520 });
+    await expect.poll(() => pageIndex(page)).toBe(1);
+    await expect.poll(() => snapped(page)).toBe(true);
+    c = await column(page);
+    for (const [j, p] of c.panes.entries()) expect(Math.abs(p.h - kept.panes[j].h)).toBeLessThanOrEqual(1);
+    // A tap on the other pane's band makes it the one looked at; it is open, so the sizes stay.
+    const other = c.panes.findIndex((p) => !p.active);
+    await tapPane(page, other);
+    c = await column(page);
+    expect(c.sized).toBe(true);
+    for (const [j, p] of c.panes.entries()) expect(Math.abs(p.h - kept.panes[j].h)).toBeLessThanOrEqual(1);
+    // A hold, then a drag: still moves the pane (each keeps its size).
+    const titles = c.panes.map((p) => p.title);
+    const sizeOf = new Map(c.panes.map((p) => [p.title, p.h]));
+    await press(page, handle(c, 1), { hold: 500, to: [{ x: 70, y: c.top + 10 }] });
+    await expect.poll(async () => (await column(page)).panes.map((p) => p.title)).toEqual([titles[1], titles[0]]);
+    c = await column(page);
+    expect(c.sized).toBe(true);
+    for (const p of c.panes) expect(Math.abs(p.h - sizeOf.get(p.title)!)).toBeLessThanOrEqual(1);
+    await shot(page, `43-reordered-sized-${width}`);
+    // A double tap on a handle: the automatic sizes again, the pane tapped has the page's height.
+    const h1 = handle(c, 1);
+    await touchTap(page, h1.x, h1.y);
+    await page.waitForTimeout(60);
+    await touchTap(page, h1.x, h1.y);
+    await expect.poll(async () => (await column(page)).sized).toBe(false);
+    c = await column(page);
+    expect(c.crowded).toBe(true);
+    expect(c.panes[1].active).toBe(true);
+    expect(c.panes[0].tab).toBe(true);
+  });
+
+test("three panes: the edge pushes the tabs ahead of it and gives back what it pushed; the pane gone to while folded brings the automatic sizes back", async ({ page }) => {
+  await start(page);
+  await stackFromLibrary(page, ["Fixed points", "Octopus minds", "Where the elements come from"]);
+  // The middle pane looked at: a tab above it, a tab below.
+  let c = await column(page);
+  if (!c.panes[1].active) {
+    await state(page, (s) => s.toPane(s.paneColumns.get(1)[1].node.id));
+    await expect.poll(async () => (await column(page)).panes[1].active).toBe(true);
+  }
+  c = await column(page);
+  expect(c.panes.map((p) => p.tab)).toEqual([true, false, true]);
+  const T = c.top;
+  // The last tab dragged up past the middle pane: the middle one is pushed up as a tab, and back down, given back its height, all in one drag.
+  const from = handle(c, 2);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
+  const path = [-40, -120, -240, -400, -600, -900, -2000, -900, -240];
+  for (const d of path) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: from.x, y: from.y + d }] });
+    await page.waitForTimeout(16);
+    const now = await column(page);
+    const want = Math.max(T + 88, from.y - 22 + d);
+    expect(Math.abs(now.panes[2].top - want), `at ${d}`).toBeLessThanOrEqual(1.5);
+    // The first pane stays a tab throughout; the middle one is a tab at the limit, pushed along.
+    expect(Math.abs(now.panes[0].h - 44)).toBeLessThanOrEqual(1);
+    expect(Math.abs(now.panes[1].h - Math.max(44, want - (T + 44)))).toBeLessThanOrEqual(1.5);
+    if (d === -2000) await shot(page, "44-three-pushed");
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await cdp.detach();
+  await page.waitForTimeout(200);
+  c = await column(page);
+  expect(c.panes.map((p) => p.tab)).toEqual([true, false, false]);
+  expect(c.panes[1].active).toBe(true);
+  await shot(page, "45-three-sized");
+  // The middle pane's band dragged down: the tab above it opens.
+  const r = await edgeDrag(page, 1, 160);
+  c = await column(page);
+  expect(Math.abs(c.panes[0].h - (44 + 160))).toBeLessThanOrEqual(1);
+  expect(Math.abs(c.panes[2].h - r.before.panes[2].h)).toBeLessThanOrEqual(1);
+  expect(c.panes.every((p) => !p.tab)).toBe(true);
+  await shot(page, "46-three-open");
+  // The first pane's handle has no edge above it: moved down, nothing changes, and it is not picked up.
+  const before = await column(page);
+  await press(page, handle(before, 0), { to: [{ x: 70, y: before.panes[0].top + 22 + 120 }] });
+  c = await column(page);
+  for (const [j, p] of c.panes.entries()) expect(Math.abs(p.h - before.panes[j].h)).toBeLessThanOrEqual(1);
+  expect(c.panes.map((p) => p.title)).toEqual(before.panes.map((p) => p.title));
+  // Folded again, and gone to by a tap on its tab: the page is laid out automatically, that pane with the height.
+  await edgeDrag(page, 1, -2000, { steps: 10 });
+  c = await column(page);
+  expect(c.panes[0].tab).toBe(true);
+  await tapPane(page, 0);
+  await expect.poll(async () => (await column(page)).sized).toBe(false);
+  c = await column(page);
+  expect(c.panes[0].h).toBeGreaterThan(c.h - 2 * 44 - 2);
+  expect(c.panes.map((p) => p.tab)).toEqual([false, true, true]);
+  // A pane opened on the page: automatic too.
+  await edgeDrag(page, 2, -200);
+  expect((await column(page)).sized).toBe(true);
+  await stackFromLibrary(page, ["What a proof is"]);
+  await expect.poll(async () => (await column(page)).panes.length).toBe(4);
+  expect((await column(page)).sized).toBe(false);
+});

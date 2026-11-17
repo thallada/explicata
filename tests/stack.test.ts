@@ -1,6 +1,6 @@
 /** The stacking shared by the panes view's strip and its crowded columns (src/ui/stack.ts). */
 import { describe, expect, it } from "vitest";
-import { coverage, crowds, fill, offsets, reveal, starts, whole } from "../src/ui/stack";
+import { coverage, crowds, fill, fit, folded, offsets, release, resize, reveal, starts, whole } from "../src/ui/stack";
 
 describe("stack", () => {
   it("sticks each item a strip after the one before, a pinned one its whole size, never past where the rest can still be reached", () => {
@@ -57,5 +57,62 @@ describe("stack", () => {
     expect(crowds(720, [300, 350], 260, 1)).toBe(false);
     // One pane: nothing to fold.
     expect(crowds(720, [3000], 260, 0)).toBe(false);
+  });
+  it("as pages, a pane's handle dragged moves its top edge: the pane above takes or gives the difference, a tab pushed along at the limit", () => {
+    const T = 44;
+    // Two panes: the second's edge follows the drag both ways.
+    expect(resize([600, 44], 1, -200, T)).toEqual([400, 244]);
+    expect(resize([400, 244], 1, 100, T)).toEqual([500, 144]);
+    // Never past a tab either side: the column never overflows.
+    expect(resize([600, 44], 1, -1000, T)).toEqual([44, 600]);
+    expect(resize([300, 344], 1, 1000, T)).toEqual([600, 44]);
+    // A folded tab at the top opens as the edge below it is dragged down.
+    expect(resize([44, 556, 44], 1, 150, T)).toEqual([194, 406, 44]);
+    // Three panes, the middle open: the last tab dragged up takes from the middle; once that is a tab, the tab is pushed up and the first gives.
+    expect(resize([44, 556, 44], 2, -200, T)).toEqual([44, 356, 244]);
+    expect(resize([44, 556, 44], 2, -600, T)).toEqual([44, 44, 556]);
+    expect(resize([200, 400, 44], 2, -500, T)).toEqual([56, 44, 544]);
+    // Dragged down, the dragged pane gives, then those below it.
+    expect(resize([200, 300, 144], 1, 350, T)).toEqual([550, 44, 50]);
+    expect(resize([200, 300, 144], 1, 1000, T)).toEqual([556, 44, 44]);
+    // From the sizes the drag began with: back where it started, what was pushed is given back.
+    expect(resize([200, 400, 44], 2, 0, T)).toEqual([200, 400, 44]);
+    // The total is kept, and so is every tab, wherever the finger goes.
+    for (const dy of [-700, -333.4, -50, 0, 17.6, 260, 700]) {
+      const h = resize([120, 300, 44, 180], 2, dy, T);
+      expect(h.reduce((a, b) => a + b, 0)).toBeCloseTo(644, 6);
+      for (const x of h) expect(x).toBeGreaterThanOrEqual(T - 1e-9);
+    }
+    // The first pane has no edge above it to move.
+    expect(resize([300, 344], 0, 100, T)).toEqual([300, 344]);
+  });
+
+  it("as pages, a hand-sized pane left barely taller than its tab folds when the finger lifts; sizes fit a column whose height changed", () => {
+    const T = 44;
+    // Left 20 px over a tab: it folds, the pane above takes the rest.
+    expect(release([600, 44], 1, -20, T, 40)).toEqual([600, 44]);
+    expect(release([300, 344], 1, 280, T, 40)).toEqual([600, 44]);
+    // The pane above left nearly a tab: it folds instead.
+    expect(release([300, 344], 1, -230, T, 40)).toEqual([44, 600]);
+    // Well inside: where the finger left it, in whole pixels.
+    expect(release([600, 44], 1, -200.4, T, 40)).toEqual([400, 244]);
+    expect(release([600, 44], 1, -200.6, T, 40)).toEqual([399, 245]);
+    // Both nearly tabs (a short column): the shorter folds.
+    expect(release([100, 100], 1, 10, T, 80)).toEqual([156, 44]);
+    expect(folded(44, T)).toBe(true);
+    expect(folded(45, T)).toBe(true);
+    expect(folded(46, T)).toBe(false);
+    // Fit: what each has beyond its tab scales; a folded pane stays folded.
+    expect(fit([44, 300, 300], 544, T)).toEqual([44, 250, 250]);
+    expect(fit([44, 556, 44], 644, T)).toEqual([44, 556, 44]);
+    expect(fit([44, 556, 44], 744, T)).toEqual([44, 656, 44]);
+    // Measured sizes under a tab come up to one.
+    expect(fit([20, 580, 44], 644, T)).toEqual([44, 556, 44]);
+    // Whole pixels, filling the column exactly.
+    const f = fit([100, 200, 300], 641, T)!;
+    expect(f.reduce((a, b) => a + b, 0)).toBe(641);
+    for (const x of f) expect(Number.isInteger(x)).toBe(true);
+    // Too short for a tab each: none.
+    expect(fit([44, 44, 44], 120, T)).toBeNull();
   });
 });

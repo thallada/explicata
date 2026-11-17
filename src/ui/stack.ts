@@ -75,6 +75,69 @@ export function crowds(h: number, needs: number[], least: number, here?: number)
 /** Where each item begins when nothing is stuck: one after another. */
 export const starts = (sizes: number[]) => sizes.map((_, i) => sizes.slice(0, i).reduce((a, b) => a + b, 0));
 
+const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+
+/** Sizes from edges (each item's start, then the end of the last), each edge rounded to a whole pixel: an item at least `min` before stays so after. */
+const fromEdges = (e: number[]) => e.slice(1).map((x, k) => Math.round(x) - Math.round(e[k]));
+
+/**
+ * As pages, a column sized by hand: the heights of its panes, top to bottom, filling the column,
+ * each at least `min` (a tab; a pane that height is folded). Dragging a pane's handle moves its top
+ * edge, the edge it shares with the pane above, to where it was when the drag began plus dy, as far
+ * as the panes can give: moved up, the pane above gives, and once that is a tab the one above it,
+ * pushed up as a tab, and so on; moved down, the dragged pane gives, then the ones below it. The
+ * pane on the other side of the edge takes what is given (a tab there opens). Always from the sizes
+ * the drag began with, so moving back gives back what was pushed. The first pane's top is the
+ * column's: it has no edge to move.
+ */
+export function resize(start: number[], i: number, dy: number, min: number): number[] {
+  const n = start.length;
+  if (i <= 0 || i >= n) return start.slice();
+  const total = sum(start);
+  const e = [...starts(start), total];
+  e[i] = Math.max(i * min, Math.min(total - (n - i) * min, e[i] + dy));
+  for (let k = i - 1; k >= 1; k--) e[k] = Math.min(e[k], e[k + 1] - min);
+  for (let k = i + 1; k < n; k++) e[k] = Math.max(e[k], e[k - 1] + min);
+  return e.slice(1).map((x, k) => x - e[k]);
+}
+
+/**
+ * Where a drag of pane i's edge by dy comes to rest when the finger lifts: as `resize`, except that
+ * a pane on either side of the edge left less than `snap` taller than a tab folds to its tab (the
+ * pane across the edge taking the rest), the shorter of the two if both are; in whole pixels.
+ */
+export function release(start: number[], i: number, dy: number, min: number, snap: number): number[] {
+  const h = resize(start, i, dy, min);
+  if (i <= 0 || i >= h.length) return fromEdges([...starts(h), sum(h)]);
+  const below = h[i] - min;
+  const above = h[i - 1] - min;
+  const foldBelow = below > 0.5 && below < snap;
+  const foldAbove = above > 0.5 && above < snap;
+  const d = foldBelow && (!foldAbove || below <= above) ? dy + below : foldAbove ? dy - above : dy;
+  const out = resize(start, i, d, min);
+  return fromEdges([...starts(out), sum(out)]);
+}
+
+/**
+ * Sizes made to fill a column of height h, each at least `min`: what each has beyond a tab is
+ * scaled to what the column has beyond a tab each (a folded pane stays folded); null if the column
+ * cannot hold a tab for every pane. For sizes measured off the screen, and for a column whose
+ * height changed (the window, an on-screen keyboard).
+ */
+export function fit(sizes: number[], h: number, min: number): number[] | null {
+  const n = sizes.length;
+  if (!n || n * min > h) return null;
+  if (Math.abs(sum(sizes) - h) < 0.5 && sizes.every((s) => s >= min)) return sizes.slice();
+  const extra = sizes.map((s) => Math.max(0, s - min));
+  const ex = sum(extra);
+  const room = h - n * min;
+  const out = ex > 0 ? extra.map((x) => min + (x * room) / ex) : sizes.map((_, k) => min + (k === n - 1 ? room : 0));
+  return fromEdges([...starts(out), h]);
+}
+
+/** Whether a pane of this height, sized by hand, is folded to its tab. */
+export const folded = (size: number, min: number) => size <= min + 1;
+
 /**
  * How covered each item is, from where each begins on screen now, its size and where the box ends:
  * an item shows up to where the next begins (or the box's end); overlapped when any of it is

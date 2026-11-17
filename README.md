@@ -142,8 +142,18 @@ Press `?` for every key. The short version:
   above its title, always shown. A press held still on a pane's tab, or on the band above its title
   (two faint lines mark it), picks the pane up in a page it shares: it fades, its tab rides above
   the finger, a line shows where it will go, a crowded page scrolls near its top and foot, and
-  lifting the finger puts it there (a second finger puts it back); a swipe or a scroll that starts
-  there is still a swipe or a scroll. The pane's ⋯ has Move this pane up and down too. No curves are drawn (the panes
+  lifting the finger puts it there (a second finger puts it back); a swipe sideways that starts
+  there still turns the page. Moved up or down at once instead, the handle drags the pane's top
+  edge with the finger, as a splitter: the pane grows or shrinks and the pane above takes the
+  difference (a tab there opens; once it is a tab, the tab is pushed along and the pane above it
+  gives), never less than a tab and never past the page; a folded tab dragged up opens its pane as
+  far as it is dragged, and a pane dragged down to barely more than its tab folds when the finger
+  lifts. A page's first pane has no edge above it, so its handle sizes nothing (on a crowded page
+  it still scrolls the page). Sizes set so hold while the page keeps its panes and the pane looked
+  at there is one shown open, swiped away and back too: going to a pane folded to its tab (a tap on
+  the tab, the trail, the map, the keys), a pane opening or closing there, or a double tap on a
+  handle lays the page out automatically again (not kept across a reload). A pane looked at that is
+  dragged shut hands that to the pane across the edge. The pane's ⋯ has Move this pane up and down too. No curves are drawn (the panes
   are never side by side): what each pane was opened from, its link's underline, a note's dotted
   rule or its row's edge and arrow, takes the pane's colour instead, the colour of the rule under the
   pane's title. Every step from pane to pane is a step in the browser's history, so Back, the button
@@ -359,7 +369,7 @@ What is sent where:
   the store's `trail` is its focused branch); `stack.ts` is the stacking shared by the strip and its
   columns (and how a column shares or stacks its height), `lanes.ts` orders the curves' lanes. The
   pages layout is the same panes (`Panes.tsx`, which also glides the strip and carries a pane held
-  by touch) laid out a column per page, with `Pages.tsx` (the trail and the map) and `pages.ts`
+  or resizes one by touch, the sizes by hand being `stack.ts` `resize`, `release` and `fit`) laid out a column per page, with `Pages.tsx` (the trail and the map) and `pages.ts`
   (which pane a page brings forward, the history entries a pane per step, and the map's tree lines,
   pure functions).
 
