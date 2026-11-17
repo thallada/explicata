@@ -68,10 +68,10 @@ test("the library root is the first page and a node like any other: its sections
   const first = await state(page, (s) => s.focus.node);
   await expect(page).toHaveURL(new RegExp(`/n/${encodeURIComponent(first)}$`));
   await expect(page).toHaveTitle("Infinispand");
-  // Back up onto the root itself: its address is /, and it is the node the keys act on.
+  // Back up onto the root itself: its address is the library's, /l/<id>, and it is the node the keys act on.
   await keys(page, "h k");
   expect(await state(page, (s) => s.focus.node === s.snap.root)).toBe(true);
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/l\/[0-9a-z]+$/);
   await expect(page).toHaveTitle("Library");
   await keys(page, "D");
   await expect(status(page)).toHaveText("The library itself cannot be deleted.");

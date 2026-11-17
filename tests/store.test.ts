@@ -1,11 +1,11 @@
-/** The library on disk (seeding and starter files), and a node with everything under it: imported, exported, copied, moved and addressed wherever it is. */
+/** The libraries on disk (seeding and starter files), and a node with everything under it: imported, exported, copied, moved and addressed wherever it is. */
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { LibraryStore } from "../server/library";
+import { Libraries, importStarters, readIndex } from "../server/libraries";
 import { FormatError, serializeDoc } from "../src/core/format";
-import { address, resolve } from "../src/core/address";
+import { LIBRARY_ID, address, inLibrary, resolve, splitLibrary } from "../src/core/address";
 import { resolveNode } from "../src/core/links";
 import { Doc, descendants, isStale, sections, staleness, tops } from "../src/core/model";
 import { SEED_TITLE, importTree, writeSeed } from "../src/core/seed";
@@ -16,46 +16,39 @@ const temp = () => mkdtempSync(join(tmpdir(), "ie-lib-"));
 const quiet = () => {};
 const MD = (title: string) => `# ${title}\n\nA root body with a phrase.\n\n## One\n\nSection text.\n\n^ "Section" gloss: a note\n`;
 
-describe("the library on disk", () => {
+describe("the libraries on disk", () => {
   it("starts an empty data directory as one library with the first tree, written once", () => {
     const data = temp();
-    const store = new LibraryStore(data, quiet).open();
-    store.seedFirst((doc) => writeSeed(doc, prompt, seed));
+    let seeded = 0;
+    const libs = new Libraries(data, quiet).open((doc) => (seeded++, writeSeed(doc, prompt, seed)));
+    const store = libs.first();
+    expect(seeded).toBe(1);
     expect(store.titles()).toEqual([SEED_TITLE]);
     expect(store.main.snap().library).toBe(true);
-    expect(JSON.parse(readFileSync(join(data, "library.json"), "utf8")).imported).toEqual(["infinite-expand"]);
+    expect(readIndex(join(data, "libraries")).map((e) => e.id)).toEqual([store.id]);
     store.flush();
-    // A second start loads the same library (same id) and writes nothing new.
-    const again = new LibraryStore(data, quiet).open();
-    again.seedFirst(() => {
+    // A second start loads the same library (same id) and seeds nothing.
+    const again = new Libraries(data, quiet).open(() => {
       throw new Error("should not seed twice");
     });
-    expect(again.id).toBe(store.id);
-    expect(again.main.stateHash()).toBe(store.main.stateHash());
+    expect(again.first().id).toBe(store.id);
+    expect(again.first().main.stateHash()).toBe(store.main.stateHash());
   });
 
-  it("imports each starter file once, as a child of the root; a deleted one stays deleted and a broken one is skipped", () => {
+  it("writes the starter files, in file name order, into the first library only; a broken one is skipped", () => {
     const data = temp();
     const lib = temp();
     writeFileSync(join(lib, "good-one.md"), MD("Good one"));
     writeFileSync(join(lib, "Second File.md"), MD("Second"));
     writeFileSync(join(lib, "broken.md"), MD("Broken").replace('"Section"', '"Missing"'));
     const logs: string[] = [];
-    const store = new LibraryStore(data, (m) => logs.push(m)).open();
-    store.importLibrary(lib);
-    expect(store.titles()).toEqual(["Second", "Good one"]); // file-name order: "S" sorts before "g"
+    const libs = new Libraries(data, quiet).open((doc) => importStarters(doc, lib, (m) => logs.push(m)));
+    expect(libs.first().titles()).toEqual(["Second", "Good one"]); // file-name order: "S" sorts before "g"
     expect(logs.join("\n")).toMatch(/skipped broken\.md:\n {2}library\/broken\.md:9: in “One”: quote not found: "Missing"/);
-
-    const good = tops(store.main.snap()).find((id) => store.main.snap().nodes[id].title === "Good one")!;
-    store.main.apply([{ op: "delete", id: good }], "Delete “Good one”");
-    store.save("main");
-    const again = new LibraryStore(data, quiet).open();
-    again.importLibrary(lib);
-    expect(again.titles()).toEqual(["Second"]);
-    // Once fixed, the broken file is picked up.
-    writeFileSync(join(lib, "broken.md"), MD("Broken"));
-    again.importLibrary(lib);
-    expect(again.titles()).toEqual(["Second", "Broken"]);
+    // A new library starts with its root alone, whatever the starter directory holds.
+    const work = libs.create("Work");
+    expect(work.titles()).toEqual([]);
+    expect(work.title).toBe("Work");
   });
 });
 
@@ -135,5 +128,55 @@ describe("a node and everything under it, wherever it is", () => {
     expect(resolve(lib.snap(), "/n/999%40999")).toEqual({ missing: "no node 999@999" });
     expect(resolve(lib.snap(), "/doc/tides")).toEqual({ missing: "no page /doc/tides" });
     expect(resolve(lib.snap(), "/n/%E0%A4%A")).toMatchObject({ missing: expect.any(String) });
+  });
+
+  it("is addressed under its library: /l/<library>/n/<id>; an address without a library is read in the one last used", () => {
+    expect(inLibrary("abc", "/")).toBe("/l/abc");
+    expect(inLibrary("abc", "/n/1%402")).toBe("/l/abc/n/1%402");
+    expect(splitLibrary("/l/abc")).toEqual({ library: "abc", part: "/" });
+    expect(splitLibrary("/l/abc/n/1%402")).toEqual({ library: "abc", part: "/n/1%402" });
+    expect(splitLibrary("/l/abc/w/en/Octopus")).toEqual({ library: "abc", part: "/w/en/Octopus" });
+    expect(splitLibrary("/")).toEqual({ library: null, part: "/" });
+    expect(splitLibrary("/n/1%402")).toEqual({ library: null, part: "/n/1%402" });
+    expect(splitLibrary("/doc/tides")).toEqual({ library: null, part: "/doc/tides" });
+    const lib = Doc.library("alice");
+    expect(LIBRARY_ID.test(lib.libraryId!)).toBe(true);
+  });
+
+  it("is copied into another library whole by graft: flags, notes on the root's text, and a map of old ids to new", () => {
+    const from = Doc.library("alice");
+    const root = from.snap().root;
+    const [top, , box] = from.apply(
+      [
+        { op: "update", id: root, body: "Root text with words." },
+        { op: "create", parent: root, title: "Top", body: "Some text." },
+        { op: "create", parent: root, kind: "note", quote: "words", body: "On the root." },
+        { op: "create", parent: root, kind: "section", title: "Wikipedia", body: "", articles: true },
+      ],
+      "make",
+    ).created;
+    from.apply([{ op: "update", id: top, pinned: false, nolink: ["text"] }], "flags");
+    const src = from.snap();
+    const into = Doc.library("bob");
+    const to = into.snap().root;
+    into.begin("copy", "human");
+    (into.tree.getNodeByID(to)!.data.get("body") as { insert(i: number, t: string): void }).insert(0, src.nodes[root].body);
+    const ids = new Map();
+    for (const c of src.nodes[root].children) into.graft(src, c, to, { keepAnchors: true, ids });
+    into.commit("copy", "human");
+    const got = into.snap();
+    expect(ids.size).toBe(3);
+    const note = got.nodes[ids.get(src.nodes[root].children[1])];
+    expect(note.anchors.map((a) => a.text)).toEqual(["words"]);
+    expect(got.nodes[ids.get(box)].articles).toBe(true);
+    expect(got.nodes[ids.get(top)]).toMatchObject({ title: "Top", pinned: false, nolink: ["text"] });
+    // Without keepAnchors, a note at the top of a graft into another text loses its anchors, as before.
+    into.begin("again", "human");
+    const lone = into.graft(src, src.nodes[root].children[1], to);
+    into.commit("again", "human");
+    expect(into.snap().nodes[lone].anchors).toEqual([]);
+    // The Wikipedia flag goes only where create allows it: under a library root.
+    const nested = from.apply([{ op: "copy", id: box, parent: top }], "copy box").created[0];
+    expect(from.snap().nodes[nested].articles).toBeUndefined();
   });
 });

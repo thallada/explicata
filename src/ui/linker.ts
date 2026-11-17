@@ -17,6 +17,7 @@ import { applyLinks, nodeRef, phraseKey } from "../core/links";
 import type { Mark } from "../core/marks";
 import { ancestors, isLibraryRoot, isLink, label, notesOf, topOf, tops, type Doc, type NodeId, type Op, type Snap } from "../core/model";
 import { describeTarget, sameTarget, type Ref } from "../core/ref";
+import { libApi } from "./api";
 import { clip, overlaps, type Range } from "../core/text";
 import type { Nearby } from "../llm/prompts";
 
@@ -76,7 +77,7 @@ interface Task {
 const idle = (fn: () => void) => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 1000 }) : setTimeout(fn, 50));
 
 const post = (path: string, body: unknown, signal?: AbortSignal) =>
-  fetch(`/api/links/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
+  fetch(libApi(`/links/${path}`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
 
 /** Turned down: declined by a person, or rejected by the reviewer and not linked by a person since. */
 const turnedDown = (snap: Snap, s: Sugg) => !!snap.nodes[s.node]?.nolink?.includes(s.key) || s.decided?.link === false || (s.review?.link === false && !s.decided?.link);
@@ -356,7 +357,7 @@ export class Linker {
     if (!force && this.fetched.has(id)) return { found: [], apply: [] };
     this.fetched.add(id);
     try {
-      const res = await fetch(`/api/links/pending?node=${encodeURIComponent(id)}&subtree=1&all=1${claim ? "&claim=1" : ""}`);
+      const res = await fetch(libApi(`/links/pending?node=${encodeURIComponent(id)}&subtree=1&all=1${claim ? "&claim=1" : ""}`));
       if (!res.ok) return { found: [], apply: [] };
       const r = (await res.json()) as { suggestions: Sugg[]; apply?: Sugg[] };
       const by = new Map<NodeId, Sugg[]>();
@@ -502,7 +503,7 @@ export class Linker {
   }
 
   async cancelJob(): Promise<boolean> {
-    const res = await fetch("/api/links/jobs", { method: "DELETE" });
+    const res = await fetch(libApi("/links/jobs"), { method: "DELETE" });
     const r = await res.json().catch(() => ({}));
     if (r.job) this.job = r.job;
     return !!r.cancelled;

@@ -85,7 +85,7 @@ describe("a large library", () => {
     mkdirSync(join(data, "library"));
     writeFileSync(join(data, "library", "main.loro"), bytes);
     t = performance.now();
-    const store = new LibraryStore(data, () => {}).open();
+    const store = new LibraryStore(join(data, "library")).open();
     expect(store.titles()).toHaveLength(100);
     const serverStart = performance.now() - t;
 

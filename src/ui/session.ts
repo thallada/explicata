@@ -5,6 +5,7 @@
 import { VersionVector } from "loro-crdt";
 import { Doc } from "../core/model";
 import { Repo, decodeVV, encodeVV, mergeUpdate, vvIncludes, type MergeReport } from "../core/repo";
+import { libApi } from "./api";
 import { idbGet, idbSet } from "./idb";
 
 type VV = Map<`${number}`, number>;
@@ -85,7 +86,7 @@ export class Session {
   }
 
   private async fetchBranch(name: string): Promise<Doc | null> {
-    const res = await fetch(`/api/branch/${encodeURIComponent(name)}`);
+    const res = await fetch(libApi(`/branch/${encodeURIComponent(name)}`));
     if (!res.ok) return null;
     if (res.headers.get("x-library") !== this.library) {
       this.lost();
@@ -131,7 +132,7 @@ export class Session {
       const known = this.serverVV.get(name);
       if (known && vvIncludes(known, doc.loro.version().toJSON())) continue;
       const bytes = known ? doc.loro.export({ mode: "update", from: new VersionVector(known) }) : doc.snapshotBytes();
-      navigator.sendBeacon(`/api/sync/${encodeURIComponent(name)}?library=${encodeURIComponent(this.library)}`, new Blob([bytes as BlobPart], { type: "application/octet-stream" }));
+      navigator.sendBeacon(libApi(`/sync/${encodeURIComponent(name)}?library=${encodeURIComponent(this.library)}`), new Blob([bytes as BlobPart], { type: "application/octet-stream" }));
     }
   }
 
@@ -169,7 +170,7 @@ export class Session {
     let ok = false;
     try {
       const bytes = !known ? doc.snapshotBytes() : vvIncludes(known, mine) ? new Uint8Array() : doc.loro.export({ mode: "update", from: new VersionVector(known) });
-      const res = await fetch(`/api/sync/${encodeURIComponent(name)}`, {
+      const res = await fetch(libApi(`/sync/${encodeURIComponent(name)}`), {
         method: "POST",
         headers: { "x-vv": encodeVV(mine), "x-client": this.clientId, "x-library": this.library, "content-type": "application/octet-stream" },
         body: bytes as BodyInit,
@@ -203,7 +204,7 @@ export class Session {
   /** Listen for other writers. */
   connect() {
     if (this.events || this.foreign) return;
-    const events = new EventSource("/api/events");
+    const events = new EventSource(libApi("/events"));
     events.onmessage = (e) => {
       const msg = JSON.parse(e.data) as { branch?: string; from?: string };
       if (msg.branch && msg.from !== this.clientId) void this.sync(msg.branch);

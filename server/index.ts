@@ -1,42 +1,35 @@
 /**
  * The local server. It does three small things:
- *   - relays library updates between replicas (tabs, people, agents) and keeps a copy on disk
+ *   - relays each library's updates between replicas (tabs, people, agents) and keeps a copy on disk
  *   - holds the API key and proxies model calls
- *   - exposes the op API over HTTP, so an outside agent can read and edit the tree
+ *   - exposes the op API over HTTP, so an outside agent can read and edit a library
  * In development it also hosts Vite; in production it serves the built files.
  *
- * The whole library is one database: /api/tree, /api/ops, /api/sync… act on all of it, and
- * /api/nodes/<id>/… on one node and what is under it. See README.md for the list.
+ * There are several libraries, each a database of its own (libraries.ts): /api/libraries lists,
+ * makes, renames and deletes them, and /api/l/<id>/… acts on one of them (bundle.ts), the same
+ * routes without the prefix on the first. See README.md for the list.
  */
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { userInfo } from "node:os";
 import { extname, join, resolve } from "node:path";
-import { VersionVector } from "loro-crdt";
-import { Doc, OpError, descendants, type NodeId, type Op } from "../src/core/model";
-import { encodeVV, history } from "../src/core/repo";
-import { FormatError, serializeDoc } from "../src/core/format";
-import { IMPORT_MAX, importTree, writeSeed } from "../src/core/seed";
-import { slugify } from "../src/core/text";
+import { writeSeed } from "../src/core/seed";
 import { mockLLM } from "../src/llm/mock";
 import { LLMUnavailable, type JsonReq, type LLM, type Req, type TurnReq } from "../src/llm/types";
 import { seed } from "../src/seed/tree";
+import { Bundle, type Shared } from "./bundle";
 import { claudeLLM, describeError } from "./claude";
-import { LibraryStore, validBranch } from "./library";
+import { Libraries, NeedsMigration, importStarters } from "./libraries";
+import { lockHolder, takeLock } from "./lock";
 import { SubscriptionError, queryPlanUsage, subscriptionLLM } from "./subscription";
 import { usage, withMockUsage } from "./usage";
-import { HttpError, ROOT as root, abortOnClose, dataDir, readBody, readJson, sendJson as json } from "./util";
+import { HttpError, ROOT as root, abortOnClose, dataDir, readJson, sendJson as json } from "./util";
 import { applyWebPolicy, webConfig } from "./web";
 import { WikiClient, validContact, wiki, wikiLang } from "./wiki";
 import { makeMockWikiFetch } from "./wikiMock";
 import { wikiOff, wikiRoutes } from "./wikiRoutes";
 import { embedder } from "./embed";
-import { Jobs } from "./links/jobs";
-import { NodeIndex } from "./links/nodeIndex";
-import { PendingStore } from "./links/pending";
-import { JOB_CALLS, Reviewer } from "./links/review";
-import { linkRoutes } from "./links/routes";
-import { Linker } from "./links/scan";
+import { JOB_CALLS } from "./links/review";
 
 const PORT = Number(process.env.PORT ?? 4747);
 // Host names the dev server answers to besides localhost. Tailscale names are allowed so that
@@ -103,67 +96,66 @@ const wikiState = { mode: wikiMode, lang: wikiLang(process.env.IE_WIKI_LANG), co
 /** A short reason for a failed model call, whichever provider made it. */
 const explain = (err: unknown) => (err instanceof SubscriptionError ? { status: err.status, message: err.message } : describeError(err));
 
-// ---- the library on disk ----
+// ---- the libraries on disk ----
 
 mkdirSync(DATA, { recursive: true });
 const started = performance.now();
-const store = new LibraryStore(DATA).open();
-store.seedFirst((doc) => writeSeed(doc, readFileSync(join(root, "src/seed/prompt.txt"), "utf8"), seed));
-store.importLibrary(LIBRARY);
-const startMs = Math.round(performance.now() - started);
-// Writes are gathered before they go to disk; whatever is waiting goes on the way out.
-process.on("exit", () => store.flush());
-for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => process.exit(0));
-
-const vvHeader = (doc: Doc) => encodeVV(doc.loro.version().toJSON());
-
-// ---- link discovery (server/links) ----
-
-// The embedding model is loaded on first use, in a worker thread; IE_EMBED=off turns it off, and
-// scanning then matches by text alone. Pending suggestions are derived data, kept beside the library.
-const embed = process.env.IE_EMBED === "off" ? null : embedder();
-const nodeIndex = new NodeIndex(() => store.main, { file: join(DATA, "vectors", "nodes"), embedder: embed });
-nodeIndex.watch(store.main);
-let linker: Linker | null = null;
-const getLinker = () => (linker ??= new Linker({ doc: () => store.main, wiki: wikiClient, embedder: embed, index: nodeIndex }));
-const pending = new PendingStore(join(DATA, "links", "pending.json"));
-process.on("exit", () => pending.flush());
-// The link reviewer asks the configured model (no tools, structured verdicts); IE_REVIEW_CALLS caps a background job's calls.
-const reviewer = new Reviewer({ llm: () => llm, wiki: wikiClient, pending, snap: () => store.main.snap() });
-const reviewCalls = Math.max(1, Number(process.env.IE_REVIEW_CALLS) || JOB_CALLS);
-const jobs = new Jobs({
-  snap: () => store.main.snap(),
-  linker: getLinker,
-  wiki: wikiClient,
-  index: nodeIndex,
-  pending,
-  announce: (state) => announce({ linkJob: state }),
-  reviewer,
-  reviewCalls,
-});
-const handleLinks = linkRoutes({ main: () => store.main, linker: getLinker, index: nodeIndex, pending, jobs, embedder: embed, reviewer, wrote: () => wrote("main") });
-
-// ---- live notifications ----
-
-const listeners = new Set<ServerResponse>();
-function announce(message: Record<string, unknown>) {
-  const line = `data: ${JSON.stringify(message)}\n\n`;
-  for (const res of listeners) res.write(line);
+// A data directory in an older layout is never opened, nor migrated without being asked: the
+// migration (npm run migrate) has a dry run and verifies what it writes.
+const held = lockHolder(DATA);
+if (held) {
+  console.error(`Another server (pid ${held.pid}${held.port ? `, port ${held.port}` : ""}) has ${DATA} open; stop it first, or set IE_DATA to another directory.`);
+  process.exit(1);
 }
+const libraries = new Libraries(DATA);
+try {
+  libraries.open((doc) => {
+    writeSeed(doc, readFileSync(join(root, "src/seed/prompt.txt"), "utf8"), seed);
+    console.log("seeded the first tree from src/seed");
+    importStarters(doc, LIBRARY);
+  });
+} catch (err) {
+  if (!(err instanceof NeedsMigration)) throw err;
+  console.error(err.message);
+  process.exit(1);
+}
+takeLock(DATA, PORT);
+const startMs = Math.round(performance.now() - started);
+
+// ---- each library's link discovery, notices and routes (server/bundle.ts) ----
+
+// The embedding model is loaded on first use, in a worker thread shared by every library;
+// IE_EMBED=off turns it off, and scanning then matches by text alone.
+const embed = process.env.IE_EMBED === "off" ? null : embedder();
+const shared: Shared = {
+  llm: () => llm,
+  wiki: wikiClient,
+  embed,
+  reviewCalls: Math.max(1, Number(process.env.IE_REVIEW_CALLS) || JOB_CALLS),
+  user: USER,
+  state: () => ({
+    user: USER,
+    llm: llm?.kind ?? "off",
+    model: llm?.model ?? null,
+    wiki: wikiState,
+    embed: embed ? (process.env.IE_EMBED === "fake" ? "fake" : "on") : "off",
+    web: { on: web.on, searches: web.searches, fetches: web.fetches },
+    libraries: libraries.list(),
+  }),
+};
+const bundles = new Map<string, Bundle>();
+for (const [id, store] of libraries.stores) bundles.set(id, new Bundle(store, shared));
+// Writes are gathered before they go to disk; whatever is waiting goes on the way out.
+process.on("exit", () => {
+  for (const b of bundles.values()) b.flush();
+});
+for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => process.exit(0));
 
 // ---- http plumbing ----
 
-/** Largest replica update a sync accepts. */
-const SYNC_MAX = 256 * 1024 * 1024;
 function needLLM(): LLM {
   if (!llm) throw new LLMUnavailable();
   return llm;
-}
-
-/** A server-side write to a branch: saved shortly and announced to every replica. */
-function wrote(branch: string) {
-  store.saveSoon(branch);
-  announce({ branch, from: "api" });
 }
 
 async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
@@ -171,20 +163,16 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
   const [a, b] = parts;
   const method = req.method ?? "GET";
 
-  if (a === "state" && method === "GET") {
-    return json(res, 200, {
-      user: USER,
-      llm: llm?.kind ?? "off",
-      model: llm?.model ?? null,
-      library: store.id,
-      branches: [...store.branches].map(([name, doc]) => ({ name, vv: vvHeader(doc) })),
-      migrated: store.migrated(),
-      wiki: wikiState,
-      embed: embed ? (process.env.IE_EMBED === "fake" ? "fake" : "on") : "off",
-      web: { on: web.on, searches: web.searches, fetches: web.fetches },
-      linkJob: jobs.current,
-    });
+  // One library: /api/l/<id>/…, everything that reads or writes a library's content.
+  if (a === "l") {
+    const bundle = b ? bundles.get(b) : undefined;
+    if (!bundle) return json(res, 404, { error: `no library ${b ?? ""}` });
+    const rest = parts.slice(2);
+    if (await bundle.handle(req, res, rebased(url, rest), rest)) return;
+    return json(res, 404, { error: "not found" });
   }
+
+  if (a === "libraries") return librariesApi(req, res, parts.slice(1));
 
   if (a === "usage" && method === "GET") return json(res, 200, usage.summary());
 
@@ -227,148 +215,56 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
     }
   }
 
-  if (a === "nodes") return nodeApi(req, res, url, parts.slice(1));
-  if (["events", "branch", "sync", "tree", "ops"].includes(a)) return libraryApi(req, res, url, a, b);
   if (await handleWiki(req, res, url)) return;
-  if (url.pathname.startsWith("/api/links/")) nodeIndex.activate();
-  if (await handleLinks(req, res, url)) return;
+
+  // Without a library named, the first one: so `curl /api/tree` still reads a library.
+  const first = bundles.get(libraries.first().id)!;
+  if (await first.handle(req, res, url, parts)) return;
 
   json(res, 404, { error: "not found" });
 }
 
-/** The library as a whole: what replicas use, and the op API. */
-async function libraryApi(req: IncomingMessage, res: ServerResponse, url: URL, action: string, b: string | undefined) {
-  const method = req.method ?? "GET";
-  const name = b || "main";
-  if (!validBranch(name)) return json(res, 400, { error: "not a branch name" });
-
-  if (action === "events" && method === "GET") {
-    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-    res.write(": connected\n\n");
-    listeners.add(res);
-    req.on("close", () => listeners.delete(res));
-    return;
-  }
-
-  // A replica fetches a branch whole.
-  if (action === "branch" && method === "GET") {
-    const doc = store.branches.get(name);
-    if (!doc) return json(res, 404, { error: `no such branch: ${name}` });
-    res.writeHead(200, { "content-type": "application/octet-stream", "x-vv": vvHeader(doc), "x-library": store.id });
-    return res.end(doc.snapshotBytes());
-  }
-
-  // A replica pushes what it has and gets back what it lacks. Request header x-vv is the
-  // replica's version; the response carries the server's. A replica must name the library it
-  // belongs to: bytes from another library (an old tab, a browser that outlived its data
-  // directory) would add a second root to this one. A beacon cannot send headers, so it names
-  // the library in the query.
-  if (action === "sync" && method === "POST") {
-    if ((req.headers["x-library"] ?? url.searchParams.get("library")) !== store.id) {
-      return json(res, 409, { error: "This page belongs to a different library than the server has now. Reload the page.", library: store.id });
-    }
-    const bytes = await readBody(req, SYNC_MAX);
-    let doc = store.branches.get(name);
-    const before = doc ? vvHeader(doc) : "";
-    if (!doc) {
-      if (!bytes.length) return json(res, 404, { error: `no such branch: ${name}` });
-      doc = Doc.load(bytes, "server");
-      if (doc.libraryId !== store.id) return json(res, 409, { error: "that branch is not of this library" });
-      store.addBranch(name, doc);
-    } else if (bytes.length) {
-      doc.loro.import(bytes);
-      doc.touch();
-    }
-    if (vvHeader(doc) !== before) {
-      store.saveSoon(name);
-      announce({ branch: name, from: String(req.headers["x-client"] ?? "") });
-    }
-    const theirs = req.headers["x-vv"] ? new Map(JSON.parse(String(req.headers["x-vv"]))) : new Map();
-    const update = doc.loro.export({ mode: "update", from: new VersionVector(theirs as never) });
-    res.writeHead(200, { "content-type": "application/octet-stream", "x-vv": vvHeader(doc) });
-    return res.end(update);
-  }
-
-  // For outside agents: read the library as JSON…
-  if (action === "tree" && method === "GET") {
-    const doc = store.branches.get(name);
-    if (!doc) return json(res, 404, { error: `no such branch: ${name}` });
-    return json(res, 200, { ...doc.snap(), conflicts: doc.conflicts(), history: history(doc).slice(0, 50) });
-  }
-
-  // …and write to it with the same ops everyone else uses. Node ids are the library's, so one
-  // batch can work anywhere in it (moving a node from one place to another is a move).
-  if (action === "ops" && method === "POST") return opsApi(req, res, name);
-
-  json(res, 404, { error: "not found" });
-}
-
-async function opsApi(req: IncomingMessage, res: ServerResponse, name: string) {
-  const doc = store.branches.get(name);
-  if (!doc) return json(res, 404, { error: `no such branch: ${name}` });
-  const input = await readJson<{ ops: Op[]; message?: string; author?: string; actor?: "human" | "llm" }>(req);
-  if (!Array.isArray(input.ops)) return json(res, 400, { error: "expected { ops: [...] }" });
-  const author = typeof input.author === "string" ? input.author.slice(0, 100) : "api";
-  try {
-    return json(res, 200, doc.as(author, () => doc.apply(input.ops, input.message ?? "Edit over HTTP", { actor: input.actor ?? "llm", tag: "api" })));
-  } catch (err) {
-    if (err instanceof OpError) return json(res, 422, { error: err.message });
-    throw err;
-  } finally {
-    wrote(name);
-  }
+/** The URL a library's routes see: /api/<rest>, its query kept. */
+function rebased(url: URL, rest: string[]): URL {
+  const out = new URL(url);
+  out.pathname = `/api/${rest.map(encodeURIComponent).join("/")}`;
+  return out;
 }
 
 /**
- * One node and everything under it, by its id: the subtree as JSON with its conflicts, the text
- * format as a download, or a file in the text format imported under it. An import is an ordinary
- * commit on main; the browser makes the same commits in its own replica.
+ * The libraries:
+ *   GET    /api/libraries              → { libraries: [{ id, title, created, nodes, branches }] }, in order
+ *   POST   /api/libraries { title }    → 201 { library }: a new library, its root alone, at the end
+ *   PATCH  /api/libraries/<id> { title } → { library }: renamed (a commit on its root's title)
+ *   DELETE /api/libraries/<id>         → { deleted, movedTo }: moved aside whole; never the last one
  */
-async function nodeApi(req: IncomingMessage, res: ServerResponse, url: URL, parts: string[]) {
+async function librariesApi(req: IncomingMessage, res: ServerResponse, parts: string[]) {
   const method = req.method ?? "GET";
-  const [id, action, branch] = parts as [NodeId, string | undefined, string | undefined];
-  const name = branch || "main";
-  if (!validBranch(name)) return json(res, 400, { error: "not a branch name" });
-  const doc = store.branches.get(name);
-  if (!doc) return json(res, 404, { error: `no such branch: ${name}` });
-  const snap = doc.snap();
-  if (!id || !snap.nodes[id]) return json(res, 404, { error: `no such node: ${id ?? ""}` });
-
-  // GET /api/nodes/<id>/tree[/<branch>]: the subtree, as /api/tree returns the library.
-  if (action === "tree" && method === "GET") {
-    const ids = new Set([id, ...descendants(snap, id)]);
-    return json(res, 200, { root: id, nodes: Object.fromEntries([...ids].map((x) => [x, snap.nodes[x]])), conflicts: doc.conflicts().filter((c) => [c.node, c.parent].some((x) => x && ids.has(x))) });
+  const [id] = parts;
+  const info = (lib: string) => libraries.list().find((l) => l.id === lib);
+  if (!id && method === "GET") return json(res, 200, { libraries: libraries.list() });
+  if (!id && method === "POST") {
+    const input = await readJson<{ title?: unknown }>(req);
+    const store = libraries.create(input.title as string);
+    bundles.set(store.id, new Bundle(store, shared));
+    console.log(`libraries: made “${store.title}” (${store.id})`);
+    return json(res, 201, { library: info(store.id) });
   }
-  // GET /api/nodes/<id>/export[/<branch>]: the text format, as a download.
-  if (action === "export" && method === "GET") {
-    const { text, skipped } = serializeDoc(snap, id);
-    res.writeHead(200, {
-      "content-type": "text/markdown; charset=utf-8",
-      "content-disposition": `attachment; filename="${slugify(snap.nodes[id].title) || "untitled"}${name === "main" ? "" : `-${encodeURIComponent(name)}`}.md"`,
-      "x-skipped": JSON.stringify(skipped),
-    });
-    return res.end(text);
+  if (id && parts.length === 1 && (method === "PATCH" || method === "POST")) {
+    const input = await readJson<{ title?: unknown }>(req);
+    const store = libraries.rename(id, input.title as string);
+    bundles.get(id)?.announce({ branch: "main", from: "api" });
+    return json(res, 200, { library: info(store.id) });
   }
-  // POST /api/nodes/<id>/import?name=file.md, with the file as the body: a new last child of the node (on main).
-  if (action === "import" && !branch && method === "POST") {
-    const file = (url.searchParams.get("name") ?? "").replace(/^.*[\\/]/, "").slice(0, 200) || "import.md";
-    let text: string;
-    try {
-      text = (await readBody(req, IMPORT_MAX)).toString("utf8");
-    } catch (err) {
-      if (err instanceof HttpError && err.status === 413) return json(res, 413, { error: `the file is too large to import (the limit is ${IMPORT_MAX / 1024 / 1024} MB)` });
-      throw err;
-    }
-    const main = store.main;
-    if (!main.snap().nodes[id]) return json(res, 404, { error: `no such node on main: ${id}` });
-    try {
-      const top = importTree(main, text, file, { creator: USER, parent: id });
-      wrote("main");
-      return json(res, 201, { node: top, title: main.snap().nodes[top].title });
-    } catch (err) {
-      if (err instanceof FormatError) return json(res, 422, { error: err.message, problems: err.problems });
-      throw err;
-    }
+  if (id && parts.length === 1 && method === "DELETE") {
+    const bundle = bundles.get(id);
+    if (!bundle) return json(res, 404, { error: `no library ${id}` });
+    if (libraries.stores.size <= 1) return json(res, 409, { error: "the last library cannot be deleted" });
+    bundle.close();
+    const movedTo = libraries.remove(id);
+    bundles.delete(id);
+    console.log(`libraries: deleted ${id}; its files are in ${movedTo}`);
+    return json(res, 200, { deleted: id, movedTo });
   }
   json(res, 404, { error: "not found" });
 }
@@ -438,9 +334,9 @@ createServer(async (req, res) => {
     serveStatic(res, path);
   }
 }).listen(PORT, "127.0.0.1", () => {
-  const nodes = Object.keys(store.main.snap().nodes).length;
   console.log(`Infinispand  http://localhost:${PORT}   model: ${llm ? `${llm.kind}${llm.model ? `: ${llm.model}` : ""}` : "off (set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN to generate)"}   data: ${DATA}`);
-  console.log(`library: ${store.titles().length} top-level sections, ${nodes} nodes, opened in ${startMs} ms`);
+  for (const l of libraries.list()) console.log(`library “${l.title}” (/l/${l.id}): ${libraries.get(l.id)!.titles().length} top-level sections, ${l.nodes} nodes`);
+  console.log(`${libraries.stores.size} librar${libraries.stores.size === 1 ? "y" : "ies"} opened in ${startMs} ms`);
   console.log(`web research: ${web.on ? `on (at most ${web.searches} searches and ${web.fetches} pages read per request)` : `off${web.why ? ` (${web.why})` : ""}`}`);
   console.log(
     `wikipedia: ${wikiMode === "live" ? `live (${wikiState.lang}.wikipedia.org, ${wikiState.contact ? "with" : "without"} a contact)` : wikiMode === "mock" ? "mock (fixtures, no network)" : "off"}`,

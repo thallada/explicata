@@ -13,10 +13,10 @@ import {
   staleness, topOf, tops, type NodeId, type Op, type Snap,
 } from "../core/model";
 import { FormatError, serializeDoc } from "../core/format";
-import { address, resolve } from "../core/address";
+import { address, inLibrary, resolve, splitLibrary } from "../core/address";
 import { IMPORT_MAX, importTree } from "../core/seed";
 import {
-  Repo, at, decodeVV, healAnchors, history, reopenConflict, resolveConflict, revertSubtreeTo, revertTo, touched, vvIncludes, type Commit,
+  Repo, at, healAnchors, history, reopenConflict, resolveConflict, revertSubtreeTo, revertTo, touched, type Commit,
   type MergeReport,
 } from "../core/repo";
 import { clip, formFor, plain, rangeAt, sentences, slugify, words, type Form, type Range } from "../core/text";
@@ -32,7 +32,7 @@ import {
 } from "../llm/tasks";
 import type { LLM } from "../llm/types";
 import { DEFAULT_LIMITS, wantsResearch } from "../llm/web";
-import { idbGet, idbKeys, idbSet } from "./idb";
+import { createLibrary, deleteLibrary, libApi, listLibraries, renameLibrary, setLibrary, type LibraryInfo } from "./api";
 import { remoteLLM } from "./remote";
 import { Session } from "./session";
 import { refreshAfterCalls } from "./usage";
@@ -138,19 +138,6 @@ export interface Sample {
   ms: number;
   /** The key's time stamp, to match the browser's own measure of it. */
   at?: number;
-}
-
-/** A replica of a document from before the library, holding edits the server never received. */
-interface OldReplica {
-  slug: string;
-  title: string;
-  branch: string;
-  bytes: Uint8Array;
-}
-
-/** What the server recorded when it built the library from separate documents. */
-interface Migrated {
-  docs: { slug: string; uid: string | null; title: string; versions: Record<string, string> }[];
 }
 
 // ---- store ----
@@ -289,7 +276,9 @@ class Store {
   /** Set at a keypress; cleared when the resulting frame has been painted. */
   t0: { what: string; at: number } | null = null;
   /** Replicas of pre-library documents whose edits never reached the server. */
-  oldReplicas: OldReplica[] = [];
+  /** The library this page holds (its id, as in its address), and every library the server has, as it last said. */
+  library = "";
+  libraries: LibraryInfo[] = [];
 
   /** The panes as a forest of forks (forks.ts); its focused branch is `trail`, and `paneAt` is the pane on it that holds the focus: the active pane. */
   forest: Forest<PaneRef, Back> = { trees: [], at: 0 };
@@ -1112,15 +1101,41 @@ class Store {
 
   async boot() {
     try {
-      let state: { user: string; llm: LLM["kind"]; model: string | null; library?: string; branches?: { name: string }[]; migrated?: Migrated | null; wiki?: WikiConfig; linkJob?: JobState | null; web?: { on: boolean; searches: number; fetches: number } } | null = null;
+      // The address names the library; an address without one (`/`, or one from before libraries)
+      // is read in the library last used here, if the server still has it, else in the first.
+      const { library: named, part } = splitLibrary(location.pathname);
+      let library = named;
+      if (!library) {
+        let list: LibraryInfo[] | null = null;
+        try {
+          list = await listLibraries();
+        } catch {
+          /* offline: fall back to what is stored locally */
+        }
+        const last = lsGet<string | null>("ie:library", null);
+        library = list ? ((list.find((l) => l.id === last) ?? list[0])?.id ?? null) : last;
+        if (!library) throw new Error("Could not load a library: the server is not reachable and nothing is stored in this browser.");
+        window.history.replaceState(null, "", inLibrary(library, part));
+      }
+      setLibrary(library);
+      this.library = library;
+      let state: { user: string; llm: LLM["kind"]; model: string | null; library?: string; title?: string; libraries?: LibraryInfo[]; branches?: { name: string }[]; wiki?: WikiConfig; linkJob?: JobState | null; web?: { on: boolean; searches: number; fetches: number } } | null = null;
       try {
-        const res = await fetch("/api/state");
+        const res = await fetch(libApi("/state"));
+        if (res.status === 404) {
+          // Not a library of this server (deleted, or from another data directory): to the first one.
+          if (lsGet("ie:library", null) === library) lsSet("ie:library", null);
+          sessionStorage.setItem("ie:flash", `There is no library ${library} here; this is the first one.`);
+          location.replace("/");
+          return;
+        }
         if (res.ok) state = await res.json();
       } catch {
         /* offline: fall back to what is stored locally */
       }
       if (state && !state.library) throw new Error("This page is newer than the server it came from. Restart the server (npm run dev) and reload.");
       this.online = !!state;
+      this.libraries = state?.libraries ?? [];
       if (state?.wiki) this.wiki = state.wiki;
       this.web = state?.web ?? { on: false, searches: 0, fetches: 0 };
       if (state?.linkJob?.state === "running") this.links.job = state.linkJob;
@@ -1132,8 +1147,6 @@ class Store {
       });
       this.user = lsGet("ie:user", state?.user ?? "you");
       if (state) this.llm = refreshAfterCalls(remoteLLM(state.llm, state.model ?? undefined));
-      const library = state?.library ?? lsGet<string | null>("ie:library", null);
-      if (!library) throw new Error("Could not load the library: the server is not reachable and nothing is stored in this browser.");
       lsSet("ie:library", library);
 
       this.session = new Session(library, this.user, clientId, {
@@ -1153,16 +1166,26 @@ class Store {
         foreign: () => this.say("The server now holds a different library than this page. Edits here are no longer sent; reload the page."),
         message: (msg) => {
           if (msg.linkJob) this.jobUpdate(msg.linkJob as JobState);
+          if (msg.library === "deleted") {
+            this.session.foreign = true;
+            this.session.disconnect();
+            this.say("This library has been deleted (the server moved its files aside). Edits here are no longer sent; go to / for another library.");
+          }
         },
       });
       await this.session.load((state?.branches ?? []).map((b) => b.name), this.online);
-      const branch = lsGet("ie:branch", "main");
+      const branch = lsGet(this.branchKey(), "main");
       this.repo.current = this.repo.branches.has(branch) ? branch : "main";
       this.restoreView();
       this.undoManager();
-      this.navigate(location.pathname, "replace");
+      this.navigate(splitLibrary(location.pathname).part, "replace");
       this.ready = true;
       this.prefetchLinks(this.focus.node);
+      const flash = sessionStorage.getItem("ie:flash");
+      if (flash) {
+        sessionStorage.removeItem("ie:flash");
+        this.say(flash);
+      }
       this.emit();
       // The first commit hashes the whole library once (later ones only the path to what they
       // changed); do that while the page is idle rather than on the reader's first edit.
@@ -1177,52 +1200,91 @@ class Store {
         this.session.connect();
       }
       // Back and forward move between places in the library.
-      addEventListener("popstate", () => this.navigate(location.pathname, "none"));
-      if (state?.migrated) void this.checkOldReplicas(state.migrated);
+      addEventListener("popstate", () => {
+        const at = splitLibrary(location.pathname);
+        // Another library's address (one this page did not push): that library, by a page load.
+        if (at.library && at.library !== this.library) location.reload();
+        else this.navigate(at.part, "none");
+      });
     } catch (err) {
       this.fatal = err instanceof Error ? err.message : String(err);
       this.emit();
     }
   }
 
-  /**
-   * The version that kept each document separately stored its replicas under `doc:<uid>:…`. They
-   * are never loaded into the library, but one may hold edits made offline that never reached the
-   * server: compare each with what the server had when it built the library, and say so if it is
-   * ahead.
-   */
-  private async checkOldReplicas(migrated: Migrated) {
-    const flag = `lib:${this.session.library}:old-checked`;
-    if (await idbGet(flag)) return;
-    const keys = await idbKeys();
-    const found: OldReplica[] = [];
-    const check = async (key: string, entry: Migrated["docs"][number] | undefined, branch: string) => {
-      const bytes = await idbGet<Uint8Array>(key);
-      if (!bytes || !entry) return;
-      const had = entry.versions[branch];
-      const mine = Doc.load(bytes, this.user).loro.version().toJSON();
-      if (!had || !vvIncludes(decodeVV(had) as never, mine)) found.push({ slug: entry.slug, title: entry.title, branch, bytes });
-    };
-    for (const key of keys) {
-      const m = /^doc:([0-9a-f]+):branch:(.+)$/.exec(key);
-      if (m) await check(key, migrated.docs.find((d) => d.uid === m[1]), m[2]);
-    }
-    this.oldReplicas = found;
-    if (!found.length) return void idbSet(flag, true);
-    const names = found.map((r) => `“${clip(r.title, 30)}”${r.branch === "main" ? "" : ` (${r.branch})`}`).join(", ");
-    this.say(`This browser holds edits made before the library existed that never reached the server: ${names}. They were not merged. :/recover saves each as a .md file.`);
+  // ---- libraries ----
+
+  /** The libraries the server has, in order (also kept in `libraries`). */
+  async listLibraries(): Promise<LibraryInfo[]> {
+    this.libraries = await listLibraries();
+    this.emit();
+    return this.libraries;
   }
 
-  /** :/recover: save each old replica that is ahead of the server as a file, then stop mentioning them. */
-  recover() {
-    if (!this.oldReplicas.length) return this.say("Nothing to recover: no old replica in this browser holds unsent edits.");
-    for (const r of this.oldReplicas) {
-      const { text } = serializeDoc(Doc.load(r.bytes, this.user).snap());
-      download(`${r.slug}${r.branch === "main" ? "" : `-${r.branch.replace(/[^\w-]+/g, "-")}`}-unsent.md`, text);
+  /** Open another library: a page load, so nothing of this one stays in memory. */
+  switchLibrary(id: string) {
+    this.session?.flush();
+    location.assign(inLibrary(id, "/"));
+  }
+
+  /** A new library, with its root alone; `open` switches to it. */
+  async createLibrary(title: string, open = false): Promise<LibraryInfo | null> {
+    try {
+      const lib = await createLibrary(title);
+      await this.listLibraries();
+      if (open) this.switchLibrary(lib.id);
+      else this.say(`Made the library “${lib.title}”.`);
+      return lib;
+    } catch (err) {
+      this.say(`Could not make the library: ${(err as Error).message}`);
+      return null;
     }
-    this.say(`Saved ${this.oldReplicas.length} file${this.oldReplicas.length > 1 ? "s" : ""}; :/import brings one in under the node you are on.`);
-    this.oldReplicas = [];
-    void idbSet(`lib:${this.session.library}:old-checked`, true);
+  }
+
+  /** Rename a library (an ordinary commit on its root's title, made by the server). */
+  async renameLibrary(id: string, title: string): Promise<boolean> {
+    try {
+      const lib = await renameLibrary(id, title);
+      await this.listLibraries();
+      this.say(`Renamed the library to “${lib.title}”.`);
+      return true;
+    } catch (err) {
+      this.say(`Could not rename the library: ${(err as Error).message}`);
+      return false;
+    }
+  }
+
+  /** Delete a library: the server moves its files aside; the last one cannot go. Deleting this one goes to the first other. */
+  async deleteLibrary(id: string): Promise<boolean> {
+    try {
+      await deleteLibrary(id);
+      const left = await this.listLibraries();
+      if (id === this.library) {
+        sessionStorage.setItem("ie:flash", "Deleted the library; its files were moved aside on the server.");
+        this.switchLibrary(left[0].id);
+      } else this.say("Deleted the library; its files were moved aside on the server.");
+      return true;
+    } catch (err) {
+      this.say(`Could not delete the library: ${(err as Error).message}`);
+      return false;
+    }
+  }
+
+  /**
+   * :/library: with no name, list the libraries; with a name (or id), switch to it; `new <name>`
+   * makes one and switches to it.
+   */
+  async libraryCommand(arg: string) {
+    const list = await this.listLibraries().catch(() => this.libraries);
+    const words = arg.trim();
+    if (!words) return this.say(`Libraries: ${list.map((l) => `${l.id === this.library ? "▸ " : ""}${l.title} (${l.nodes} nodes)`).join(" · ")}. :/library <name> opens one, :/library new <name> makes one.`);
+    const made = /^new\s+(.+)$/.exec(words);
+    if (made) return void this.createLibrary(made[1], true);
+    const lower = words.toLowerCase();
+    const hit = list.find((l) => l.id === words) ?? list.find((l) => l.title.toLowerCase() === lower) ?? list.find((l) => l.title.toLowerCase().startsWith(lower));
+    if (!hit) return this.say(`No library “${words}”. :/library lists them.`);
+    if (hit.id === this.library) return this.say(`This is “${hit.title}”.`);
+    this.switchLibrary(hit.id);
   }
 
   /** The window's title: the article on the column's article page, else the node the reader is on. */
@@ -1242,8 +1304,12 @@ class Store {
     return this.session.synced();
   }
 
+  /** Views and the branch are kept per library, so each library opens where it was left. */
   private viewKey(branch = this.repo.current) {
-    return `ie:view:${branch}`;
+    return `ie:view:${this.library}:${branch}`;
+  }
+  private branchKey() {
+    return `ie:branch:${this.library}`;
   }
   private restoreView() {
     const s = this.doc.snap();
@@ -1280,11 +1346,11 @@ class Store {
 
   /** The address of what is on screen: the focused node, so a reload, a link or Back lands on it again. */
   here(): string {
-    if (!this.panes && this.colWiki) return `/w/${this.colWiki.lang}/${encodeURIComponent(this.colWiki.title.replace(/ /g, "_"))}`;
+    if (!this.panes && this.colWiki) return inLibrary(this.library, `/w/${this.colWiki.lang}/${encodeURIComponent(this.colWiki.title.replace(/ /g, "_"))}`);
     const s = this.snap;
     // An annotation has no address of its own: the address stays on what shows its article.
     if (inArticles(s, this.focus.node)) return location.pathname;
-    return address(s, this.focus.node);
+    return inLibrary(this.library, address(s, this.focus.node));
   }
 
   /**
@@ -1306,7 +1372,7 @@ class Store {
     else this.addressTimer = setTimeout(write, 250);
   }
 
-  /** Show what a path names: on boot, and on Back and Forward. */
+  /** Show what a path within the library names (`/`, `/n/<id>`, `/w/<lang>/<title>`): on boot, and on Back and Forward. */
   navigate(path: string, history: "replace" | "none") {
     const s = this.snap;
     // An article page of the column has an address of its own, so Back returns to it and from it.
@@ -2181,6 +2247,7 @@ class Store {
         this.branchFrom = null;
       },
       switch: () => this.switchBranch(arg),
+      library: () => void this.libraryCommand(arg),
       merge: () => this.mergeFrom(arg),
       user: () => {
         this.user = arg || this.user;
@@ -2196,7 +2263,6 @@ class Store {
       duplicate: () => this.duplicateNode(arg),
       export: () => this.exportNode(),
       import: () => this.pickFile(),
-      recover: () => this.recover(),
       link: () => this.linkTo(arg),
       unlink: () => this.unlink(),
       autolink: () => this.setAutolink(arg),
@@ -3416,7 +3482,7 @@ class Store {
     if (!this.repo.branches.has(name)) return this.say(`No branch named ${name}.`);
     this.preview = null;
     this.repo.switch(name);
-    lsSet("ie:branch", name);
+    lsSet(this.branchKey(), name);
     this.restoreView();
     // Undo covers everything done on this branch from here on.
     this.undoManager();

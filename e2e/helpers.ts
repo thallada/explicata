@@ -42,9 +42,20 @@ export async function nodeAt(page: Page, ...path: string[]): Promise<string> {
   return find(s, ...path);
 }
 
-/** Go to the address of the section at these titles from the library root (none: the library, `/`), and wait for the page. */
+/** The id of the library the tests share: the server's first (what the unprefixed routes act on). */
+export async function libraryId(page: Page): Promise<string> {
+  return (await (await page.request.get("/api/state")).json()).library;
+}
+
+/** An address in the shared library: `/l/<id>` for its root, then a path within it (`/n/<node id>`, `/w/en/Octopus`). */
+export async function libraryPath(page: Page, part = "/"): Promise<string> {
+  const base = `/l/${await libraryId(page)}`;
+  return part === "/" ? base : base + part;
+}
+
+/** Go to the address of the section at these titles from the library root (none: the library, `/l/<id>`), and wait for the page. */
 export async function openAt(page: Page, ...path: string[]) {
-  await page.goto(path.length ? `/n/${encodeURIComponent(await nodeAt(page, ...path))}` : "/");
+  await page.goto(await libraryPath(page, path.length ? `/n/${encodeURIComponent(await nodeAt(page, ...path))}` : "/"));
   await page.waitForSelector("article");
 }
 
@@ -61,12 +72,12 @@ export async function openPage(page: Page, ...path: string[]) {
 }
 
 /**
- * Go somewhere: an address as it is (`/`, `/w/en/Octopus`), or a top-level section by its title,
- * opened as the page (openPage). Does not wait for the page.
+ * Go somewhere: an address in the shared library (`/` its root, `/w/en/Octopus`), or a top-level
+ * section by its title, opened as the page (openPage). Does not wait for the page.
  */
 export async function visit(page: Page, where: string) {
-  if (where.startsWith("/")) return void (await page.goto(where));
-  await page.goto(`/n/${encodeURIComponent(await nodeAt(page, where))}`);
+  if (where.startsWith("/")) return void (await page.goto(await libraryPath(page, where)));
+  await page.goto(await libraryPath(page, `/n/${encodeURIComponent(await nodeAt(page, where))}`));
   await page.waitForFunction(() => (globalThis as any).__ie?.ready);
   await hoistHere(page);
 }
@@ -77,7 +88,7 @@ export async function visit(page: Page, where: string) {
  * has the focus.
  */
 export async function addTop(page: Page, title: string, text: string) {
-  await page.goto("/");
+  await page.goto(await libraryPath(page));
   await page.waitForFunction(() => (globalThis as any).__ie?.ready);
   await page.keyboard.press("a");
   await page.keyboard.type(title);

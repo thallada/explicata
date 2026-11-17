@@ -79,7 +79,7 @@ test("hoisting makes one node the whole page; Esc at its top steps out to its pa
   await expect(page).toHaveURL(/\/n\/[^/]+$/);
   // On the root itself, the address is the library's.
   await page.keyboard.press("O");
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/l\/[0-9a-z]+$/);
 });
 
 test("with speculation on, the focused sentence is already being written when it is asked for", async ({ page }) => {

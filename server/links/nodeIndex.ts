@@ -66,6 +66,14 @@ export class NodeIndex {
   }
   private active = false;
 
+  /** Stop keeping the index and write nothing more: the library is being moved aside. */
+  close() {
+    this.active = false;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    this.vectors.detach();
+  }
+
   private schedule() {
     if (this.timer || !this.delay || !this.active) return;
     this.timer = setTimeout(() => {

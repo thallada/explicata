@@ -394,6 +394,11 @@ export class VectorIndex {
 
   // -- persistence --
 
+  /** Write nothing more (its directory is being moved aside). */
+  detach() {
+    this.file = null;
+  }
+
   save() {
     if (!this.file) return;
     const model = this.embedder?.spec.id ?? null;

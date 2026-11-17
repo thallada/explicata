@@ -88,6 +88,7 @@ export const HELP: [string, [string, string][]][] = [
     "The library",
     [
       ["", "everything is a node of one tree, whose root is the library: the first page. Any node can be moved under any other (M, > <), copied (/duplicate), saved to a file (/export) or given a file's tree under it (/import); each acts on the node you are on, with everything under it. The ⋯ menu of any node offers the same"],
+      ["", "there can be several libraries, each a tree of its own with its own address (/l/…): nothing links, moves or is found from one to another (export, then import, carries a tree across). :/library lists them, :/library name opens one, :/library new name makes one"],
     ],
   ],
   [
@@ -121,7 +122,7 @@ export const HELP: [string, [string, string][]][] = [
       ["/duplicate title", "save the node you are on, with everything under it, as a copy just after it (titled \"… (copy)\" unless given one); the copy has the focus"],
       ["/export", "save the node you are on, with everything under it, to a .md file (on the library root, the whole library)"],
       ["/import", "read a .md file into the node you are on, as its last child (on the library root, a new top-level node)"],
-      ["/recover", "save edits this browser made before the library existed, and never sent, as .md files"],
+      ["/library [name]", "list the libraries; with a name, open that library (a page load); /library new name makes one and opens it. Libraries are separate trees: nothing links, moves or is found across them"],
       ["/link target", "link the selection (or the node): w:Title, /Top title/Section (titles from the library root), an address, or a Wikipedia title"],
       ["/unlink", "remove the link on the selection (for good: its words are declined; a note that also links keeps its text), or the node's own target"],
       ["/autolink review|suggest|on|off", "after an edit: the model reviews what was found and links what it approves (review, the default with a model; u undoes, S lists every decision), suggest everything for you to decide (suggest; what review does without a model, or when the model fails or its limit is reached), link the scanner's sure ones unreviewed (on), or look for nothing (off)"],
