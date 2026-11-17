@@ -29,7 +29,8 @@ export const HELP: [string, [string, string][]][] = [
       ["", "a click on a sentence selects it, and a bar over it offers expand · define · why · example · challenge · ask · link, each with its key (on a phone, at the foot of the screen, × puts it away); a drag selects words, a double click a word"],
       ["", "right-click (a long press on a phone) on words, a row, a link, a note or a pane: what can be done with it, Copy first. Shift+right-click is the browser's own menu"],
       ["", "⋯ by a row, a pane's pin, a page's byline or a note (shown when pointed at): the same menu. A stale flag, clicked, offers what to do about it"],
-      ["", "the top bar: the library's name, undo, redo, and menu: jump, history, links, layout and settings. A key named in the status line or a panel's head is a button that presses it"],
+      ["", "the top bar: the library's name (it opens the libraries panel), undo, redo, and menu: libraries, jump, history, links, layout and settings. A key named in the status line or a panel's head is a button that presses it"],
+      ["", "in the libraries panel a click on a row opens that library; its ⋯ (or a right-click) offers open, rename, delete and a new library; a press outside the panel closes it"],
     ],
   ],
   [
@@ -85,10 +86,16 @@ export const HELP: [string, [string, string][]][] = [
     ],
   ],
   [
-    "The library",
+    "Libraries",
     [
       ["", "everything is a node of one tree, whose root is the library: the first page. Any node can be moved under any other (M, > <), copied (/duplicate), saved to a file (/export) or given a file's tree under it (/import); each acts on the node you are on, with everything under it. The ⋯ menu of any node offers the same"],
-      ["", "there can be several libraries, each a tree of its own with its own address (/l/…): nothing links, moves or is found from one to another (export, then import, carries a tree across). :/library lists them, :/library name opens one, :/library new name makes one"],
+      ["", "there can be several libraries, each a tree of its own with its own address (/l/…): nothing links, moves or is found from one to another (export, then import, carries a tree across)"],
+      ["m", "the libraries panel, on the left (so does a click on the library's name in the top bar; m, Esc or a press outside closes it): every library with its size, ● the one open here"],
+      ["j k", "in the panel: move"],
+      ["Enter", "in the panel: open the library (a page load; each library opens where it was left)"],
+      ["n", "in the panel: a new library: type its name, Enter makes it (its root alone) and opens it"],
+      ["r", "in the panel: rename the library (Enter keeps the name, Esc leaves it)"],
+      ["D", "in the panel: delete the library, after y (n keeps it). Its files are moved, unchanged, to libraries/.deleted/ in the server's data folder, from where it can be restored by hand; u cannot. The last library cannot be deleted"],
     ],
   ],
   [
@@ -122,7 +129,7 @@ export const HELP: [string, [string, string][]][] = [
       ["/duplicate title", "save the node you are on, with everything under it, as a copy just after it (titled \"… (copy)\" unless given one); the copy has the focus"],
       ["/export", "save the node you are on, with everything under it, to a .md file (on the library root, the whole library)"],
       ["/import", "read a .md file into the node you are on, as its last child (on the library root, a new top-level node)"],
-      ["/library [name]", "list the libraries; with a name, open that library (a page load); /library new name makes one and opens it. Libraries are separate trees: nothing links, moves or is found across them"],
+      ["/library [name]", "the libraries panel (m); with a name, open that library (a page load); /library new name makes one and opens it"],
       ["/link target", "link the selection (or the node): w:Title, /Top title/Section (titles from the library root), an address, or a Wikipedia title"],
       ["/unlink", "remove the link on the selection (for good: its words are declined; a note that also links keeps its text), or the node's own target"],
       ["/autolink review|suggest|on|off", "after an edit: the model reviews what was found and links what it approves (review, the default with a model; u undoes, S lists every decision), suggest everything for you to decide (suggest; what review does without a model, or when the model fails or its limit is reached), link the scanner's sure ones unreviewed (on), or look for nothing (off)"],
@@ -178,6 +185,12 @@ export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
       store.setMode("normal");
       e.preventDefault();
     }
+    return;
+  }
+
+  // The libraries panel has the keys while it is open, over any other panel.
+  if (store.libs) {
+    if (libsKey(k)) done();
     return;
   }
 
@@ -457,6 +470,62 @@ export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
   done();
 }
 
+/**
+ * Keys in the libraries panel. A deletion waiting for its answer takes only y and n (or Esc); a
+ * name being typed has its own box, which keeps its keys. Returns whether the key was taken.
+ */
+function libsKey(k: string): boolean {
+  const p = store.libs!;
+  if (p.confirm) {
+    switch (k) {
+      case "y":
+        void store.libConfirm();
+        return true;
+      case "n":
+      case "Escape":
+        store.libCancel();
+        return true;
+      default:
+        return false;
+    }
+  }
+  switch (k) {
+    case "j":
+    case "ArrowDown":
+      store.libStep(1);
+      return true;
+    case "k":
+    case "ArrowUp":
+      store.libStep(-1);
+      return true;
+    case "Enter":
+    case "l":
+      store.libOpen();
+      return true;
+    case "n":
+    case "a":
+      store.libEdit("new");
+      return true;
+    case "r":
+      store.libEdit("rename");
+      return true;
+    case "D":
+      store.libDelete();
+      return true;
+    case "Escape":
+    case "m":
+    case "q":
+    case "h":
+      store.closeLibraries();
+      return true;
+    case "?":
+      store.setMode("help");
+      return true;
+    default:
+      return false;
+  }
+}
+
 /** Keys that mean the same on a node and on an aux row. Returns whether the key was taken. */
 function commonKey(k: string, hooks: KeyHooks): boolean {
   switch (k) {
@@ -484,6 +553,9 @@ function commonKey(k: string, hooks: KeyHooks): boolean {
       return true;
     case "g":
       store.openHistory();
+      return true;
+    case "m":
+      store.openLibraries();
       return true;
     case "/":
       store.setMode("jump");

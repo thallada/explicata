@@ -66,7 +66,9 @@ body {
 .app { min-height: 100vh; }
 .loading, .fatal { max-width: 34em; margin: 20vh auto; padding: 0 20px; font-family: var(--sans); color: var(--dim); }
 
-.page { max-width: calc(var(--col) + var(--gap) + var(--margin) + 40px); margin: 0 auto; padding: 44px 20px 30vh; }
+/* The page's widest: the column, its gap and the margin for notes (only the column where no margin fits). */
+:root { --page-w: calc(var(--col) + var(--gap) + var(--margin) + 40px); }
+.page { max-width: var(--page-w); margin: 0 auto; padding: 44px 20px 30vh; }
 article { width: min(100%, var(--col)); }
 
 /* ---- the top of the page ---- */
@@ -160,7 +162,7 @@ article { width: min(100%, var(--col)); }
 
 /* Below the width where a margin fits, notes fall into the column. */
 @media (max-width: 1139px) {
-  .page { max-width: calc(var(--col) + 40px); }
+  :root { --page-w: calc(var(--col) + 40px); }
   .sidenote { float: none; display: block; width: auto; margin: 0.5rem 0 0.7rem 1.75em; padding: 0.4rem 0.8rem; border: 0; border-left: 2px dotted var(--rule); }
 }
 .with-panel .sidenote { float: none; display: block; width: auto; margin: 0.5rem 0 0.7rem 1.75em; padding: 0.4rem 0.8rem; border: 0; border-left: 2px dotted var(--rule); }
@@ -595,7 +597,10 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
  * edit yet; undo, redo and the menu on the right.
  */
 .docbar { display: flex; align-items: baseline; gap: 0.9em; width: min(100%, var(--col)); margin: -30px 0 16px; min-width: 0; font-family: var(--sans); font-size: 0.66rem; color: var(--faint); letter-spacing: 0.02em; }
-.lib-name { min-width: 0; max-width: 75%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
+/* The library's name is the button that opens the libraries panel, with the menu's chevron (turned up while the panel is open). */
+.docbar .lib-name { display: inline-flex; align-items: baseline; min-width: 0; max-width: 75%; white-space: nowrap; }
+.lib-name .lib-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.docbar .tool .chev.up { transform: rotate(180deg); }
 .save-state { white-space: nowrap; }
 .save-state.offline, .save-state.deleted { color: var(--attn); }
 .view-panes .docbar { flex: none; width: auto; margin: 0; padding: 0.3rem 0.9rem 0.25rem; border-bottom: 1px solid var(--hair); }
@@ -877,3 +882,44 @@ html { scroll-padding-top: 48px; }
   .status .q { display: inline; }
 }
 /* ---- end mouse ---- */
+
+/* ---- the libraries panel (src/ui/Menu.tsx) ----
+ * On the left, hanging from the top bar so the library's name that opens it stays put: one row per
+ * library (● the one open here), its size, and a ⋯. Beside it the page makes room: the column moves
+ * over (notes fold into it where the margin no longer fits), the panes narrow; on a phone it covers
+ * the page instead of squeezing the column.
+ */
+:root { --left-w: min(300px, 85vw); }
+.panel.left { left: 0; right: auto; width: var(--left-w); border-left: 0; border-right: 3px double var(--rule); }
+.lib-list { padding-top: 0.35rem; }
+.lib-row .line { align-items: baseline; }
+.lib-mark { flex: none; width: 1em; color: var(--dim); }
+.lib-t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.lib-row.current .lib-t { font-weight: 600; }
+.lib-row .sub { padding-left: 1.6em; }
+.lib-row .more { margin-left: auto; align-self: center; }
+.lib-row:hover .more, .lib-row.selected .more { opacity: 1; }
+.lib-row .lib-input { flex: 1; min-width: 0; font-size: inherit; }
+.lib-confirm { margin: 0.35rem 0 0.15rem 1.6em; padding: 0.35rem 0.55rem 0.4rem; background: var(--wash); border-left: 2px solid var(--attn); cursor: default; }
+.lib-confirm p { margin: 0 0 0.3rem; color: var(--soft); }
+.lib-confirm code { font-family: var(--mono); font-size: 0.92em; }
+.lib-note { margin-top: 0.6rem; padding: 0.4rem 0.6rem; background: var(--wash); border-left: 2px solid var(--rule); color: var(--soft); overflow-wrap: anywhere; }
+.lib-add { margin: 0.55rem 0.45rem 0; color: var(--faint); }
+@media (hover: none) {
+  .lib-row .more { opacity: 1; padding: 0.45em 0.6em; margin: -0.3em -0.4em -0.3em auto; }
+}
+@media (min-width: 721px) {
+  /* The column moves over just enough to clear the panel, its top bar left where it was. */
+  .with-left:not(.view-panes) .page { --shift: max(20px, calc(var(--left-w) + 28px - max(0px, (100vw - var(--page-w)) / 2))); padding-left: var(--shift); }
+  .with-left:not(.view-panes) .docbar { margin-left: calc(20px - var(--shift)); width: min(calc(100% + var(--shift) - 20px), var(--col)); }
+  .with-left.with-panel:not(.view-panes) article { max-width: calc(100vw - min(440px, 92vw) - var(--left-w) - 56px); }
+  /* The panes narrow beside it; the top bar runs on above both. */
+  .view-panes.with-left .page > :not(.docbar) { margin-left: var(--left-w); }
+}
+@media (min-width: 721px) and (max-width: 1739px) {
+  .with-left .sidenote { float: none; display: block; width: auto; margin: 0.5rem 0 0.7rem 1.75em; padding: 0.4rem 0.8rem; border: 0; border-left: 2px dotted var(--rule); }
+}
+@media (max-width: 720px) {
+  .panel.left { width: auto; right: 0; border-right: 0; }
+}
+/* ---- end libraries panel ---- */

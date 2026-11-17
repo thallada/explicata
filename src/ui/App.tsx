@@ -5,7 +5,7 @@ import { clip, plain } from "../core/text";
 import { hostOf } from "../core/ref";
 import { nodeRef } from "../core/links";
 import { HELP, handleKey } from "./keys";
-import { DocBar } from "./Menu";
+import { DocBar, LibrariesPanel } from "./Menu";
 import { LinkCard, LinkPicker, LinksPanel, NodeBacklinks, NodeRelated, TargetRow } from "./Links";
 import { NodeBody, Outline, PendingSections, TopMatter } from "./Node";
 import { Panes } from "./Panes";
@@ -402,6 +402,16 @@ function StatusLine() {
         ? [`${store.reviewRows().findIndex((x) => x.key === row.key) + 1}/${store.reviewRows().length} ${row.status}`, ...(row.status !== "linked" ? [["y", "link"] as [string, string]] : []), ...(row.status !== "rejected" ? [["n", row.status === "linked" ? "remove" : "decline"] as [string, string]] : []), ["j", "next"], ["Enter", "go"], ["Escape", "close"]]
         : ["links list", ["1", "linked"], ["2", "rejected"], ["3", "pending"], ["Escape", "close"]]
       : null;
+  // The libraries panel: its keys, or the question a deletion waits on.
+  const lp = store.libs;
+  const libsHint: Hint | null =
+    lp && !store.status
+      ? lp.confirm
+        ? [`delete “${clip(store.libraries.find((l) => l.id === lp.confirm)?.title ?? "", 40)}”?`, ["y", "delete"], ["n", "keep"]]
+        : lp.edit
+          ? [lp.edit.kind === "new" ? "the new library's name" : "the library's new name", "⏎ keeps it", ["Escape", "leave it"]]
+          : ["j k", ["Enter", "open"], ["n", "new"], ["r", "rename"], ["D", "delete"], ["Escape", "close"]]
+      : null;
   const hint: Hint = store.aux
     ? store.aux.kind === "wiki"
       ? store.inArticleText
@@ -430,9 +440,9 @@ function StatusLine() {
         : [];
   return (
     <footer class="status">
-      <span class={`grain ${store.aux ? "aux" : f.grain}`}>{store.preview ? "history" : store.mode === "review" ? "review" : store.aux ? (store.aux.kind === "wiki" ? "article" : store.aux.kind === "back" ? "linked" : "target") : f.grain}</span>
+      <span class={`grain ${lp ? "aux" : store.aux ? "aux" : f.grain}`}>{lp ? "libraries" : store.preview ? "history" : store.mode === "review" ? "review" : store.aux ? (store.aux.kind === "wiki" ? "article" : store.aux.kind === "back" ? "linked" : "target") : f.grain}</span>
       <span class="path">{path}</span>
-      <span class="message">{reviewing ? <Hints hint={reviewing} /> : store.status || (hint.length ? <Hints hint={hint} /> : <FirstRun />)}</span>
+      <span class="message">{libsHint ? <Hints hint={libsHint} /> : reviewing ? <Hints hint={reviewing} /> : store.status || (hint.length ? <Hints hint={hint} /> : <FirstRun />)}</span>
       <span class="right">
         {store.links.job?.state === "running" && (
           <span class="job" title={store.jobText(store.links.job)}>
@@ -730,7 +740,7 @@ export function App() {
   };
 
   return (
-    <div class={`app mode-${store.mode}${store.mode === "history" || store.mode === "review" ? " with-panel" : ""}${panes ? " view-panes" : ""}`} onMouseOver={onOver} onContextMenu={onContext}>
+    <div class={`app mode-${store.mode}${store.mode === "history" || store.mode === "review" ? " with-panel" : ""}${store.libs ? " with-left" : ""}${panes ? " view-panes" : ""}`} onMouseOver={onOver} onContextMenu={onContext}>
       <main
         class="page"
         onClick={onClick}
@@ -746,6 +756,7 @@ export function App() {
         )}
         {panes ? <Panes /> : <Page />}
       </main>
+      <LibrariesPanel />
       {store.mode === "history" && <HistoryPanel verdict={verdict} />}
       {store.mode === "review" && <LinksPanel />}
       {store.mode === "help" && <Help />}

@@ -251,6 +251,7 @@ export function topEntries(c: TopCtx, act: Act): Entry[] {
   const auto = (v: TopCtx["autolink"], label: string): Choice => ({ label, on: c.autolink === v, run: () => act.command(`/autolink ${v}`) });
   const setting = (label: string, name: string, on: boolean, sub?: string): Item => ({ t: "item", label, sub, keyText: `/${name}`, checked: on, run: () => act.command(`/${name} ${on ? "off" : "on"}`) });
   return tidy([
+    key(act, "Libraries…", "m", { sub: "open, make, rename or delete one" }),
     key(act, "Jump to a section…", "/"),
     key(act, "History and branches", "g"),
     SEP,
@@ -270,6 +271,28 @@ export function topEntries(c: TopCtx, act: Act): Entry[] {
     SEP,
     key(act, "Command line…", ":"),
     key(act, "Keys and help", "?"),
+  ]);
+}
+
+// ---- a row of the libraries panel ----
+
+export interface LibCtx {
+  title: string;
+  /** The library this page holds. */
+  current: boolean;
+  /** The only library: it cannot be deleted. */
+  last: boolean;
+}
+
+/** A library's row (its ⋯, a right-click): open, rename, delete; and a new library. Each presses the panel's key for the row it selected. */
+export function libraryEntries(c: LibCtx, act: Act): Entry[] {
+  return tidy([
+    head(c.title),
+    c.current ? key(act, "Open here already", "Enter", { disabled: true }) : key(act, "Open", "Enter", { sub: "loads the page" }),
+    key(act, "Rename…", "r"),
+    key(act, "Delete…", "D", c.last ? { disabled: true, sub: "the last library cannot be deleted" } : { sub: "asks first; its files are kept aside" }),
+    SEP,
+    key(act, "New library…", "n"),
   ]);
 }
 

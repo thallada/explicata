@@ -19,6 +19,8 @@ export interface SessionHooks {
   connection(up: boolean): void;
   /** The server holds a different library than this page (its data directory was replaced). */
   foreign(): void;
+  /** The server has no such library any more: it was deleted, perhaps while this page could not hear of it. */
+  gone(): void;
   /** Any other notice from the server (a link job's progress). */
   message?(msg: Record<string, unknown>): void;
 }
@@ -87,7 +89,10 @@ export class Session {
 
   private async fetchBranch(name: string): Promise<Doc | null> {
     const res = await fetch(libApi(`/branch/${encodeURIComponent(name)}`));
-    if (!res.ok) return null;
+    if (!res.ok) {
+      if (res.status === 404 && (await failure(res)).message.startsWith("no library")) this.vanished();
+      return null;
+    }
     if (res.headers.get("x-library") !== this.library) {
       this.lost();
       return null;
@@ -177,7 +182,9 @@ export class Session {
       });
       if (!res.ok) {
         if (res.status === 409) this.lost();
-        throw await failure(res);
+        const err = await failure(res);
+        if (res.status === 404 && err.message.startsWith("no library")) this.vanished();
+        throw err;
       }
       const theirs = decodeVV(res.headers.get("x-vv")!);
       report = mergeUpdate(doc, new Uint8Array(await res.arrayBuffer()), theirs);
@@ -201,6 +208,14 @@ export class Session {
     this.hooks.foreign();
   }
 
+  /** The library is gone from the server: stop sending, and say so once. */
+  vanished() {
+    if (this.foreign) return;
+    this.foreign = true;
+    this.disconnect();
+    this.hooks.gone();
+  }
+
   /** Listen for other writers. */
   connect() {
     if (this.events || this.foreign) return;
@@ -215,8 +230,35 @@ export class Session {
       // Back after an outage (or just connected): exchange whatever either side missed.
       void this.syncAll();
     };
-    events.onerror = () => this.hooks.connection(false);
+    events.onerror = () => {
+      this.hooks.connection(false);
+      // A refused connection is tried again by the browser; an answer that is not a stream (a 404
+      // for a library deleted while this page was away) ends it for good. Ask why, and go on
+      // listening unless the library is gone.
+      if (events.readyState === EventSource.CLOSED && this.events === events) {
+        this.events = null;
+        void this.probe();
+      }
+    };
     this.events = events;
+  }
+
+  /** After the notice stream ended: whether the library is still there (then listen again), gone, or the server unreachable (ask again later). */
+  private async probe(wait = 1000) {
+    if (this.foreign) return;
+    let status = 0;
+    let message = "";
+    try {
+      const res = await fetch(libApi("/state"));
+      status = res.status;
+      if (!res.ok) message = (await failure(res)).message;
+    } catch {
+      /* unreachable */
+    }
+    if (this.foreign) return;
+    if (status === 404 && message.startsWith("no library")) return this.vanished();
+    if (status >= 200 && status < 300) return this.connect();
+    setTimeout(() => void this.probe(Math.min(wait * 2, 30_000)), wait);
   }
 
   disconnect() {

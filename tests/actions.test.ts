@@ -1,7 +1,9 @@
 /** What the mouse offers (src/ui/actions.ts): every item does what its key does, and the bar, the ⋯ menus and the right-click menu are built from one place. */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { articleRowEntries, barItems, nodeEntries, paneEntries, selectionEntries, tidy, topEntries, type Act, type Entry, type Item, type NodeCtx, type SelCtx, type TopCtx } from "../src/ui/actions";
+import { articleRowEntries, barItems, libraryEntries, nodeEntries, paneEntries, selectionEntries, tidy, topEntries, type Act, type Entry, type Item, type NodeCtx, type SelCtx, type TopCtx } from "../src/ui/actions";
+import { deletedPlace, keep, nodeCount, openPanel, step } from "../src/ui/libraries";
+import type { LibraryInfo } from "../src/ui/api";
 
 /** An Act that records what was asked of it. */
 function recorder() {
@@ -38,6 +40,7 @@ describe("actions", () => {
       ...items(paneEntries({ article: "Octopus", pinned: true }, act)),
       ...items(articleRowEntries("Octopus", true, act)),
       ...items(topEntries(top({ canRedo: true }), act)),
+      ...items(libraryEntries({ title: "Work", current: false, last: false }, act)),
     ];
     const keyed = all.filter((i) => i.key);
     expect(keyed.length).toBeGreaterThan(50);
@@ -168,5 +171,52 @@ describe("actions", () => {
     const s = { t: "sep" } as const;
     const h = { t: "head", text: "x" } as const;
     expect(tidy([s, h, s, false, s, null, h, s, ""]).map((e) => e.t)).toEqual(["head", "sep", "head"]);
+  });
+
+  it("a library's row offers open, rename and delete, with new; this page's own cannot be opened again, and the last cannot be deleted", () => {
+    const { act, calls } = recorder();
+    const other = libraryEntries({ title: "Work", current: false, last: false }, act);
+    expect(labels(other)).toEqual(["# Work", "Open", "Rename…", "Delete…", "--", "New library…"]);
+    expect(items(other).map((i) => i.key)).toEqual(["Enter", "r", "D", "n"]);
+    find(other, "Delete…").run();
+    expect(calls).toEqual(["press D"]);
+    const mine = libraryEntries({ title: "Library", current: true, last: true }, act);
+    expect(find(mine, "Open here already").disabled).toBe(true);
+    expect(find(mine, "Delete…").disabled).toBe(true);
+    expect(find(mine, "Delete…").sub).toContain("last library");
+    expect(find(topEntries(top(), act), "Libraries…").key).toBe("m");
+  });
+});
+
+describe("the libraries panel's state", () => {
+  const lib = (id: string, title = id): LibraryInfo => ({ id, title, created: "", nodes: 0, branches: ["main"] });
+  const list = [lib("a"), lib("b"), lib("c")];
+
+  it("opens on this page's library, else the first", () => {
+    expect(openPanel(list, "b")).toMatchObject({ sel: "b", edit: null, confirm: null, loading: true });
+    expect(openPanel(list, "gone").sel).toBe("a");
+    expect(openPanel([], "x").sel).toBe("x");
+  });
+
+  it("steps by rows, held at the ends", () => {
+    expect(step(list, "a", 1)).toBe("b");
+    expect(step(list, "c", 1)).toBe("c");
+    expect(step(list, "a", -1)).toBe("a");
+    expect(step(list, "missing", 1)).toBe("a");
+    expect(step([], "a", 1)).toBe("a");
+  });
+
+  it("keeps the row a fetch still lists, else takes the one that stood where it was", () => {
+    expect(keep(list, [lib("c"), lib("b")], "b")).toBe("b");
+    expect(keep(list, [lib("a"), lib("c")], "b")).toBe("c");
+    expect(keep(list, [lib("a"), lib("b")], "c")).toBe("b");
+    expect(keep(list, [], "b")).toBe("b");
+  });
+
+  it("says where a deleted library went as the data folder names it, and counts nodes", () => {
+    expect(deletedPlace("/home/x/.data/libraries/.deleted/k06dp45g64-20261117-074500")).toBe("libraries/.deleted/k06dp45g64-20261117-074500");
+    expect(deletedPlace("C:\\data\\libraries\\.deleted\\abc-1")).toBe("libraries/.deleted/abc-1");
+    expect(deletedPlace("elsewhere")).toBe("elsewhere");
+    expect([nodeCount(0), nodeCount(1), nodeCount(2)]).toEqual(["0 nodes", "1 node", "2 nodes"]);
   });
 });

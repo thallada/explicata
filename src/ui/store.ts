@@ -33,6 +33,7 @@ import {
 import type { LLM } from "../llm/types";
 import { DEFAULT_LIMITS, wantsResearch } from "../llm/web";
 import { createLibrary, deleteLibrary, libApi, listLibraries, renameLibrary, setLibrary, type LibraryInfo } from "./api";
+import { deletedPlace, keep, openPanel, step, type LibPanel } from "./libraries";
 import { remoteLLM } from "./remote";
 import { Session } from "./session";
 import { refreshAfterCalls } from "./usage";
@@ -275,10 +276,13 @@ class Store {
   }
   /** Set at a keypress; cleared when the resulting frame has been painted. */
   t0: { what: string; at: number } | null = null;
-  /** Replicas of pre-library documents whose edits never reached the server. */
   /** The library this page holds (its id, as in its address), and every library the server has, as it last said. */
   library = "";
   libraries: LibraryInfo[] = [];
+  /** The libraries panel (m, or the library's name in the top bar), while it is open. */
+  libs: LibPanel | null = null;
+  /** The server no longer has this page's library (deleted, perhaps while this page was away): nothing more is sent. */
+  gone = false;
 
   /** The panes as a forest of forks (forks.ts); its focused branch is `trail`, and `paneAt` is the pane on it that holds the focus: the active pane. */
   forest: Forest<PaneRef, Back> = { trees: [], at: 0 };
@@ -1164,13 +1168,10 @@ class Store {
           this.emit();
         },
         foreign: () => this.say("The server now holds a different library than this page. Edits here are no longer sent; reload the page."),
+        gone: () => this.libraryGone(),
         message: (msg) => {
           if (msg.linkJob) this.jobUpdate(msg.linkJob as JobState);
-          if (msg.library === "deleted") {
-            this.session.foreign = true;
-            this.session.disconnect();
-            this.say("This library has been deleted (the server moved its files aside). Edits here are no longer sent; go to / for another library.");
-          }
+          if (msg.library === "deleted") this.session.vanished();
         },
       });
       await this.session.load((state?.branches ?? []).map((b) => b.name), this.online);
@@ -1178,7 +1179,14 @@ class Store {
       this.repo.current = this.repo.branches.has(branch) ? branch : "main";
       this.restoreView();
       this.undoManager();
-      this.navigate(splitLibrary(location.pathname).part, "replace");
+      // Opened from the libraries panel (or :/library): where it was left in this browser, not its root.
+      const switched = sessionStorage.getItem("ie:switch") === library;
+      sessionStorage.removeItem("ie:switch");
+      const at = splitLibrary(location.pathname).part;
+      if (switched && (at === "/" || at === "")) {
+        window.history.replaceState(null, "", this.here());
+        this.setTitle();
+      } else this.navigate(at, "replace");
       this.ready = true;
       this.prefetchLinks(this.focus.node);
       const flash = sessionStorage.getItem("ie:flash");
@@ -1221,9 +1229,11 @@ class Store {
     return this.libraries;
   }
 
-  /** Open another library: a page load, so nothing of this one stays in memory. */
+  /** Open another library: a page load, so nothing of this one stays in memory. It opens where it was left in this browser. */
   switchLibrary(id: string) {
     this.session?.flush();
+    this.saveView();
+    sessionStorage.setItem("ie:switch", id);
     location.assign(inLibrary(id, "/"));
   }
 
@@ -1254,15 +1264,22 @@ class Store {
     }
   }
 
-  /** Delete a library: the server moves its files aside; the last one cannot go. Deleting this one goes to the first other. */
+  /**
+   * Delete a library: the server moves its directory, whole, to libraries/.deleted/ in its data
+   * folder, from where it can be brought back by hand; the last one cannot go. Deleting this
+   * page's library goes to the first other.
+   */
   async deleteLibrary(id: string): Promise<boolean> {
+    const title = this.libraries.find((l) => l.id === id)?.title ?? id;
     try {
-      await deleteLibrary(id);
+      const { movedTo } = await deleteLibrary(id);
+      const said = `Deleted “${title}”; its files are kept in ${deletedPlace(movedTo)} in the server's data folder (the README says how to restore it).`;
       const left = await this.listLibraries();
+      if (this.libs) this.libs.note = said;
       if (id === this.library) {
-        sessionStorage.setItem("ie:flash", "Deleted the library; its files were moved aside on the server.");
+        sessionStorage.setItem("ie:flash", said);
         this.switchLibrary(left[0].id);
-      } else this.say("Deleted the library; its files were moved aside on the server.");
+      } else this.say(said);
       return true;
     } catch (err) {
       this.say(`Could not delete the library: ${(err as Error).message}`);
@@ -1271,20 +1288,146 @@ class Store {
   }
 
   /**
-   * :/library: with no name, list the libraries; with a name (or id), switch to it; `new <name>`
+   * :/library: with no name, the libraries panel; with a name (or id), switch to it; `new <name>`
    * makes one and switches to it.
    */
   async libraryCommand(arg: string) {
-    const list = await this.listLibraries().catch(() => this.libraries);
     const words = arg.trim();
-    if (!words) return this.say(`Libraries: ${list.map((l) => `${l.id === this.library ? "▸ " : ""}${l.title} (${l.nodes} nodes)`).join(" · ")}. :/library <name> opens one, :/library new <name> makes one.`);
+    if (!words) return this.openLibraries();
     const made = /^new\s+(.+)$/.exec(words);
     if (made) return void this.createLibrary(made[1], true);
+    const list = await this.listLibraries().catch(() => this.libraries);
     const lower = words.toLowerCase();
     const hit = list.find((l) => l.id === words) ?? list.find((l) => l.title.toLowerCase() === lower) ?? list.find((l) => l.title.toLowerCase().startsWith(lower));
-    if (!hit) return this.say(`No library “${words}”. :/library lists them.`);
+    if (!hit) return this.say(`No library “${words}”. m lists them.`);
     if (hit.id === this.library) return this.say(`This is “${hit.title}”.`);
     this.switchLibrary(hit.id);
+  }
+
+  /** The server has no such library any more (deleted while this page was away, or just now): say so, and offer the others. */
+  private libraryGone() {
+    if (this.gone) return;
+    this.gone = true;
+    this.online = false;
+    this.openLibraries();
+    this.say("This library has been deleted on the server (its files were moved aside). Edits made here are no longer sent: open another library.");
+  }
+
+  // ---- the libraries panel ----
+
+  /** m, or the library's name in the top bar: the panel listing the libraries, fetched again as it opens. */
+  openLibraries() {
+    const panel = openPanel(this.libraries, this.library);
+    this.libs = panel;
+    this.status = "";
+    this.emit();
+    const before = this.libraries;
+    listLibraries()
+      .then((list) => {
+        this.libraries = list;
+        if (this.libs === panel) panel.sel = keep(before, list, panel.sel);
+      })
+      .catch((err) => this.libs === panel && this.say(`Could not list the libraries (${(err as Error).message}); showing the list as it last was.`))
+      .finally(() => {
+        panel.loading = false;
+        this.emit();
+      });
+  }
+
+  closeLibraries() {
+    if (!this.libs) return;
+    this.libs = null;
+    this.emit();
+  }
+
+  toggleLibraries() {
+    if (this.libs) this.closeLibraries();
+    else this.openLibraries();
+  }
+
+  /** The libraries the panel lists: the server's, without this page's library once it is gone. */
+  libRows(): LibraryInfo[] {
+    return this.gone ? this.libraries.filter((l) => l.id !== this.library) : this.libraries;
+  }
+
+  libSelect(id: string) {
+    if (!this.libs || this.libs.edit) return;
+    this.libs.sel = id;
+    this.libs.confirm = null;
+    this.emit();
+  }
+
+  libStep(d: number) {
+    if (!this.libs || this.libs.edit || this.libs.confirm) return;
+    this.libs.sel = step(this.libRows(), this.libs.sel, d);
+    this.status = "";
+    this.emit();
+  }
+
+  /** Enter: open the selected library (a page load); on this page's own, just close the panel. */
+  libOpen() {
+    const p = this.libs;
+    if (!p || p.edit || p.confirm) return;
+    if (p.sel === this.library && !this.gone) return this.closeLibraries();
+    if (!this.libRows().some((l) => l.id === p.sel)) return;
+    this.switchLibrary(p.sel);
+  }
+
+  /** n: name a new library (it opens once made); r: rename the selected one. */
+  libEdit(kind: "new" | "rename") {
+    const p = this.libs;
+    if (!p || p.edit || p.confirm) return;
+    if (kind === "rename" && !this.libRows().some((l) => l.id === p.sel)) return;
+    p.edit = kind === "new" ? { kind } : { kind, id: p.sel };
+    this.status = "";
+    this.emit();
+  }
+
+  libCancel() {
+    const p = this.libs;
+    if (!p) return;
+    p.edit = null;
+    p.confirm = null;
+    this.emit();
+  }
+
+  /** The name typed in the panel: Enter makes the new library (and opens it) or renames. */
+  async libSubmit(text: string) {
+    const p = this.libs;
+    const edit = p?.edit;
+    if (!p || !edit) return;
+    const name = text.replace(/\s+/g, " ").trim();
+    if (!name) return this.say("Give it a name, or Esc to leave it.");
+    if (edit.kind === "rename" && this.libraries.find((l) => l.id === edit.id)?.title === name) return this.libCancel();
+    p.edit = null;
+    this.emit();
+    if (edit.kind === "new") await this.createLibrary(name, true);
+    else await this.renameLibrary(edit.id, name);
+  }
+
+  /** D: ask to delete the selected library (y deletes it); the last one cannot be deleted. */
+  libDelete() {
+    const p = this.libs;
+    if (!p || p.edit || p.confirm) return;
+    const rows = this.libRows();
+    if (!rows.some((l) => l.id === p.sel)) return;
+    if (this.libraries.length <= 1) return this.say("The last library cannot be deleted: make another first (n).");
+    p.confirm = p.sel;
+    this.status = "";
+    this.emit();
+  }
+
+  /** y: delete the library waiting for it. */
+  async libConfirm() {
+    const p = this.libs;
+    const id = p?.confirm;
+    if (!p || !id) return;
+    p.confirm = null;
+    const before = this.libraries;
+    if (await this.deleteLibrary(id)) {
+      if (this.libs === p && id !== this.library) p.sel = keep(before, this.libraries, id);
+    }
+    this.emit();
   }
 
   /** The window's title: the article on the column's article page, else the node the reader is on. */
@@ -1293,7 +1436,8 @@ class Store {
   }
 
   /** Every edit is saved as it is made; this says whether the server has it yet. */
-  saveState(): "saved" | "saving" | "offline" | "foreign" {
+  saveState(): "saved" | "saving" | "offline" | "foreign" | "deleted" {
+    if (this.gone) return "deleted";
     if (this.session.foreign) return "foreign";
     if (!this.online) return "offline";
     return this.session.synced() ? "saved" : "saving";
