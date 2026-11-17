@@ -42,8 +42,8 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
-import { nodeRef, resolveNode, targetKey } from "../src/core/links";
-import { Doc, NOLINK, ancestors, isStale, label, notesOf, sections, staleness, topOf, type Conflict, type NodeId, type NodeSnap, type Ref, type Snap } from "../src/core/model";
+import { nodeRef, resolveNode, targetKey, walkTitles } from "../src/core/links";
+import { Doc, NOLINK, isStale, label, staleness, topOf, type Conflict, type NodeId, type NodeSnap, type Ref, type Snap } from "../src/core/model";
 import { canonRef } from "../src/core/ref";
 import { digest } from "../src/core/text";
 import { LIBRARIES, OLD_FILES, indexText, layout, stamp, type LibraryEntry } from "./libraries";
@@ -300,31 +300,13 @@ function build(old: Doc, pendingRaw: Pending): Built {
   return { doc, ids, pending, warnings, stats };
 }
 
-/** A node's `slug` as older versions stored it (documents were the root's children). */
-const slugOf = (old: Doc, id: NodeId) => old.tree.getNodeByID(id)?.data.get("slug") as string | undefined;
-
-/**
- * Walk section titles down from a node, as resolveNode does: exact title first, then ignoring case,
- * and among sections sharing a title the one `here` is in.
- */
-function walk(snap: Snap, from: NodeId, path: string[], quote: string | undefined, here: NodeId): NodeId | null {
-  const mine = new Set([here, ...ancestors(snap, here)]);
-  let at = from;
-  for (const title of path) {
-    const kids = sections(snap, at);
-    let same = kids.filter((c) => snap.nodes[c].title === title);
-    if (!same.length) same = kids.filter((c) => snap.nodes[c].title.toLowerCase() === title.toLowerCase());
-    if (!same.length) return null;
-    at = same.find((c) => mine.has(c)) ?? same[0];
-  }
-  if (quote === undefined) return at;
-  return notesOf(snap, at).find((c) => snap.nodes[c].anchors.some((a) => a.text === quote || a.quote === quote)) ?? null;
-}
+/** The top an old target's document slug named (documents were the root's children, each with a `slug`). */
+const slugTop = (old: Doc, snap: Snap, slug: string) => snap.nodes[snap.root].children.find((c) => old.tree.getNodeByID(c)?.data.get("slug") === slug);
 
 /**
  * The node an old target named, read as the version that wrote it would: by id while it exists;
- * else, with a document slug (before step 1), from the top with that slug; else from the root (as
- * today), then from the top of where it is written (as relative paths were read before).
+ * else, with a document slug, from the top with that slug; else from the root, then from the top
+ * of where it is written (as relative paths were read before documents went).
  */
 function resolveOld(old: Doc, snap: Snap, ref: NodeRef, here: NodeId): NodeId | null {
   if (ref.id && snap.nodes[ref.id]) return ref.id;
@@ -332,12 +314,12 @@ function resolveOld(old: Doc, snap: Snap, ref: NodeRef, here: NodeId): NodeId | 
   const slug = (ref as { doc?: unknown }).doc;
   const top = topOf(snap, here);
   if (typeof slug === "string") {
-    const doc = snap.nodes[snap.root].children.find((c) => slugOf(old, c) === slug);
-    return doc ? walk(snap, doc, path, ref.quote, here) : null;
+    const doc = slugTop(old, snap, slug);
+    return doc ? walkTitles(snap, doc, path, ref.quote, here) : null;
   }
   if (!ref.path) return null;
-  if (ref.rel) return top ? walk(snap, top, path, ref.quote, here) : null;
-  return walk(snap, snap.root, path, ref.quote, here) ?? (top ? walk(snap, top, path, ref.quote, here) : null);
+  if (ref.rel) return top ? walkTitles(snap, top, path, ref.quote, here) : null;
+  return walkTitles(snap, snap.root, path, ref.quote, here) ?? (top ? walkTitles(snap, top, path, ref.quote, here) : null);
 }
 
 /** A target that names nothing, in today's form: titles from the root (a slug made the top's title, if that top is still there), no id. */
@@ -345,7 +327,7 @@ function hint(old: Doc, snap: Snap, ref: NodeRef): NodeRef {
   const out: NodeRef = { kind: "node", path: [...(ref.path ?? [])] };
   const slug = (ref as { doc?: unknown }).doc;
   if (typeof slug === "string") {
-    const doc = snap.nodes[snap.root].children.find((c) => slugOf(old, c) === slug);
+    const doc = slugTop(old, snap, slug);
     if (doc) out.path = [snap.nodes[doc].title, ...out.path!];
     else out.rel = true;
   } else if (ref.rel) out.rel = true;

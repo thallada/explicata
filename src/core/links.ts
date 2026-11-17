@@ -36,21 +36,26 @@ export function nodeRef(snap: Snap, id: NodeId): Ref & { kind: "node" } {
 export function resolveNode(snap: Snap, ref: Ref & { kind: "node" }, here?: NodeId): NodeId | null {
   if (ref.id && snap.nodes[ref.id]) return ref.id;
   if (!ref.path) return null;
-  let at = ref.rel ? (here ? topOf(snap, here) : null) : snap.root;
-  if (!at) return null;
+  const from = ref.rel ? (here ? topOf(snap, here) : null) : snap.root;
+  return from ? walkTitles(snap, from, ref.path, ref.quote, here) : null;
+}
+
+/**
+ * Walk section titles down from a node: exact title first, then ignoring case, and among sections
+ * sharing a title the one `here` is in. With a quote, the note of the last section on those words.
+ */
+export function walkTitles(snap: Snap, from: NodeId, path: string[], quote: string | undefined, here?: NodeId): NodeId | null {
   const mine = new Set(here && snap.nodes[here] ? [here, ...ancestors(snap, here)] : []);
-  for (const title of ref.path) {
+  let at = from;
+  for (const title of path) {
     const kids = sections(snap, at);
     let same = kids.filter((c) => snap.nodes[c].title === title);
     if (!same.length) same = kids.filter((c) => snap.nodes[c].title.toLowerCase() === title.toLowerCase());
     if (!same.length) return null;
     at = same.find((c) => mine.has(c)) ?? same[0];
   }
-  if (ref.quote !== undefined) {
-    const note = notesOf(snap, at).find((c) => snap.nodes[c].anchors.some((a) => a.text === ref.quote || a.quote === ref.quote));
-    return note ?? null;
-  }
-  return at;
+  if (quote === undefined) return at;
+  return notesOf(snap, at).find((c) => snap.nodes[c].anchors.some((a) => a.text === quote || a.quote === quote)) ?? null;
 }
 
 // ---- the backlinks index ----
