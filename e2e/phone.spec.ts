@@ -226,7 +226,10 @@ test("pin and close from a pane's buttons, its ⋯, and the map of every open pa
   const sheet = page.locator(".menu.sheet");
   await expect(sheet).toBeVisible();
   await expect(sheet.locator(".mi", { hasText: "Unpin this pane" }).or(sheet.locator(".mi", { hasText: "Pin this pane" }))).toHaveCount(1);
-  for (const m of await sheet.locator(".mi").all()) expect((await m.boundingBox())!.height).toBeGreaterThanOrEqual(40);
+  for (const m of await sheet.locator(".mi, .choices button").all()) {
+    const b = (await m.boundingBox())!;
+    expect(Math.min(b.width, b.height)).toBeGreaterThanOrEqual(40);
+  }
   await shot(page, "09-pane-menu");
   // A tap outside puts it away (on the status line, where a tap does nothing else).
   const status = (await page.locator(".status").boundingBox())!;

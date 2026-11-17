@@ -867,7 +867,7 @@ html { scroll-padding-top: 48px; }
 }
 .menu.sheet .mi { padding: 0.62rem 1rem; }
 .menu.sheet .choices { padding: 0.45rem 1rem; }
-.menu.sheet .choices button { padding: 0.35rem 0.6rem; font-size: 0.8rem; }
+.menu.sheet .choices button { padding: 0.35rem 0.6rem; font-size: 0.8rem; min-height: 40px; min-width: 40px; }
 @media (hover: none) {
   .more { pointer-events: none; padding: 0.45em 0.6em; margin: -0.3em -0.4em -0.3em 0.3em; }
   .node.focused > .row > .more, .top.focused .more, :is(.sidenote, .inset).focused > .more { opacity: 1; pointer-events: auto; }
