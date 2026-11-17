@@ -277,26 +277,30 @@ describe("branch colours", () => {
   const hues = (f: F) => Object.fromEntries(all(f).map((x) => [x.node.ref, x.node.hue ?? "-"]));
   const roundTrip = (f: F) => restore<string, unknown>(JSON.parse(JSON.stringify({ forest: f.trees.map((t) => save(t, (r) => r)), at: f.at, hues: f.hues ?? 0 })), isStr);
 
-  it("a plain trail is one colour, the first tree's none; each further child of a pane starts the next colour", () => {
+  it("the top node has none; every pane opened from it starts a colour, a plain trail below keeps it, each further child of a pane starts the next", () => {
     let f: F = plain(["a", "b", "c"]);
-    expect(hues(f)).toEqual({ a: "-", b: "-", c: "-" });
-    f = open(f, 0, "x", true, same); // a second child of a: a new colour
+    expect(hues(f)).toEqual({ a: "-", b: 0, c: 0 });
+    f = open(f, 0, "x", true, same); // a second child of the top: a new colour
     f = open(f, 1, "x1", true, same); // x's first child: x's colour
     f = open(f, 2, "x2", false, same);
     f = open(f, 1, "y", true, same); // a second child of x
-    f = open(f, 0, "z", true, same); // a third child of a
-    expect(hues(f)).toEqual({ a: "-", b: "-", c: "-", x: 0, x1: 0, x2: 0, y: 1, z: 2 });
-    expect(f.hues).toBe(3);
+    f = open(f, 0, "z", true, same); // a third child of the top
+    expect(hues(f)).toEqual({ a: "-", b: 0, c: 0, x: 1, x1: 1, x2: 1, y: 2, z: 3 });
+    expect(f.hues).toBe(4);
+    // The first pane opened from the top, by an open, starts a colour too.
+    let g: F = plain(["a"]);
+    g = open(g, 0, "p", false, same);
+    g = open(g, 1, "q", false, same);
+    expect(hues(g)).toEqual({ a: "-", p: 0, q: 0 });
   });
 
   it("the palette goes round, never giving a fork its parent's colour", () => {
     let f: F = plain(["a"]);
     for (let i = 0; i < HUES + 2; i++) f = open(focus(f, f.trees[0].id), 0, `k${i}`, true, same);
-    // k0 is a's first child (no colour); k1… take 0, 1, … round the palette.
-    expect(all(f).slice(1).map((x) => x.node.hue ?? "-")).toEqual(["-", ...Array.from({ length: HUES + 1 }, (_, i) => i % HUES)]);
+    // k0, k1, … take 0, 1, … round the palette.
+    expect(all(f).slice(1).map((x) => x.node.hue ?? "-")).toEqual(Array.from({ length: HUES + 2 }, (_, i) => i % HUES));
     // Forks of a coloured pane skip its colour when the palette comes round to it.
     let g: F = plain(["a"]);
-    g = open(g, 0, "b", true, same);
     g = open(g, 0, "c", true, same); // 0
     for (let i = 0; i < HUES - 1; i++) g = open(focus(g, g.trees[0].id), 0, `p${i}`, true, same); // 1 … HUES − 1
     g = open(focus(g, idOf(g, "c")), 1, "c1", true, same); // c's first: 0
@@ -309,17 +313,18 @@ describe("branch colours", () => {
     f = open(f, 0, "x", true, same);
     f = open(f, 0, "y", true, same);
     f = open(focus(f, idOf(f, "x")), 0, "x'", false, same); // in x's place
-    expect(hues(f)).toEqual({ a: "-", b: "-", "x'": 0, y: 1 });
+    expect(hues(f)).toEqual({ a: "-", b: 0, "x'": 1, y: 2 });
     f = pin(f, idOf(f, "x'"), true);
     f = open(f, 0, "w", false, same); // beside a pinned pane: a fork
-    expect(hues(f).w).toBe(2);
+    expect(hues(f).w).toBe(3);
     let g: F = plain(["a", "b"]);
     g = open(g, 0, "x", true, same);
     g = withBranch(g, ["a", "x", "x1", "x2"], same);
-    expect(hues(g)).toMatchObject({ x: 0, x1: 0, x2: 0 });
+    expect(hues(g)).toMatchObject({ x: 1, x1: 1, x2: 1 });
     g = withBranch(g, ["a", "x", "q"], same); // in x1's place
-    expect(hues(g).q).toBe(0);
-    expect(hues(withBranch(g, ["r", "s"], same))).toMatchObject({ r: "-", s: "-" });
+    expect(hues(g).q).toBe(1);
+    // A different top: its trail starts a colour; the top has none.
+    expect(hues(withBranch(g, ["r", "s", "t"], same))).toMatchObject({ r: "-", s: 2, t: 2 });
   });
 
   it("colours stay through a reorder, a close, a pin and a prune; an orphan keeps its own", () => {
@@ -349,18 +354,22 @@ describe("branch colours", () => {
     f = open(f, 0, "y", true, same);
     f = pin(f, idOf(f, "x1"), true);
     f = close(f, idOf(f, "x"), idOf(f, "y")).forest;
-    expect(hues(f)).toEqual({ a: "-", b: "-", c: "-", y: 1, x1: 0 });
+    expect(hues(f)).toEqual({ a: "-", b: 0, c: 0, y: 2, x1: 1 });
     const back = roundTrip(f);
     expect(hues(back)).toEqual(hues(f));
     expect(back.hues).toBe(f.hues);
-    // From before colours: the root trail plain, each further child and each orphan a new colour.
+    // From before colours: the top plain, each of its children, each further child and each orphan a new colour.
     const old = restore<string, unknown>({ forest: [{ ref: "a", kids: [{ ref: "b", kids: [{ ref: "c" }, { ref: "c2" }] }, { ref: "x", kids: [{ ref: "x1" }] }] }, { ref: "o", col: 2, kids: [{ ref: "o1" }] }], at: 0 }, isStr);
-    expect(hues(old)).toEqual({ a: "-", b: "-", c: "-", c2: 0, x: 1, x1: 1, o: 2, o1: 2 });
-    expect(old.hues).toBe(3);
+    expect(hues(old)).toEqual({ a: "-", b: 0, c: 0, c2: 1, x: 2, x1: 2, o: 3, o1: 3 });
+    expect(old.hues).toBe(4);
     expect(valid(old, same)).toBe(true);
+    // Stored with a count but the top's first trail uncoloured (as the first colours had it): coloured on, from the count.
+    const mid = restore<string, unknown>({ forest: [{ ref: "a", kids: [{ ref: "b", kids: [{ ref: "c" }] }, { ref: "x", hue: 0 }] }], at: 0, hues: 1 }, isStr);
+    expect(hues(mid)).toEqual({ a: "-", b: 1, c: 1, x: 0 });
+    expect(mid.hues).toBe(2);
     // Older still: one tree, or a trail.
-    expect(hues(restore<string, unknown>({ forks: { ref: "a", kids: [{ ref: "b" }, { ref: "c" }], pick: 1 } }, isStr))).toEqual({ a: "-", b: "-", c: 0 });
-    expect(hues(restore<string, unknown>({ trail: ["a", "b"] }, isStr))).toEqual({ a: "-", b: "-" });
+    expect(hues(restore<string, unknown>({ forks: { ref: "a", kids: [{ ref: "b" }, { ref: "c" }], pick: 1 } }, isStr))).toEqual({ a: "-", b: 0, c: 1 });
+    expect(hues(restore<string, unknown>({ trail: ["a", "b"] }, isStr))).toEqual({ a: "-", b: 0 });
     // A colour out of the palette is not trusted.
     expect(load({ ref: "a", hue: HUES }, isStr)!.hue).toBeUndefined();
     expect(load({ ref: "a", hue: 1.5 }, isStr)!.hue).toBeUndefined();
