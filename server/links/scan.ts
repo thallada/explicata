@@ -22,14 +22,14 @@
  */
 import { inArticles } from "../../src/core/article";
 import { notesOf, sections, topOf, ancestors as ancestorsOf, descendants, type Doc, type NodeId, type Snap } from "../../src/core/model";
-import { nodeRef, targetKey } from "../../src/core/links";
+import { nodeRef, phraseKey, targetKey } from "../../src/core/links";
 import type { Mark } from "../../src/core/marks";
 import type { Nearby } from "../../src/llm/prompts";
 import type { Ref } from "../../src/core/ref";
 import { digest, overlaps, paragraphs, plain, type Range } from "../../src/core/text";
 import { VectorIndex, dot, tokenize, type Embedder } from "../embed";
 import type { CallOpts, LookupItem, WikiClient } from "../wiki";
-import { COMMON_RANK, extract, phraseKey, type Candidate, type Kind } from "./extract";
+import { COMMON_RANK, extract, type Candidate, type Kind } from "./extract";
 import type { NodeIndex } from "./nodeIndex";
 import { UNLISTED, rank } from "./words";
 
@@ -103,8 +103,6 @@ export interface ScanInput {
   forced?: Mark[];
   /** Wikipedia queue lane: "scan" (the default: after an edit, behind anything a person waits on) or "bulk" (a job). */
   priority?: "interactive" | "bulk" | "scan";
-  /** Only phrases inside these spans are looked at (the new text of an edit); default the whole text. */
-  within?: Range[];
   /** For evaluation: every phrase that resolved to something, with its judgement, is pushed here. */
   trace?: TraceRow[];
 }
@@ -129,7 +127,6 @@ export interface TraceRow {
 export interface ScanResult {
   node: NodeId;
   suggestions: Suggestion[];
-  related: Related[];
   /** Marked phrases that resolved to nothing. */
   unresolved: string[];
   /** What was not available, in words ("embeddings unavailable: matched by text only"). */
@@ -397,7 +394,6 @@ export class Linker {
     const skip = new Set([phraseKey(title), ...rejected].filter(Boolean));
     let cands = extract(text, { exclude, forced: input.forced, skip });
     cands = cands.filter((c) => !plainNotes.some(([s, e]) => overlaps([s, e], [c.start, c.end]) && !(s === c.start && e === c.end)));
-    if (input.within?.length) cands = cands.filter((c) => c.kind === "forced" || input.within!.some((r) => overlaps(r, [c.start, c.end])));
     // Targets already linked in this node: first mention means they are not offered again.
     const linkedHere = new Set(n ? notesOf(snap, input.node).map((c) => snap.nodes[c].ref).filter((r): r is Ref => !!r).map(targetKey) : []);
 
@@ -525,24 +521,18 @@ export class Linker {
     }
 
     // 4. Meaning: sections under other tops close to this node.
-    const related: Related[] = [];
     if (ctxVec) {
       const exclude = new Set<NodeId>([...exceptSelf, ...(n ? descendants(snap, input.node) : [])]);
-      const near = (await this.o.index.near(context, { exclude, top: topId, snap, vector: ctxVec, k: 8 })) ?? [];
-      for (const hit of near) {
+      for (const hit of await this.o.index.near(ctxVec, { exclude, top: topId, snap, k: 8 })) {
         if (hit.score < t.relatedAt) continue;
         const m = snap.nodes[hit.id as NodeId];
         const mKey = phraseKey(m.title);
         const mRef = m.ref?.kind === "wiki" ? m.ref.title : null;
         // A phrase here names it: its title's head ("the triple-alpha process" ← "triple-alpha process"), or what it is about.
         const namer = cands.find((c) => !resolved.has(c) && ((c.words > 1 && (` ${mKey}`.endsWith(` ${c.key}`) || ` ${mKey} `.includes(` ${c.key} `))) || (mRef && phraseKey(stripParen(mRef)) === c.key)));
-        const where = whereIs(snap, m.id);
-        if (namer) {
-          hits.push(hitOf(namer, nodeRef(snap, m.id), "meaning", `${m.title} (${where})`, { fit: hit.score }));
-          resolved.add(namer);
-        } else if (related.length < 5) {
-          related.push({ node: m.id, title: m.title, top: where, score: Math.round(hit.score * 1000) / 1000, why: `close in meaning (${hit.score.toFixed(2)})${shared(context, `${m.title} ${m.body}`)}` });
-        }
+        if (!namer) continue;
+        hits.push(hitOf(namer, nodeRef(snap, m.id), "meaning", `${m.title} (${whereIs(snap, m.id)})`, { fit: hit.score }));
+        resolved.add(namer);
       }
     }
 
@@ -621,7 +611,6 @@ export class Linker {
     return {
       node: input.node,
       suggestions,
-      related,
       unresolved,
       degraded,
       stats: { candidates: cands.length, lookedUp, requests: (wiki?.requests ?? 0) - requests0, ms: Math.round(performance.now() - t0) },
@@ -644,7 +633,7 @@ export class Linker {
     if (!vec) return { related: [], degraded: ["embeddings unavailable: no Related list"] };
     const linked = new Set(n ? notesOf(snap, node).map((c) => snap.nodes[c].ref).flatMap((r) => (r?.kind === "node" && r.id ? [r.id] : [])) : []);
     const exclude = new Set<NodeId>([node, ...(given.ancestors ?? (n ? ancestorsOf(snap, node) : [])), ...(n ? descendants(snap, node) : [])]);
-    const near = (await this.o.index.near(context, { exclude, top: topId, snap, vector: vec, k: k + linked.size + 3 })) ?? [];
+    const near = await this.o.index.near(vec, { exclude, top: topId, snap, k: k + linked.size + 3 });
     const related = near
       .filter((h) => h.score >= this.tuning.relatedAt && !linked.has(h.id as NodeId))
       .slice(0, k)

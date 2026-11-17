@@ -9,10 +9,8 @@
  * lookups per node bounded.
  */
 import type { Mark } from "../../src/core/marks";
-import { phraseKey } from "../../src/core/links";
-import { UNLISTED, listed, rank, singular } from "./words";
-
-export { phraseKey };
+import { phraseKey, singular } from "../../src/core/links";
+import { UNLISTED, listed, rank } from "./words";
 
 export type Kind = "forced" | "name" | "term" | "noun";
 
@@ -117,7 +115,7 @@ interface ExtractOptions {
   exclude?: [number, number][];
   /** Marked phrases ([[…]] already taken out): candidates whatever they look like. */
   forced?: Mark[];
-  /** Normalised phrases never to offer (the node's own title, its document's, rejected ones). */
+  /** Normalised phrases never to offer (the node's own title, rejected ones). */
   skip?: Set<string>;
 }
 

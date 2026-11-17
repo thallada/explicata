@@ -110,17 +110,14 @@ export class NodeIndex {
   }
 
   /**
-   * Sections close in meaning to a text, from under other tops than `top`, best first. Excludes the
-   * node, its ancestors and its descendants. Null if there is no model.
+   * Sections close in meaning to a text's vector, from under other tops than `top`, best first.
+   * Excludes the node, its ancestors and its descendants.
    */
-  async near(text: string, o: { exclude: Set<NodeId>; top: NodeId | null; k?: number; snap: Snap; vector?: Float32Array | null }): Promise<Hit[] | null> {
-    const k = o.k ?? 8;
+  async near(vector: Float32Array, o: { exclude: Set<NodeId>; top: NodeId | null; k: number; snap: Snap }): Promise<Hit[]> {
     // Never built (a first start): build it now rather than answer from nothing.
     if (!this.vectors.size && (this.all || this.running)) await this.refresh();
     const filter = (id: string) => !o.exclude.has(id as NodeId) && !!o.snap.nodes[id as NodeId] && topOf(o.snap, id as NodeId) !== o.top;
-    if (o.vector) return this.vectors.searchVector(o.vector, k, filter);
-    const v = await this.vectors.vector(text);
-    return v ? this.vectors.searchVector(v, k, filter) : null;
+    return this.vectors.searchVector(vector, o.k, filter);
   }
 
   /** Text and meaning fused (BM25 alone without a model): for the model's "nearby" list. */

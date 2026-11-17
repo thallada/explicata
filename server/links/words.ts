@@ -8,8 +8,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { singular } from "../../src/core/links";
 
-export { singular };
-
 let ranks: Map<string, number> | null = null;
 
 function load(): Map<string, number> {

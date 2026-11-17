@@ -1,8 +1,8 @@
 /**
- * HTTP routes for link discovery. Wired into server/index.ts before the 404.
+ * HTTP routes for one library's link discovery, under /api/l/<id>/links/ (server/bundle.ts).
  *
- *   POST /api/links/scan        { node, text?, title?, top?, topTitle?, ancestors?, occupied?, rejected?, forced?, within?, save?, review? }
- *                               → { suggestions, related, unresolved, degraded, stats, entries?, apply?, review? }; save (default
+ *   POST /api/links/scan        { node, text?, title?, top?, topTitle?, ancestors?, occupied?, rejected?, forced?, save?, review? }
+ *                               → { suggestions, unresolved, degraded, stats, entries?, apply?, review? }; save (default
  *                               true) records the suggestions as pending for the node, and `entries` is then everything
  *                               stored for it, with determinations. review ("all", or "unmarked" to leave out [[marks]],
  *                               which a person typed) has the model reviewer judge what is undecided; `apply` is then the
