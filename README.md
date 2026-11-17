@@ -93,7 +93,7 @@ Press `?` for every key. The short version:
   `undo`, `redo` when there is something to redo, and `menu` (libraries, jump, history, links,
   layout and settings); on its left, the library's name, which opens the libraries panel. Keys
   named in the status line or a panel's head are buttons. On a phone the selection bar sits at the
-  foot of the screen and menus rise from it. Every item acts by pressing its key
+  foot of the screen and menus rise from it, above an on-screen keyboard and the home indicator. Every item acts by pressing its key
   (`src/ui/press.ts`), so a click and a key cannot do different things. The first visit says, once,
   in the status line, that a click on a sentence offers actions and `?` lists the keys. Left to the
   keys: stepping by grain (`j` `k` `i`; a click or a drag goes straight there), `Tab` from mark to
@@ -116,8 +116,32 @@ Press `?` for every key. The short version:
   others. On the command line, `:/library name` opens a library by name and `:/library new name`
   makes one.
 - On a window 900 px wide or more, a laptop's too, the page opens as panes side by side, after
-  Andy Matuschak's notes: the library, then each open node in a pane of its own. `v` switches between
-  panes and the single column, `/view auto|column|panes` sets it.
+  Andy Matuschak's notes: the library, then each open node in a pane of its own. On a narrower one, a
+  phone's or a tablet's held upright, the same panes open as pages (below). `v` switches between the
+  panes and the single column, `/view auto|column|panes` sets it: `auto` is panes side by side or
+  pages by the width, `panes` side by side at any width, `column` the indented outline.
+- **On a phone: pages.** Each column of the panes view is a page as wide as the screen, its panes
+  stacked down it exactly as in a column on a wide screen (a pane not looked at folded to a tab, a
+  finger high; a pane scrolled past its title shows its tab at its top). A tap on a row, a link, a
+  "Linked from" or Related row opens its target and goes to it: the next page slides in. A swipe
+  sideways goes from page to page and makes the pane on that page the active one (the one on the
+  focused branch there, else the one last visited); a swipe down a pane scrolls its text. The trail
+  at the foot names the focused branch, a step per pane, each underlined in its pane's colour, the
+  one on screen in the text's ink, those opened beyond it fainter; a tap on a step goes there. Its
+  `map` button opens every open pane as an outline of the forest, indented by where each was opened
+  from: a tap goes to a pane, its pin pins it, its × closes it (Esc or a press outside puts the map
+  away). Each pane's ⋯, pin and × sit above its title, always shown. No curves are drawn (the panes
+  are never side by side): what each pane was opened from, its link's underline, a note's dotted
+  rule or its row's edge and arrow, takes the pane's colour instead, the colour of the rule under the
+  pane's title. Every step from pane to pane is a step in the browser's history, so Back, the button
+  or the edge swipe, goes back a pane (a swipe back to the pane before is Back itself), Forward
+  forward again, and a reload keeps the panes and the place. A long press on a link shows what it
+  opens above its menu. Turned to a width of 900 px or more, the page shows the same panes side by
+  side, the same one active, and back again. What a finger presses is at least 40 px each way (words
+  in running text excepted); the key hints, the branch, the model and the `?` button leave the
+  status line (the top menu has Keys and help, the history panel the branch). A hardware keyboard
+  works as anywhere: `Alt+h` `Alt+l` turn the pages, `[` `]` move up and down a page's panes, and `l`
+  or `Enter` on a row goes into its pane.
 - **Opening.** `Enter`, `l` or a click on a row, a link, a link in an article, or a "Linked from",
   "Mentioned in" or Related row opens its target in the next column, beside what is already open
   there (so do Ctrl-, Cmd- and middle clicks); `Shift+Enter` or a Shift-click opens it in place of
@@ -319,7 +343,9 @@ What is sent where:
   (`press.ts`); `Mouse.tsx` draws the one menu, the bar and the key hints; `Menu.tsx` the top bar
   and the libraries panel (its state in `libraries.ts`). The panes view's panes are a forest of forks (`forks.ts`, pure functions;
   the store's `trail` is its focused branch); `stack.ts` is the stacking shared by the strip and its
-  columns, `lanes.ts` orders the curves' lanes.
+  columns, `lanes.ts` orders the curves' lanes. The pages layout is the same panes (`Panes.tsx`) laid
+  out a column per page, with `Pages.tsx` (the trail and the map) and `pages.ts` (which pane a page
+  brings forward, and the history entries a pane per step, pure functions).
 
 ## The libraries
 
