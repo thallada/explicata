@@ -587,7 +587,7 @@ export class WikiClient {
   }
 
   attribution(title: string, revisionId: number | null, modified: string | null): Attribution {
-    const enc = encodeURIComponent(title.replace(/ /g, "_"));
+    const enc = this.restTitle(title);
     return {
       title,
       url: this.articleUrl(title),
@@ -785,22 +785,7 @@ export class WikiClient {
       if (r.ok && r.status === 200 && typeof r.json?.title === "string") {
         const j = r.json;
         const t = String(j.titles?.normalized ?? j.title);
-        const rev = j.revision ? Number(j.revision) : null;
-        return {
-          ok: true,
-          cached: false,
-          value: {
-            title: t,
-            pageId: j.pageid ?? null,
-            description: j.description ?? null,
-            extract: String(j.extract ?? ""),
-            thumbnail: j.thumbnail ? { url: absolute(j.thumbnail.source)!, width: j.thumbnail.width, height: j.thumbnail.height } : null,
-            url: j.content_urls?.desktop?.page ?? this.articleUrl(t),
-            revisionId: rev,
-            disambiguation: j.type === "disambiguation",
-            attribution: this.attribution(t, rev, null),
-          },
-        };
+        return this.summaryOf(t, j.revision ? Number(j.revision) : null, j, j.content_urls?.desktop?.page ?? this.articleUrl(t), j.type === "disambiguation");
       }
       if (!r.ok && r.reason !== "bad-response" && r.reason !== "server") return r;
       return this.summaryFromAction(p.title, o);
@@ -829,7 +814,11 @@ export class WikiClient {
     if (!pg) return unavailable("bad-response", "no page in answer");
     if (pg.missing || pg.invalid) return { ok: false, reason: "missing", message: `No article “${title}”` };
     const t = String(pg.title);
-    const rev = pg.lastrevid ?? null;
+    return this.summaryOf(t, pg.lastrevid ?? null, pg, this.articleUrl(t), pg.pageprops?.disambiguation !== undefined);
+  }
+
+  /** A summary from either API's page record (the REST summary or an action=query page). */
+  private summaryOf(t: string, rev: number | null, pg: { pageid?: number; description?: string; extract?: unknown; thumbnail?: { source: string; width: number; height: number } }, url: string, disambiguation: boolean): Result<Summary> {
     return {
       ok: true,
       cached: false,
@@ -839,9 +828,9 @@ export class WikiClient {
         description: pg.description ?? null,
         extract: String(pg.extract ?? ""),
         thumbnail: pg.thumbnail ? { url: absolute(pg.thumbnail.source)!, width: pg.thumbnail.width, height: pg.thumbnail.height } : null,
-        url: this.articleUrl(t),
+        url,
         revisionId: rev,
-        disambiguation: pg.pageprops?.disambiguation !== undefined,
+        disambiguation,
         attribution: this.attribution(t, rev, null),
       },
     };
@@ -852,7 +841,7 @@ export class WikiClient {
   private async loadArticle(title: string, o: CallOpts): Promise<Result<CachedArticle>> {
     const p = prepareTitle(title);
     if (!("title" in p)) return { ok: false, reason: "missing", message: p.invalid };
-    // "|0": articles were once cached with and without images; only without remains.
+    // The "|0" suffix keeps existing cache files valid.
     const key = `${p.title}|0`;
     const hit = this.articles.get(key);
     if (hit?.fresh) return { ok: true, value: hit.value, cached: true };

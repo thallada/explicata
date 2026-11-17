@@ -25,7 +25,7 @@ import { TOOLS } from "../src/llm/tasks";
 import type { Block, JsonReq, LLM, Req, Turn, TurnReq } from "../src/llm/types";
 import { normUrl, type Research, type WebSource, type WebStep } from "../src/llm/web";
 import { schemas } from "./schemas";
-import { usage } from "./usage";
+import { epochIso, usage } from "./usage";
 
 /** A failed call, with the SDK's own words and an HTTP status for the browser. */
 export class SubscriptionError extends Error {
@@ -91,8 +91,7 @@ export const bare = (model: string): Options => ({
   permissionMode: "dontAsk",
 });
 
-const resetTime = (info?: SDKRateLimitInfo) =>
-  info?.resetsAt ? ` It resets at ${new Date(info.resetsAt * (info.resetsAt < 1e12 ? 1000 : 1)).toLocaleString()}.` : "";
+const resetTime = (info?: SDKRateLimitInfo) => (info?.resetsAt ? ` It resets at ${new Date(epochIso(info.resetsAt)!).toLocaleString()}.` : "");
 
 interface Call {
   system: string;

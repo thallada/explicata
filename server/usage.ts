@@ -100,8 +100,8 @@ const LABELS: Record<string, string> = {
 };
 const labelOf = (id: string) => LABELS[id] ?? (id.startsWith("model:") ? `weekly ${id.slice(6)}` : id.replaceAll("_", " "));
 
-/** SDK reset times are unix seconds (the subscription code accepts milliseconds too, defensively). */
-const epochIso = (t: number | undefined | null) => (typeof t === "number" && Number.isFinite(t) ? new Date(t < 1e12 ? t * 1000 : t).toISOString() : null);
+/** SDK reset times are unix seconds (milliseconds accepted). */
+export const epochIso = (t: number | undefined | null) => (typeof t === "number" && Number.isFinite(t) ? new Date(t < 1e12 ? t * 1000 : t).toISOString() : null);
 const isoOrNull = (s: string | null | undefined) => (s && !Number.isNaN(Date.parse(s)) ? new Date(s).toISOString() : null);
 const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
 /** A fraction as a percentage, without float noise (0.96 → 96, not 96.00000000000001). */
