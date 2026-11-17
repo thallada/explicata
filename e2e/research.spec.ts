@@ -13,7 +13,7 @@ async function open(page: Page) {
     (globalThis as any).__opened = [];
     window.open = ((url: string) => ((globalThis as any).__opened.push(String(url)), null)) as typeof window.open;
   });
-  await page.goto("/doc/infinite-expand");
+  await page.goto("/doc/infinispand");
   await page.waitForSelector("article");
 }
 

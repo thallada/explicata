@@ -19,7 +19,7 @@ const paneTitles = async (page: Page) => (await panes(page)).map((p) => p.title)
 const nodeId = (page: Page, title: string) => page.evaluate((t) => (Object.values((globalThis as any).__ie.snap.nodes) as any[]).find((n) => n.title === t).id as string, title);
 
 async function open(page: Page) {
-  await page.goto("/doc/infinite-expand");
+  await page.goto("/doc/infinispand");
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
   // The library pane and the document's; hoisting makes the document the first.
@@ -57,7 +57,7 @@ test("the library is the first pane, and a document opens in the next; reload an
   await page.keyboard.press("Enter");
   // From the menu a document opens in place of the one open, not beside it.
   expect(await paneTitles(page)).toEqual(["Library", "Infinispand", "The tides"]);
-  await expect(page).toHaveURL(/\/doc\/tides$/);
+  await expect(page).toHaveURL(/\/doc\/the-tides$/);
   await page.goBack();
   await expect.poll(() => paneTitles(page)).toEqual(third);
   await page.goForward();

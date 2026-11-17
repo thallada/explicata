@@ -15,7 +15,7 @@ const titlesUnder = (page: Page, title: string) =>
 
 /** The first document, opened in the column (hoisted, with the library one step out). */
 async function open(page: Page) {
-  await page.goto("/doc/infinite-expand");
+  await page.goto("/doc/infinispand");
   await page.waitForSelector("article");
   await page.evaluate(() => document.fonts.ready);
 }

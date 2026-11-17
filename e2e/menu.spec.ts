@@ -36,7 +36,7 @@ const menuList = async (page: Page) => {
   await expect(page.locator(".panel.docs .filter")).not.toBeFocused();
   await expect.poll(() => state(page, (s) => `${s.mode}/${s.menu.focus}`)).toBe("docs/list");
 };
-async function open(page: Page, path = "/doc/infinite-expand") {
+async function open(page: Page, path = "/doc/infinispand") {
   await page.goto(path);
   await page.waitForSelector("article");
 }
@@ -62,7 +62,7 @@ test("the library is the first page: its documents are its sections, and opening
   await keys(page, "j Enter"); // the first document's row: it opens in place of the list
   await expect(page.locator(".top h1")).toHaveText("Infinispand");
   await expect(page.locator(".crumbs")).toHaveText(/Library/);
-  await expect(page).toHaveURL(/\/doc\/infinite-expand$/);
+  await expect(page).toHaveURL(/\/doc\/infinispand$/);
   await expect(page.locator(".docbar .doc-title .name")).toHaveText("Infinispand");
   await keys(page, "h"); // stepping out of the document returns to the library, on its row
   await expect(page.locator(".top h1")).toHaveText("Library");
@@ -113,12 +113,13 @@ test("import a .md file, then export it and get the same document back", async (
   const again = page.waitForEvent("filechooser");
   await command(page, "/import");
   await (await again).setFiles({ name: "menu-fixture.md", mimeType: "text/markdown", buffer: Buffer.from(text) });
-  await expect(page).toHaveURL(/\/doc\/menu-fixture-2$/);
+  // A second top with the same name is addressed by its id as well.
+  await expect(page).toHaveURL(/\/doc\/menu-fixture\/[^/]+$/);
   expect(await shape()).toBe(imported);
   expect(await state(page, (s) => [s.currentDoc, ...s.snap.nodes[s.currentDoc].children].filter((id: string) => s.snap.nodes[id].by !== "llm").length)).toBe(0);
   // Both are on the server, as sections of the library.
   await synced(page);
-  expect((await (await page.request.get("/api/docs")).json()).map((d: any) => d.slug)).toEqual(expect.arrayContaining(["menu-fixture", "menu-fixture-2"]));
+  expect((await (await page.request.get("/api/docs")).json()).filter((d: any) => d.slug === "menu-fixture")).toHaveLength(2);
 });
 
 test("a file with a quote that is not in its text is refused, naming the section and the quote", async ({ page }) => {
@@ -151,7 +152,7 @@ test("filter and open; the address names the document and the node, and survives
   await expect(page.locator(".top h1")).toHaveText("Menu fixture");
   expect(await state(page, (s) => s.focus.node)).toBe(section);
   // A link to a document opens it; Back returns to the node; Back again to the library.
-  await open(page, "/doc/infinite-expand");
+  await open(page, "/doc/infinispand");
   await expect(page.locator(".top h1")).toHaveText("Infinispand");
   await page.goBack();
   await expect(page.locator(".top h1")).toHaveText("Menu fixture");
@@ -174,7 +175,7 @@ test("the jump box searches every document, says which one each match is in, and
   await page.keyboard.press("Enter");
   await expect(page.locator(".top h1")).toHaveText("The tides");
   expect(await state(page, (s) => s.snap.nodes[s.focus.node].title)).toBe("Amphidromes");
-  await expect(page).toHaveURL(/\/doc\/tides\/\d+%40\d+$/);
+  await expect(page).toHaveURL(/\/doc\/the-tides\/\d+%40\d+$/);
   // Back to where the jump started.
   await page.goBack();
   await expect(page.locator(".top h1")).toHaveText("Infinispand");
@@ -202,7 +203,7 @@ test("the library opens from this browser without the network, and catches up wh
   await page.reload();
   await page.waitForSelector("article");
   await expect(page.locator(".docbar .save-state")).toHaveText("saved", { timeout: 15_000 });
-  expect(JSON.stringify(await (await page.request.get("/api/docs/tides/tree")).json())).toContain("Renamed offline");
+  expect(JSON.stringify(await (await page.request.get("/api/docs/the-tides/tree")).json())).toContain("Renamed offline");
 });
 
 test("create, rename and duplicate from the menu", async ({ page }) => {
@@ -221,9 +222,9 @@ test("create, rename and duplicate from the menu", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(page.locator(".top h1")).toHaveText("Scratch pad, renamed");
   await expect(page.locator(".panel.docs .doc.current .title")).toHaveText("Scratch pad, renamed");
-  await expect(page).toHaveURL(/\/doc\/scratch-pad$/); // the slug, and so links, stay
+  await expect(page).toHaveURL(/\/doc\/scratch-pad-renamed$/); // the address follows the title; links go by node id
   await synced(page);
-  const listed = await (await page.request.get("/api/docs/scratch-pad")).json();
+  const listed = await (await page.request.get("/api/docs/scratch-pad-renamed")).json();
   expect(listed.title).toBe("Scratch pad, renamed");
 
   await keys(page, "s");
@@ -234,8 +235,8 @@ test("create, rename and duplicate from the menu", async ({ page }) => {
   await expect(page).toHaveURL(/\/doc\/scratch-copy$/);
   // The copy sits after the original in the library, and is one commit in its history.
   expect(await state(page, (s) => s.commits()[0].message)).toBe("Duplicate “Scratch pad, renamed” as “Scratch copy”");
-  const order = await state(page, (s) => s.snap.nodes[s.snap.root].children.filter((c: string) => !s.snap.nodes[c].articles).map((c: string) => s.snap.nodes[c].slug));
-  expect(order.indexOf("scratch-copy")).toBe(order.indexOf("scratch-pad") + 1);
+  const order = await state(page, (s) => s.snap.nodes[s.snap.root].children.filter((c: string) => !s.snap.nodes[c].articles).map((c: string) => s.snap.nodes[c].title));
+  expect(order.indexOf("Scratch copy")).toBe(order.indexOf("Scratch pad, renamed") + 1);
 });
 
 test("delete asks first, and is an ordinary delete that u undoes", async ({ page }) => {
@@ -252,13 +253,13 @@ test("delete asks first, and is an ordinary delete that u undoes", async ({ page
   await synced(page);
   expect((await page.request.get("/api/docs/scratch-copy")).status()).toBe(404);
   await keys(page, "Escape u");
-  await expect.poll(() => state(page, (s) => s.snap.nodes[s.snap.root].children.map((c: string) => s.snap.nodes[c].slug))).toContain("scratch-copy");
+  await expect.poll(() => state(page, (s) => s.snap.nodes[s.snap.root].children.map((c: string) => s.snap.nodes[c].title))).toContain("Scratch copy");
   await synced(page);
   expect((await page.request.get("/api/docs/scratch-copy")).status()).toBe(200);
 });
 
 test("a node moves from one document to another, and undo works wherever the last edit was", async ({ page }) => {
-  await open(page, "/doc/scratch-pad");
+  await open(page, "/doc/scratch-pad-renamed");
   await keys(page, "a");
   await page.keyboard.type("Only in the scratch pad");
   await page.keyboard.press("Enter");
@@ -267,7 +268,7 @@ test("a node moves from one document to another, and undo works wherever the las
   await expect(page.locator(".top h1")).toHaveText("Menu fixture");
   expect(await titles(page)).not.toContain("Only in the scratch pad");
   await expect
-    .poll(async () => JSON.stringify(await (await page.request.get("/api/docs/scratch-pad/tree")).json()))
+    .poll(async () => JSON.stringify(await (await page.request.get("/api/docs/scratch-pad-renamed/tree")).json()))
     .toContain("Only in the scratch pad");
   expect(JSON.stringify(await (await page.request.get("/api/docs/menu-fixture/tree")).json())).not.toContain("Only in the scratch pad");
   // Undo is the library's too: u here takes back the edit made in the scratch pad.
@@ -280,7 +281,7 @@ test("a node moves from one document to another, and undo works wherever the las
   await synced(page);
   const tree = await (await page.request.get("/api/tree")).json();
   const node = Object.values<any>(tree.nodes).find((n) => n.title === "Only in the scratch pad");
-  const target = Object.values<any>(tree.nodes).find((n) => n.slug === "menu-fixture");
+  const target = tree.nodes[tree.nodes[tree.root].children.find((c: string) => tree.nodes[c].title === "Menu fixture")];
   const res = await page.request.post("/api/ops", { data: { author: "mover", message: "Move it across", ops: [{ op: "move", id: node.id, parent: target.id }] } });
   expect(res.ok()).toBe(true);
   await expect.poll(() => titles(page)).not.toContain("Only in the scratch pad");
@@ -302,7 +303,7 @@ test("a note being written in one document lands there after the reader has move
   await expect(page.locator(".top h1")).toHaveText("Scratch pad, renamed");
   await idle(page);
   await expect(page.locator(".pending, .writing")).toHaveCount(0);
-  const notes = await state(page, (s) => s.snap.nodes[s.snap.nodes[s.snap.root].children.find((c: string) => s.snap.nodes[c].slug === "menu-fixture")].children.filter((c: string) => /mock/i.test(s.snap.nodes[c].body)).length);
+  const notes = await state(page, (s) => s.snap.nodes[s.snap.nodes[s.snap.root].children.find((c: string) => s.snap.nodes[c].title === "Menu fixture")].children.filter((c: string) => /mock/i.test(s.snap.nodes[c].body)).length);
   expect(notes).toBe(1);
   expect(await state(page, (s) => s.snap.nodes[s.focus.node].title)).not.toBe(where);
 });
@@ -318,14 +319,14 @@ test("the : commands do the same", async ({ page }) => {
   const download = page.waitForEvent("download");
   await command(page, "/export");
   expect(await (await download).suggestedFilename()).toBe("menu-fixture.md");
-  await command(page, "/open made-by-command");
+  await command(page, "/open renamed-by-command");
   await expect(page.locator(".top h1")).toHaveText("Renamed by command");
 });
 
 test("the menu works in panes and at phone width", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await autoLayout(page);
-  await open(page, "/doc/infinite-expand");
+  await open(page, "/doc/infinispand");
   await expect(page.locator(".strip .pane")).toHaveCount(2); // the library, and the document
   await openByMenu(page, "menu fixture");
   await expect(page.locator(".strip .pane.root h1")).toHaveText("Library");

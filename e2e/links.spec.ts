@@ -182,7 +182,7 @@ test("panes: Tab and Enter open an article in the next pane; its sections open a
 });
 
 test("a note that also links opens as one pane: its text above, the article in full beneath", async ({ page }) => {
-  await wide(page, "/doc/origin-of-the-elements");
+  await wide(page, "/doc/where-the-elements-come-from");
   await inPane(page, "The triple-alpha process", "an excited state at almost exactly the energy");
   await keys(page, "Enter");
   const pane = panes(page).last();
@@ -221,14 +221,14 @@ test("a note that also links, clicked or entered, opens its article with the not
   const words = "an excited state at almost exactly the energy";
   const note = "It is called the Hoyle state";
   // Panes, by click.
-  await wide(page, "/doc/origin-of-the-elements");
+  await wide(page, "/doc/where-the-elements-come-from");
   await jump(page, "The triple-alpha process");
   await keys(page, "l");
   await panes(page).last().locator(".anchor", { hasText: words }).click();
   await expect(panes(page).last()).toHaveClass(/note-pane/);
   await expectCommentary(page, note, "Hoyle state", "excited, spin-0 resonant state");
   // The column, by keyboard: Enter on the words opens the note as a page; h returns to the words.
-  await column(page, "/doc/origin-of-the-elements");
+  await column(page, "/doc/where-the-elements-come-from");
   await jump(page, "The triple-alpha process");
   await keys(page, "Enter i");
   await tabTo(page, words);
@@ -323,7 +323,7 @@ test("Linked from and Mentioned in list what links here, reachable by j and Ente
 });
 
 test("linking by hand: the picker links to the library, to Wikipedia and to an address; it retargets; /unlink and D remove", async ({ page }) => {
-  await column(page, "/doc/tides");
+  await column(page, "/doc/the-tides");
   await jump(page, "The tides");
   const doc = await state(page, (s) => s.focus.node);
   const linkCount = () => page.evaluate((d) => {
@@ -342,7 +342,7 @@ test("linking by hand: the picker links to the library, to Wikipedia and to an a
   await expect(picker.locator(".choice.selected .t")).toHaveText("Octopus minds");
   await keys(page, "Enter");
   await expect(picker).toHaveCount(0);
-  expect(await linkCount()).toEqual([`${word}|node|`]);
+  expect(await linkCount()).toEqual([`${word}|node|Octopus minds`]); // its path: the titles from the library root
   await expect(page.locator(".lnk.l-node", { hasText: word })).toBeVisible();
   // The same picker on that link retargets it, here to Wikipedia: suggestions arrive under their own head.
   await keys(page, "w");
@@ -385,7 +385,7 @@ test("linking by hand: the picker links to the library, to Wikipedia and to an a
 });
 
 test("a disambiguation page lists its senses as rows; a missing article, an unreachable Wikipedia and a slow one say so plainly", async ({ page }) => {
-  await wide(page, "/doc/tides");
+  await wide(page, "/doc/the-tides");
   await jump(page, "The tides");
   await keys(page, "i i");
   await command(page, "/link w:Mercury");
@@ -474,7 +474,7 @@ test("a hostile article cannot run script or load anything from elsewhere, in a 
   let dialogs = 0;
   page.on("dialog", (d) => (dialogs++, d.dismiss()));
   for (const view of [wide, column]) {
-    await view(page, "/doc/tides");
+    await view(page, "/doc/the-tides");
     await jump(page, "The tides");
     await keys(page, "i i");
     await command(page, "/link w:Hostile article");

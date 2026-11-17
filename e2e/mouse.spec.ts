@@ -45,7 +45,7 @@ test.describe.configure({ mode: "serial" });
 test.beforeAll(async ({ request }) => {
   // A link on "simple ratio" (to the mock Wikipedia's Octopus), once.
   const s = await (await request.get("/api/tree")).json();
-  const doc = s.nodes[s.root].children.find((c: string) => s.nodes[c].slug === "tuning-and-temperament");
+  const doc = s.nodes[s.root].children.find((c: string) => s.nodes[c].title === "Tuning and temperament");
   const sec = s.nodes[doc].children.find((c: string) => s.nodes[c].title === "Why some intervals sound smooth");
   if (s.nodes[sec].children.some((c: string) => s.nodes[c].ref)) return;
   const res = await request.post("/api/ops", { data: { author: "mouse", message: "A link for the mouse tests", ops: [{ op: "create", parent: sec, kind: "note", quote: "simple ratio", ref: { kind: "wiki", title: "Octopus", lang: "en" } }] } });

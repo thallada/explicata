@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { idle, jump, keys, settle, state } from "./helpers";
 
 async function open(page: Page) {
-  await page.goto("/doc/infinite-expand");
+  await page.goto("/doc/infinispand");
   await page.waitForSelector("article");
 }
 
@@ -121,7 +121,7 @@ test("an outside agent edits over HTTP with the same ops, and the open page foll
   await open(page);
   const tree = await (await request.get("/api/tree/main")).json();
   // The tree is the whole library; its documents are the root's sections.
-  expect(Object.values<any>(tree.nodes).filter((n) => n.parent === tree.root).map((n) => n.slug)).toContain("infinite-expand");
+  expect(Object.values<any>(tree.nodes).filter((n) => n.parent === tree.root).map((n) => n.title)).toContain("Infinispand");
   const target = Object.values<any>(tree.nodes).find((n) => n.title === "The first document");
   expect(target).toBeTruthy();
   const res = await request.post("/api/ops/main", {

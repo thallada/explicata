@@ -187,7 +187,7 @@ test("when the model fails, nothing is linked unreviewed: everything is suggeste
 
 test("a background job is reviewed as it goes, with the model's calls counted, and can be stopped; a finished one links what was approved", async ({ page }) => {
   await column(page);
-  await page.goto("/doc/tides");
+  await page.goto("/doc/the-tides");
   await page.waitForFunction(() => (globalThis as any).__ie?.ready);
   await command(page, "/linkall");
   await page.waitForFunction(() => (globalThis as any).__ie.links.job?.state === "running" && (globalThis as any).__ie.links.job.done > 0);

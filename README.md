@@ -303,19 +303,20 @@ IE_DATA/wiki-cache/                Wikipedia answers (derived)
 IE_DATA/models/                    the embedding model
 ```
 
-Each document has a slug, made from its title when it is created and kept on rename, and a title.
+A document is a section of the library root; nothing else marks it. Its name in an address is
+made from its title (so it changes with it); nothing of it is stored.
 
 | | |
 |---|---|
 | `/` | the library |
-| `/doc/<slug>` | a document |
-| `/doc/<slug>/<node id>` | a node in it (the id is what counts: a moved node is still found) |
+| `/doc/<name>` | a document |
+| `/doc/<name>/<node id>` | a node in it (the id is what counts: a moved node is still found) |
 | `/n/<node id>` | any node |
 | `/w/<lang>/<title>` | a Wikipedia article as a page of its own (the column) |
 
 The address follows the focus; opening a document or jumping makes a history entry.
 
-On startup every `library/*.md` whose slug (its file name) has not been imported before is
+On startup every `library/*.md` whose file name has not been imported before is
 imported at the end of the library, so a starter document you delete stays deleted. A file that
 does not parse is logged and skipped.
 
@@ -349,9 +350,9 @@ Its text.
 
 ^ "words" link -> w:Octopus                     a link: a target and no text
 ^ "other words" note why -> w:Hoyle state: a note that also has a target
-^ "a phrase" link -> /fixed-points/Recursion without names/How Y works
+^ "a phrase" link -> /Fixed points/Recursion without names/How Y works
 ^ "nearby" link -> ./A section about something
-^ "a quote" link -> /octopus-minds/Arms that decide ^"tastes what it touches"
+^ "a quote" link -> /Octopus minds/Arms that decide ^"tastes what it touches"
 ^ "the web" link -> https://example.org/page "Its title"
 ```
 
@@ -360,7 +361,7 @@ A `^` line is a note on the section above it, or, indented, on the note above: `
 `define`, `why`, `example`, `challenge` or any question. The quote must be exact words of the
 parent's text (the first occurrence is anchored); a missing quote is an error naming the file,
 line, section and quote. A target is `w:Title` (`w.fr:Titre` for another language), a node by its
-document's slug and section titles (`./Section` in the same document, `^"quote"` for a note there),
+titles from the library root (`./Section` below the top of the file, `^"quote"` for a note there),
 or an `http(s)` address with an optional title. A target containing `: ` is quoted; in a path `\/`,
 `\^` and `\\` escape a slash, a caret and a backslash. Wrapped lines join with a space; a line
 ending in `\` keeps its break; a text line starting with `#`, `^` or `\` is written with a `\` in
@@ -378,16 +379,16 @@ same tree.
 |---|---|
 | `GET /api/tree[/<branch>]` | the whole library as JSON, with conflicts and recent history |
 | `POST /api/ops[/<branch>]` | `{ ops, message?, author?, actor? }`, applied as one commit. `create` and `update` take `ref`: `{ "kind": "wiki", "title", "lang" }`, `{ "kind": "node", "id", "doc", "path" }` or `{ "kind": "url", "url", "title" }`; `"ref": null` removes it |
-| `GET /api/docs` | the documents, in library order: `{ node, slug, title, excerpt }` |
+| `GET /api/docs` | the documents, in library order: `{ node, slug, title, excerpt }` (`slug`: the name made from the title) |
 | `POST /api/docs` `{ title }` | a new blank document |
 | `POST /api/docs/import?name=file.md` | body: the file (2 MB at most); 422 with `problems` if it does not parse |
-| `GET` / `PATCH {title}` / `DELETE /api/docs/<slug>` | read, rename, delete (undoable) |
-| `POST /api/docs/<slug>/duplicate` `{ title }` | a copy of the document |
-| `GET /api/docs/<slug>/export[/<branch>]` | the text format; header `x-skipped` counts what was left out |
-| `GET /api/docs/<slug>/tree[/<branch>]`, `POST /api/docs/<slug>/ops[/<branch>]` | one document's subtree with its conflicts; ops as above |
+| `GET` / `PATCH {title}` / `DELETE /api/docs/<name or node id>` | read, rename, delete (undoable) |
+| `POST /api/docs/<name or node id>/duplicate` `{ title }` | a copy of the document |
+| `GET /api/docs/<name or node id>/export[/<branch>]` | the text format; header `x-skipped` counts what was left out |
+| `GET /api/docs/<name or node id>/tree[/<branch>]`, `POST /api/docs/<name or node id>/ops[/<branch>]` | one document's subtree with its conflicts; ops as above |
 | `GET /api/wiki/…` | Wikipedia through the server's cache: `summary`, `article` (`&full=1` for every section), `section`, `senses`, `suggest`, `search`, `lookup` (server/wikiRoutes.ts) |
 | `POST /api/links/scan` `{ node, review? }` | scan a node and record what is found as pending; with `review`, the model reviewer judges what is new, and the approved links are handed back to be made |
-| `GET /api/links/pending?doc=<slug>&tier=auto\|suggest&all=1&claim=1` | pending suggestions with the context a reviewer needs; `all` with every determination; `claim` hands out the approved links no page has made |
+| `GET /api/links/pending?doc=<name or node id>&tier=auto\|suggest&all=1&claim=1` | pending suggestions with the context a reviewer needs; `all` with every determination; `claim` hands out the approved links no page has made |
 | `POST /api/links/accept` / `reject` `{ ids, author? }` | link them in one commit, or record them as declined |
 | `POST /api/links/decide` `{ ids, link, by }` | record a person's decision made in their own replica |
 | `POST` / `GET` / `DELETE /api/links/jobs` `{ scope: "doc" \| "library", doc?, review? }` | a background scan (reviewed, with `review`): start, progress, cancel |
@@ -397,7 +398,7 @@ same tree.
 An outside agent reads and writes with the same ops the keyboard uses:
 
 ```sh
-curl localhost:4747/api/docs/tides/tree
+curl localhost:4747/api/docs/the-tides/tree
 curl localhost:4747/api/ops -H 'content-type: application/json' -d '{
   "author": "my-agent", "message": "Add a remark",
   "ops": [{ "op": "create", "parent": "<node id>", "title": "A remark", "body": "Text." }]
@@ -430,8 +431,8 @@ npm run fixtures render DIR && npm run fixtures check DIR
   Two replicas pointing one link at different targets is left to a person (`1` `2` in history).
 - Export cannot hold a note's title, sections under a note, or the prompt sentences the first
   document's sections cite.
-- Two replicas creating documents with the same slug at once both keep it; the first in the library
-  wins the address. Two replicas linking the same words both keep their link.
+- Two documents with the same title share a name; the first in the library has the short address.
+  Two replicas linking the same words both keep their link.
 - In history, the documents a commit touched are placed by where its nodes are now: a commit that
   only deleted names none.
 - Articles are shown without images, references or infoboxes.

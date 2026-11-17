@@ -77,34 +77,34 @@ export const writeReport = (name: string, report: unknown) => writeFileSync(`tes
 
 interface Snap {
   root: string;
-  nodes: Record<string, { id: string; parent: string | null; kind: string; title: string; body: string; slug?: string; ref?: unknown; anchors: { text: string }[]; children: string[] }>;
+  nodes: Record<string, { id: string; parent: string | null; kind: string; title: string; body: string; ref?: unknown; anchors: { text: string }[]; children: string[] }>;
 }
 
 const W = (title: string) => ({ kind: "wiki", title, lang: "en" });
 
-/** Find a section by its document's slug and title path. */
-function find(s: Snap, slug: string, ...path: string[]): string {
-  let at = s.nodes[s.root].children.find((c) => s.nodes[c].slug === slug)!;
-  for (const t of path) at = s.nodes[at].children.find((c) => s.nodes[c].kind === "section" && s.nodes[c].title === t)!;
-  if (!at) throw new Error(`no ${slug}/${path.join("/")}`);
+/** Find a section by its titles from the library root. */
+function find(s: Snap, ...path: string[]): string {
+  let at = s.root;
+  for (const t of path) at = s.nodes[at]?.children.find((c) => s.nodes[c].kind === "section" && s.nodes[c].title === t) as string;
+  if (!at) throw new Error(`no /${path.join("/")}`);
   return at;
 }
 const noteOn = (s: Snap, parent: string, quote: string) => s.nodes[parent].children.find((c) => s.nodes[c].kind === "note" && s.nodes[c].anchors[0]?.text === quote)!;
 
 export async function seedLinks(request: APIRequestContext) {
   const s: Snap = await (await request.get("/api/tree")).json();
-  const recursion = find(s, "fixed-points", "Recursion without names");
+  const recursion = find(s, "Fixed points", "Recursion without names");
   if (s.nodes[recursion].children.some((c) => s.nodes[c].ref)) return; // already seeded by an earlier test
-  const howY = find(s, "fixed-points", "Recursion without names", "How Y works");
-  const triple = find(s, "origin-of-the-elements", "Fusion in ordinary stars", "The triple-alpha process");
-  const separate = find(s, "octopus-minds", "A separate experiment");
-  const ancestor = find(s, "octopus-minds", "A separate experiment", "The common ancestor");
-  const programs = find(s, "what-a-proof-is", "Proof assistants", "Proofs as programs");
-  const kinds = find(s, "the-eukaryotic-cell", "Two kinds of cell");
+  const howY = find(s, "Fixed points", "Recursion without names", "How Y works");
+  const triple = find(s, "Where the elements come from", "Fusion in ordinary stars", "The triple-alpha process");
+  const separate = find(s, "Octopus minds", "A separate experiment");
+  const ancestor = find(s, "Octopus minds", "A separate experiment", "The common ancestor");
+  const programs = find(s, "What a proof is", "Proof assistants", "Proofs as programs");
+  const kinds = find(s, "The one merger", "Two kinds of cell");
   const ops = [
     { op: "create", parent: recursion, kind: "note", quote: "fixed-point combinator", ref: W("Fixed-point combinator") },
     { op: "update", id: noteOn(s, recursion, "lambda calculus"), ref: W("Lambda calculus") },
-    { op: "create", parent: recursion, kind: "note", quote: "Y combinator", ref: { kind: "node", id: howY, doc: "fixed-points", path: ["Recursion without names", "How Y works"] } },
+    { op: "create", parent: recursion, kind: "note", quote: "Y combinator", ref: { kind: "node", id: howY, path: ["Fixed points", "Recursion without names", "How Y works"] } },
     { op: "create", parent: recursion, kind: "note", quote: "self-reference", ref: { kind: "url", url: "https://plato.stanford.edu/entries/self-reference/", title: "Self-Reference (Stanford Encyclopedia of Philosophy)" } },
     { op: "update", id: noteOn(s, triple, "an excited state at almost exactly the energy"), ref: W("Hoyle state") },
     { op: "create", parent: triple, kind: "note", quote: "Fred Hoyle", ref: W("Fred Hoyle") },
@@ -113,7 +113,7 @@ export async function seedLinks(request: APIRequestContext) {
     // A link on words that already carry a note of their own: two notes on one span.
     { op: "create", parent: ancestor, kind: "note", quote: "The camera-like eye", ref: W("Cephalopod") },
     { op: "create", parent: programs, kind: "note", quote: "a function turning proofs", ref: W("Lambda calculus") },
-    { op: "create", parent: programs, kind: "note", quote: "Several of the leading systems", ref: { kind: "node", id: recursion, doc: "fixed-points", path: ["Recursion without names"] } },
+    { op: "create", parent: programs, kind: "note", quote: "Several of the leading systems", ref: { kind: "node", id: recursion, path: ["Fixed points", "Recursion without names"] } },
     { op: "create", parent: kinds, kind: "note", quote: "Eukaryotes", ref: W("Eukaryote") },
     { op: "create", parent: kinds, kind: "note", quote: "Bacteria", ref: W("Bacteria") },
   ];

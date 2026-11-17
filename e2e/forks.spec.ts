@@ -73,7 +73,7 @@ async function still(page: Page) {
 }
 
 async function open(page: Page) {
-  await page.goto("/doc/infinite-expand");
+  await page.goto("/doc/infinispand");
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
   await expect(page.locator(".strip .pane")).toHaveCount(2);
@@ -92,7 +92,7 @@ async function tabTo(page: Page, words: string) {
 
 /** The owner's screenshot: Two kinds of cell, with Eukaryote (opened from its link), Simple cells and Complex cells beside each other in the next column, and Bacteria opened from Eukaryote's text. */
 async function cells(page: Page) {
-  await page.goto("/doc/the-eukaryotic-cell");
+  await page.goto("/doc/the-one-merger");
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
   await jump(page, "Two kinds of cell");
