@@ -1,18 +1,18 @@
 /**
  * Evaluate the link scanner (server/links/scan.ts) on the starter library against hand labels.
  *
- *   IE_DATA=/tmp/x npx tsx scripts/linkEval.ts warm [files…]    live: fill the Wikipedia cache for the
+ *   EX_DATA=/tmp/x npx tsx scripts/linkEval.ts warm [files…]    live: fill the Wikipedia cache for the
  *                                                             sampled sections, write their traces
- *   IE_DATA=/tmp/x npx tsx scripts/linkEval.ts eval [files…]    offline (cache only): precision and
+ *   EX_DATA=/tmp/x npx tsx scripts/linkEval.ts eval [files…]    offline (cache only): precision and
  *                                                             recall against the labels
- *   IE_DATA=/tmp/x npx tsx scripts/linkEval.ts trace [files…]   offline: the traces, for labelling
+ *   EX_DATA=/tmp/x npx tsx scripts/linkEval.ts trace [files…]   offline: the traces, for labelling
  *
  * The sample is the first SAMPLE sections (in reading order, the top's own text included) of each
  * named file's tree (by file name, without .md) that have at least 40 words. Labels: tests/fixtures/link-labels.json, one entry per
  * phrase (by its normalised key) per section, saying whether it is worth linking and to what.
  * `warm` goes to Wikipedia through the client (serial, spaced as it enforces) and stops at a budget
- * of requests (IE_EVAL_BUDGET, default 380); nothing but candidate phrases is sent. The embedding
- * model is the real one unless IE_EMBED says otherwise.
+ * of requests (EX_EVAL_BUDGET, default 380); nothing but candidate phrases is sent. The embedding
+ * model is the real one unless EX_EMBED says otherwise.
  */
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -25,10 +25,10 @@ import { Linker, type TraceRow, type Tuning } from "../server/links/scan";
 import { WikiClient } from "../server/wiki";
 
 const [mode = "eval", ...rest] = process.argv.slice(2);
-const DATA = resolve(process.env.IE_DATA ?? "");
-if (!process.env.IE_DATA) throw new Error("set IE_DATA to a scratch directory");
-const SAMPLE = Number(process.env.IE_EVAL_SAMPLE ?? 12);
-const BUDGET = Number(process.env.IE_EVAL_BUDGET ?? 380);
+const DATA = resolve(process.env.EX_DATA ?? "");
+if (!process.env.EX_DATA) throw new Error("set EX_DATA to a scratch directory");
+const SAMPLE = Number(process.env.EX_EVAL_SAMPLE ?? 12);
+const BUDGET = Number(process.env.EX_EVAL_BUDGET ?? 380);
 const FILES = rest.length ? rest : ["octopus-minds", "fixed-points", "origin-of-the-elements", "invention-of-writing"];
 const LABELS = resolve("tests/fixtures/link-labels.json");
 
@@ -68,7 +68,7 @@ const wiki = new WikiClient({
   ...(live ? {} : { fetch: (async () => { throw new TypeError("offline (eval)"); }) as typeof fetch, offlineHoldMs: 0, spacingMs: 0 }),
 });
 const index = new NodeIndex(() => doc, { file: join(DATA, "vectors", "eval-nodes"), embedder: embedder(), delayMs: 0 });
-const tuning: Partial<Tuning> = JSON.parse(process.env.IE_EVAL_TUNING ?? "{}");
+const tuning: Partial<Tuning> = JSON.parse(process.env.EX_EVAL_TUNING ?? "{}");
 const linker = new Linker({ doc: () => doc, wiki: () => wiki, embedder: embedder(), index, tuning });
 
 const t0 = performance.now();
@@ -140,7 +140,7 @@ if (mode === "heldout") {
   for (const r of chosen.filter((r) => r.tier === "auto" && !ok(r))) console.log(fmt(r));
   console.log("\nauto right:");
   for (const r of chosen.filter((r) => r.tier === "auto" && ok(r))) console.log(fmt(r));
-  if (process.env.IE_EVAL_SUGGEST) {
+  if (process.env.EX_EVAL_SUGGEST) {
     console.log("\nsuggest errors:");
     for (const r of chosen.filter((r) => r.tier === "suggest" && !ok(r))) console.log(fmt(r));
   }
@@ -191,18 +191,18 @@ const show = (title: string, list: Row[]) => {
 const wrong = chosen.filter((r) => find(r) && !correct(r));
 show("wrong (chosen, label disagrees):", wrong);
 const missed = mine.filter((l) => l.label === "yes" && !chosen.some((r) => r.doc === l.doc && r.node === l.node && r.key === l.key && correct(r)));
-if (missed.length && process.env.IE_EVAL_MISSES) {
+if (missed.length && process.env.EX_EVAL_MISSES) {
   console.log("\nmissed (worth linking, not chosen or wrong target):");
   for (const l of missed) {
     const r = rows.find((x) => x.doc === l.doc && x.node === l.node && x.key === l.key);
     console.log(`  ${l.doc} | ${l.node} | “${l.phrase}” → ${l.target}${r ? `   scanner: ${r.target} [${r.tier ?? "drop"} ${r.score} fit ${r.fit}] ${r.why}` : "   (never resolved)"}`);
   }
 }
-if (process.env.IE_EVAL_RIGHT) show("right:", chosen.filter(correct));
-// Every labelled row with what judge() saw, for tuning (IE_EVAL_DUMP=file).
-if (process.env.IE_EVAL_DUMP) {
+if (process.env.EX_EVAL_RIGHT) show("right:", chosen.filter(correct));
+// Every labelled row with what judge() saw, for tuning (EX_EVAL_DUMP=file).
+if (process.env.EX_EVAL_DUMP) {
   const dump = rows.map((r) => ({ ...r, label: find(r)?.label ?? null, labelTarget: find(r)?.target ?? null, right: correct(r) }));
-  writeFileSync(process.env.IE_EVAL_DUMP, JSON.stringify(dump, null, 1));
+  writeFileSync(process.env.EX_EVAL_DUMP, JSON.stringify(dump, null, 1));
 }
 // The embedding worker is unref'd, but a script is done here whatever is still open.
 process.exit(0);

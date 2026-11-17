@@ -236,7 +236,7 @@ describe("queue", () => {
     await w.lookup(["Page 1"]);
     await w.lookup(["Page 2"]);
     expect(slept).toEqual([1000]);
-    expect(calls[0].headers["user-agent"]).toBe("Infinispand/0.1 (personal knowledge tool)");
+    expect(calls[0].headers["user-agent"]).toBe("Explicata/0.1 (personal knowledge tool)");
   });
 
   it("drops a queued request whose caller aborted, without sending it", async () => {
@@ -258,7 +258,7 @@ describe("user agent and contact", () => {
     expect(validContact("https://example.org/me")).toBe("https://example.org/me");
     expect(validContact("Jane Doe")).toBeNull();
     expect(validContact("a@b.c; rm")).toBeNull();
-    expect(userAgent("me@example.org")).toBe("Infinispand/0.1 (me@example.org)");
+    expect(userAgent("me@example.org")).toBe("Explicata/0.1 (me@example.org)");
   });
 });
 

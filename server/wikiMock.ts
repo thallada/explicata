@@ -1,5 +1,5 @@
 /**
- * A stand-in Wikipedia for tests and offline work (IE_WIKI=mock). `mockWikiFetch` answers every
+ * A stand-in Wikipedia for tests and offline work (EX_WIKI=mock). `mockWikiFetch` answers every
  * URL server/wiki.ts builds, in the shapes the real APIs return (docs/wikipedia.md §2), from a
  * few short articles written for the purpose. The HTML imitates action=parse output, junk
  * included (reference markers, infoboxes, navboxes, hatnotes, TemplateStyles), so the real

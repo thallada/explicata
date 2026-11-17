@@ -61,12 +61,12 @@ test("the library root is the first page and a node like any other: its sections
   // The first top-level node opens in place, as any section does: the library stays the page.
   await keys(page, "j l");
   await expect(page.locator(".top h1")).toHaveText("Library");
-  await expect(page.locator("article > .outline > .node.open > .row .title")).toHaveText("Infinispand");
+  await expect(page.locator("article > .outline > .node.open > .row .title")).toHaveText("Explicata");
   // Its text is a prompt its sections cite: folded there too.
   await expect(page.locator("article > .outline > .node.open > .content > .abstract.seed.folded")).toBeVisible();
   const first = await state(page, (s) => s.focus.node);
   await expect(page).toHaveURL(new RegExp(`/n/${encodeURIComponent(first)}$`));
-  await expect(page).toHaveTitle("Infinispand");
+  await expect(page).toHaveTitle("Explicata");
   // Back up onto the root itself: its address is the library's, /l/<id>, and it is the node the keys act on.
   await keys(page, "h k");
   expect(await state(page, (s) => s.focus.node === s.snap.root)).toBe(true);
@@ -90,12 +90,12 @@ test("the library root is the first page and a node like any other: its sections
   await keys(page, "Escape");
   // z makes a node the page; Esc at its top steps back out to the library, on its row.
   await keys(page, "j z");
-  await expect(page.locator(".top h1")).toHaveText("Infinispand");
+  await expect(page.locator(".top h1")).toHaveText("Explicata");
   await expect(page.locator(".crumbs")).toHaveText(/^Library ›/);
   await expect(page.locator(".top .byline")).toContainText(/^\d+ sections · \d+ nodes/);
   await keys(page, "Escape");
   await expect(page.locator(".top h1")).toHaveText("Library");
-  expect(await focusedTitle(page)).toBe("Infinispand");
+  expect(await focusedTitle(page)).toBe("Explicata");
 });
 
 test("an address names a node by its id, and survives a reload, Back and Forward; an old /doc/ address shows the library", async ({ page }) => {
@@ -127,8 +127,8 @@ test("an address names a node by its id, and survives a reload, Back and Forward
 });
 
 test("the jump box searches the whole library, says where each match is, and goes there", async ({ page }) => {
-  await openPage(page, "Infinispand");
-  await expect(page.locator(".top h1")).toHaveText("Infinispand");
+  await openPage(page, "Explicata");
+  await expect(page.locator(".top h1")).toHaveText("Explicata");
   await page.keyboard.press("/");
   await page.keyboard.type("amphidromes");
   const hit = page.locator(".jump li").first();
@@ -141,7 +141,7 @@ test("the jump box searches the whole library, says where each match is, and goe
   // Back to where the jump started.
   await page.goBack();
   await ready(page);
-  await expect.poll(() => focusedTitle(page)).toBe("Infinispand");
+  await expect.poll(() => focusedTitle(page)).toBe("Explicata");
   // A top-level node is found like any other, and says it is in the library.
   await page.keyboard.press("/");
   await page.keyboard.type("Fixed points");

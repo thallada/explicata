@@ -10,7 +10,7 @@
  */
 import { hostOf } from "../core/ref";
 
-/** Per-run caps on searches and fetches. Defaults; the server's IE_WEB_SEARCHES / IE_WEB_FETCHES win. */
+/** Per-run caps on searches and fetches. Defaults; the server's EX_WEB_SEARCHES / EX_WEB_FETCHES win. */
 export const DEFAULT_LIMITS = { searches: 5, fetches: 5 } as const;
 
 export interface Research {

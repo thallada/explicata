@@ -27,14 +27,14 @@ test.afterEach(({ page }) => settle(page));
 test("a column's panes stand in the order of their sources: opened from a row higher up, a pane stands higher", async ({ page }) => {
   await library(page);
   await clickOpen(page, "Library", "Octopus minds");
-  await clickOpen(page, "Library", "Infinispand");
-  await expect.poll(() => colTitles(page, 1)).toEqual(["Infinispand", "Octopus minds"]);
+  await clickOpen(page, "Library", "Explicata");
+  await expect.poll(() => colTitles(page, 1)).toEqual(["Explicata", "Octopus minds"]);
   await clickOpen(page, "Library", "Fixed points");
-  await expect.poll(() => colTitles(page, 1)).toEqual(["Infinispand", "Fixed points", "Octopus minds"]);
+  await expect.poll(() => colTitles(page, 1)).toEqual(["Explicata", "Fixed points", "Octopus minds"]);
   // Kept with the view.
   await page.reload();
   await page.waitForSelector(".strip .pane");
-  expect(await colTitles(page, 1)).toEqual(["Infinispand", "Fixed points", "Octopus minds"]);
+  expect(await colTitles(page, 1)).toEqual(["Explicata", "Fixed points", "Octopus minds"]);
   await noFaults(page, "after a reload");
 });
 
@@ -98,12 +98,12 @@ test("a click anywhere in a pane that is not text, a row or a link makes that pa
 test("every pane of a crowded column shows at least its tab, above or below the one looked at; tabs line up with the active rule; curves stay on their sources and lines", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 700 });
   await library(page);
-  for (const t of ["Octopus minds", "Infinispand", "The tides", "Fixed points", "What a proof is"]) await clickOpen(page, "Library", t);
+  for (const t of ["Octopus minds", "Explicata", "The tides", "Fixed points", "What a proof is"]) await clickOpen(page, "Library", t);
   // The one looked at near the top: those below it stack at the column's foot.
-  await pane(page, "Infinispand").locator(".pane-head h2").dispatchEvent("click");
+  await pane(page, "Explicata").locator(".pane-head h2").dispatchEvent("click");
   await still(page);
-  for (const first of ["Infinispand", "What a proof is"]) {
-    if (first !== "Infinispand") {
+  for (const first of ["Explicata", "What a proof is"]) {
+    if (first !== "Explicata") {
       await pane(page, first).locator(".pane-head h2").dispatchEvent("click");
       await still(page);
     }
@@ -145,7 +145,7 @@ test("every pane of a crowded column shows at least its tab, above or below the 
 test("a pane cut off for any reason peeks out whole, across and down, and the curves follow it: covered from below or above, by its share, by the column's foot, beside a pinned pane, and with its column covered", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 700 });
   await library(page);
-  for (const t of ["Octopus minds", "Infinispand", "The tides", "Fixed points"]) await clickOpen(page, "Library", t);
+  for (const t of ["Octopus minds", "Explicata", "The tides", "Fixed points"]) await clickOpen(page, "Library", t);
   /** Hover each pane of the top-level trees' column that is cut off, and check it comes out whole, and the curves with it. */
   const sweep = async (label: string, across: boolean) => {
     const col = page.locator(".strip > .col").nth(1);
@@ -190,7 +190,7 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
     return peeked;
   };
   // Covered from below (the one looked at near the top) and from above (near the foot).
-  await pane(page, "Infinispand").locator(".pane-head h2").dispatchEvent("click");
+  await pane(page, "Explicata").locator(".pane-head h2").dispatchEvent("click");
   await still(page);
   expect(await sweep("top looked at", false)).toBeGreaterThan(0);
   await pane(page, "Octopus minds").locator(".pane-head h2").dispatchEvent("click");
@@ -214,7 +214,7 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("ie:view:")).forEach((k) => localStorage.removeItem(k)));
   await library(page);
-  await clickOpen(page, "Library", "Infinispand");
+  await clickOpen(page, "Library", "Explicata");
   await clickOpen(page, "Library", "Octopus minds");
   await pane(page, "Octopus minds").locator(".pane-head h2").dispatchEvent("click");
   await still(page);
@@ -224,7 +224,7 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
 
 test("the curves keep to their sources and landing lines through every kind of layout change: scrolls, a resize, folding, a drag, an article arriving, a sticky tab", async ({ page }) => {
   await library(page);
-  for (const t of ["Infinispand", "Fixed points"]) await clickOpen(page, "Library", t);
+  for (const t of ["Explicata", "Fixed points"]) await clickOpen(page, "Library", t);
   await clickOpen(page, "Fixed points", "Recursion without names");
   await noFaults(page, "opened");
   await clickOpen(page, "Recursion without names", "fixed-point combinator", ".lnk, .anchor");
@@ -304,7 +304,7 @@ test("a dotted curve to a source out of sight in its pane turns, at its end, tow
 
 test("Alt with h j k l moves between panes from a node, a selection or an article; left then right comes back; [ ] still go up and down", async ({ page }) => {
   await library(page);
-  await clickOpen(page, "Library", "Infinispand");
+  await clickOpen(page, "Library", "Explicata");
   await clickOpen(page, "Library", "Fixed points");
   await clickOpen(page, "Fixed points", "Recursion without names");
   await pane(page, "Recursion without names").locator(".pane-head h2").dispatchEvent("click");
@@ -316,11 +316,11 @@ test("Alt with h j k l moves between panes from a node, a selection or an articl
   await expect.poll(() => activeTitle(page)).toBe("Recursion without names");
   await page.keyboard.press("Alt+h");
   await page.keyboard.press("Alt+k");
-  await expect.poll(() => activeTitle(page)).toBe("Infinispand");
+  await expect.poll(() => activeTitle(page)).toBe("Explicata");
   await page.keyboard.press("Alt+j");
   await expect.poll(() => activeTitle(page)).toBe("Fixed points");
   await page.keyboard.press("Alt+ArrowUp");
-  await expect.poll(() => activeTitle(page)).toBe("Infinispand");
+  await expect.poll(() => activeTitle(page)).toBe("Explicata");
   await keys(page, "]");
   await expect.poll(() => activeTitle(page)).toBe("Fixed points");
   await page.keyboard.press("Alt+h");

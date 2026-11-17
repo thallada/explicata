@@ -22,7 +22,7 @@ import type { Suggestion } from "./scan";
 /** Proposals per call. */
 export const BATCH = 60;
 
-/** Calls a background job may make, unless IE_REVIEW_CALLS says otherwise. */
+/** Calls a background job may make, unless EX_REVIEW_CALLS says otherwise. */
 export const JOB_CALLS = 50;
 /** Calls the scan after one edit may make. */
 export const SCAN_CALLS = 2;

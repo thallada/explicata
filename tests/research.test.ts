@@ -1,6 +1,6 @@
 /**
  * Web research for the editor agent, with no network: the mock's fake search and fetch, the URL
- * rule in the tool executor, pause_turn, caps, IE_WEB, the subscription route's option object, and
+ * rule in the tool executor, pause_turn, caps, EX_WEB, the subscription route's option object, and
  * the API-key route's request and stream against a local stand-in for the API.
  */
 import { createServer, type IncomingMessage, type Server } from "node:http";
@@ -223,22 +223,22 @@ describe("caps", () => {
   });
 
   it("the server's caps replace the browser's, and are the API tools' max_uses", () => {
-    const cfg = webConfig({ IE_WEB_SEARCHES: "3", IE_WEB_FETCHES: "2" }, true);
+    const cfg = webConfig({ EX_WEB_SEARCHES: "3", EX_WEB_FETCHES: "2" }, true);
     expect(cfg).toEqual({ on: true, searches: 3, fetches: 2 });
     const req = applyWebPolicy({ system: "", context: "", messages: [], research: { searches: 99, fetches: 99, used: { searches: 1, fetches: 0 } } }, cfg);
     expect(req.research).toMatchObject({ searches: 3, fetches: 2, used: { searches: 1, fetches: 0 } });
     const tools = apiWebTools("claude-opus-5-5", req.research!);
     expect(tools.map((t) => [t.type, (t as { max_uses?: number }).max_uses])).toEqual([["web_search_20260209", 3], ["web_fetch_20260209", 2]]);
     expect(webConfig({}, true)).toEqual({ on: true, searches: 5, fetches: 5 });
-    expect(webConfig({ IE_WEB_SEARCHES: "lots" }, true).searches).toBe(5);
+    expect(webConfig({ EX_WEB_SEARCHES: "lots" }, true).searches).toBe(5);
   });
 });
 
-describe("IE_WEB", () => {
+describe("EX_WEB", () => {
   it("off: research is taken out of every turn, whatever the browser asked", async () => {
-    const cfg = webConfig({ IE_WEB: "off" }, true);
+    const cfg = webConfig({ EX_WEB: "off" }, true);
     expect(cfg.on).toBe(false);
-    expect(webConfig({ IE_WEB: "maybe" }, true).on).toBe(false);
+    expect(webConfig({ EX_WEB: "maybe" }, true).on).toBe(false);
     expect(webConfig({}, false).on).toBe(false);
     // The mock behind the server's policy, as the server runs it.
     const base = mockLLM();

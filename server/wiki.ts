@@ -15,7 +15,7 @@
  *
  * Every request goes through one serial queue with a minimum spacing, priority for interactive
  * calls, Retry-After / 429 / 503 / maxlag handling, and a descriptive User-Agent. Results are
- * cached on disk under <IE_DATA>/wiki-cache/, so scanning the same text twice costs nothing.
+ * cached on disk under <EX_DATA>/wiki-cache/, so scanning the same text twice costs nothing.
  * Nothing here throws into a caller: failures come back as { ok: false, reason }.
  *
  * Only the candidate phrase or the search query itself is ever sent, never surrounding text.
@@ -207,7 +207,7 @@ export function validContact(contact: string | undefined): string | null {
 
 /** The User-Agent: generic by default; never the owner's name, host or paths unless they supply a contact. */
 export function userAgent(contact: string | null): string {
-  return contact ? `Infinispand/0.1 (${contact})` : "Infinispand/0.1 (personal knowledge tool)";
+  return contact ? `Explicata/0.1 (${contact})` : "Explicata/0.1 (personal knowledge tool)";
 }
 
 interface WikiOptions {
@@ -930,12 +930,12 @@ export class WikiClient {
 const MODIFIED = "Adapted: references, navigation boxes, infoboxes, edit links and images removed.";
 
 let shared: WikiClient | null = null;
-/** The server's client, configured from IE_DATA, IE_WIKI_LANG and IE_WIKI_CONTACT. */
+/** The server's client, configured from EX_DATA, EX_WIKI_LANG and EX_WIKI_CONTACT. */
 export function wiki(): WikiClient {
   if (!shared) {
-    shared = new WikiClient({ lang: process.env.IE_WIKI_LANG, contact: process.env.IE_WIKI_CONTACT });
-    if (process.env.IE_WIKI_CONTACT && !shared.contact) {
-      console.warn("IE_WIKI_CONTACT is not an email address, an http(s) URL or User:Name; sending the generic User-Agent.");
+    shared = new WikiClient({ lang: process.env.EX_WIKI_LANG, contact: process.env.EX_WIKI_CONTACT });
+    if (process.env.EX_WIKI_CONTACT && !shared.contact) {
+      console.warn("EX_WIKI_CONTACT is not an email address, an http(s) URL or User:Name; sending the generic User-Agent.");
     }
     process.once("exit", () => shared?.flush());
   }

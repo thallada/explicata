@@ -338,7 +338,7 @@ test("in the panes view the panel narrows the panes, and the curves follow it th
   await page.goto("/");
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
-  await page.locator(".pane .row", { hasText: "Infinispand" }).first().dispatchEvent("click");
+  await page.locator(".pane .row", { hasText: "Explicata" }).first().dispatchEvent("click");
   await page.locator(".pane .row", { hasText: "Expansion by depth" }).first().dispatchEvent("click");
   await expect(page.locator(".strip .pane")).toHaveCount(3);
   await still(page);

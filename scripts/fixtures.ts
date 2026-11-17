@@ -25,7 +25,7 @@ interface Fixture {
 }
 
 function base() {
-  const doc = Doc.create("alice", "Infinispand", "A document that expands without limit.");
+  const doc = Doc.create("alice", "Explicata", "A document that expands without limit.");
   const root = doc.snap().root;
   const { created } = doc.apply(
     [

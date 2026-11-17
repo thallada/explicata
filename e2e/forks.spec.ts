@@ -69,7 +69,7 @@ async function still(page: Page) {
 }
 
 async function open(page: Page) {
-  await visit(page, "Infinispand");
+  await visit(page, "Explicata");
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
   await expect(page.locator(".strip .pane")).toHaveCount(2);
@@ -121,11 +121,11 @@ test("Enter on a section row opens its pane below in the next column; Shift+Ente
   await keys(page, "l l l"); // Expansion by depth showing; the focus on its first row
   // Nothing to the right yet: a plain trail is one pane per column.
   await keys(page, "Enter");
-  expect(await tree(page)).toEqual(["Infinispand", [["*", ["Expansion by depth", [["*", "Levels of a node"]]]]]]);
-  expect(await columns(page)).toEqual([["Infinispand"], ["Expansion by depth"], ["Levels of a node"]]);
+  expect(await tree(page)).toEqual(["Explicata", [["*", ["Expansion by depth", [["*", "Levels of a node"]]]]]]);
+  expect(await columns(page)).toEqual([["Explicata"], ["Expansion by depth"], ["Levels of a node"]]);
   await keys(page, "j Enter");
-  expect(await columns(page)).toEqual([["Infinispand"], ["Expansion by depth"], ["Levels of a node", "Pre-generated depth"]]);
-  expect(await trail(page)).toEqual(["Infinispand", "Expansion by depth", "Pre-generated depth"]);
+  expect(await columns(page)).toEqual([["Explicata"], ["Expansion by depth"], ["Levels of a node", "Pre-generated depth"]]);
+  expect(await trail(page)).toEqual(["Explicata", "Expansion by depth", "Pre-generated depth"]);
   // They share the column's height, one above the other, beside the pane they came from.
   const b = await boxes(page);
   const [a, c, parent] = [b["Levels of a node"], b["Pre-generated depth"], b["Expansion by depth"]];
@@ -139,15 +139,15 @@ test("Enter on a section row opens its pane below in the next column; Shift+Ente
   await expect(pane(page, "Expansion by depth").locator(".node.forked > .row")).toHaveText([/Levels of a node/]);
   // Shift+Enter opens in place of the focused one.
   await keys(page, "j Shift+Enter");
-  expect(await columns(page)).toEqual([["Infinispand"], ["Expansion by depth"], ["Levels of a node", "Generation on demand"]]);
+  expect(await columns(page)).toEqual([["Explicata"], ["Expansion by depth"], ["Levels of a node", "Generation on demand"]]);
   // Enter (or Shift+Enter) on the row of a pane already open focuses it: no second copy, and nothing closes.
   await keys(page, "k k Enter");
-  expect(await columns(page)).toEqual([["Infinispand"], ["Expansion by depth"], ["Levels of a node", "Generation on demand"]]);
-  expect(await trail(page)).toEqual(["Infinispand", "Expansion by depth", "Levels of a node"]);
+  expect(await columns(page)).toEqual([["Explicata"], ["Expansion by depth"], ["Levels of a node", "Generation on demand"]]);
+  expect(await trail(page)).toEqual(["Explicata", "Expansion by depth", "Levels of a node"]);
   await keys(page, "Enter");
-  expect(await columns(page)).toEqual([["Infinispand"], ["Expansion by depth"], ["Levels of a node", "Generation on demand"]]);
+  expect(await columns(page)).toEqual([["Explicata"], ["Expansion by depth"], ["Levels of a node", "Generation on demand"]]);
   await keys(page, "j j Shift+Enter");
-  expect(await trail(page)).toEqual(["Infinispand", "Expansion by depth", "Generation on demand"]);
+  expect(await trail(page)).toEqual(["Explicata", "Expansion by depth", "Generation on demand"]);
 });
 
 test("a click, a Ctrl- and a middle click open beside; a Shift-click in place; a click in another fork makes it the focused one", async ({ page }) => {
@@ -157,24 +157,24 @@ test("a click, a Ctrl- and a middle click open beside; a Shift-click in place; a
   const row = (t: string) => page.locator(".pane .row", { hasText: t }).first();
   await row("Borrowed from Gwern").click();
   await row(kids[0]).click();
-  expect(await trail(page)).toEqual(["Infinispand", "Borrowed from Gwern", kids[0]]);
+  expect(await trail(page)).toEqual(["Explicata", "Borrowed from Gwern", kids[0]]);
   await row(kids[1]).click({ modifiers: ["Control"] });
-  expect(await tree(page)).toEqual(["Infinispand", [["*", ["Borrowed from Gwern", [kids[0], ["*", kids[1]]]]]]]);
+  expect(await tree(page)).toEqual(["Explicata", [["*", ["Borrowed from Gwern", [kids[0], ["*", kids[1]]]]]]]);
   await row(kids[2]).click({ button: "middle" });
-  expect(await tree(page)).toEqual(["Infinispand", [["*", ["Borrowed from Gwern", [kids[0], kids[1], ["*", kids[2]]]]]]]);
+  expect(await tree(page)).toEqual(["Explicata", [["*", ["Borrowed from Gwern", [kids[0], kids[1], ["*", kids[2]]]]]]]);
   // A click on the first fork's heading focuses that fork, and makes that pane the active one.
   await pane(page, kids[0]).locator(".pane-head").click();
-  expect(await trail(page)).toEqual(["Infinispand", "Borrowed from Gwern", kids[0]]);
+  expect(await trail(page)).toEqual(["Explicata", "Borrowed from Gwern", kids[0]]);
   expect(await focusedTitle(page)).toBe(kids[0]);
   await expect(page.locator(".pane.active .pane-head h2")).toHaveText(kids[0]);
   // The first pane's rows too: beside, in the next column (above, as its row is above); and a click on a row already open keeps it.
   await row("Display forms").click();
-  await expect.poll(() => columns(page)).toEqual([["Infinispand"], ["Display forms", "Borrowed from Gwern"], kids.slice(0, 3)]);
+  await expect.poll(() => columns(page)).toEqual([["Explicata"], ["Display forms", "Borrowed from Gwern"], kids.slice(0, 3)]);
   await row("Display forms").click();
   expect((await columns(page))[1]).toEqual(["Display forms", "Borrowed from Gwern"]);
   // A Shift-click opens in place of the focused one (Display forms), and selects no text on the way.
   await row("Editing and regeneration").click({ modifiers: ["Shift"] });
-  expect(await trail(page)).toEqual(["Infinispand", "Editing and regeneration"]);
+  expect(await trail(page)).toEqual(["Explicata", "Editing and regeneration"]);
   await expect.poll(async () => (await columns(page))[1]).toEqual(["Editing and regeneration", "Borrowed from Gwern"]);
   expect(await page.evaluate(() => window.getSelection()?.isCollapsed ?? true)).toBe(true);
 });
@@ -429,7 +429,7 @@ test("exactly one pane is active, under a heavy rule; the rest of the focused br
 async function five(page: Page) {
   await open(page);
   await keys(page, "j Enter j Enter j Enter j Enter j Enter");
-  const kids = (await childTitles(page, "Infinispand")).slice(0, 5);
+  const kids = (await childTitles(page, "Explicata")).slice(0, 5);
   expect((await columns(page))[1]).toEqual(kids);
   await still(page);
   return kids;
@@ -458,7 +458,7 @@ test("a crowded column stacks its panes as the strip stacks columns: covered par
   await expect(page.locator(".pane.active .pane-head h2")).toHaveText(kids[4]);
   const where = await focusedTitle(page);
   await keys(page, "[");
-  expect(await trail(page)).toEqual(["Infinispand", kids[3]]);
+  expect(await trail(page)).toEqual(["Explicata", kids[3]]);
   await expect(page.locator(".pane.active .pane-head h2")).toHaveText(kids[3]);
   b = await boxes(page);
   expect(b[kids[3]].whole).toBe(true);
@@ -726,7 +726,7 @@ test("a fork whose node is deleted closes, and the others stay", async ({ page, 
   const res = await request.post("/api/ops", { data: { author: "another", message: "Delete it", ops: [{ op: "delete", id }] } });
   expect(res.ok()).toBe(true);
   await expect.poll(async () => (await columns(page))[2]).toEqual(["Levels of a node"]);
-  expect(await trail(page)).toEqual(["Infinispand", "Expansion by depth", "Levels of a node"]);
+  expect(await trail(page)).toEqual(["Explicata", "Expansion by depth", "Levels of a node"]);
 });
 
 test("a window too short to share a column stacks it at once: the focused pane whole, the other covered to its tab", async ({ page }) => {

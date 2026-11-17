@@ -1,7 +1,7 @@
 import type { SeedNode } from "./types";
 
 /**
- * The pre-generated tree: Infinispand describing itself.
+ * The pre-generated tree: Explicata describing itself.
  * The root's body is src/seed/prompt.txt, verbatim; each top-level section's
  * `src` lists the prompt sentences it traces back to.
  */

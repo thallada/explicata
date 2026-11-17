@@ -1,7 +1,7 @@
 /**
  * From the single-library layout to the libraries layout (libraries.ts), once, when asked:
  *
- *   npm run migrate                  migrate IE_DATA (or .data)
+ *   npm run migrate                  migrate EX_DATA (or .data)
  *   npm run migrate -- --check       a dry run: build, verify and report, writing nothing
  *   npm run migrate -- [--check] DIR another data directory
  *
@@ -402,7 +402,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolvePath(process.arg
   const unknown = args.filter((a) => a.startsWith("-") && a !== "--check");
   const dirs = args.filter((a) => !a.startsWith("-"));
   if (unknown.length || dirs.length > 1) {
-    console.error("usage: npm run migrate [-- [--check] [DATA_DIR]]   (DATA_DIR defaults to IE_DATA, else .data)");
+    console.error("usage: npm run migrate [-- [--check] [DATA_DIR]]   (DATA_DIR defaults to EX_DATA, else .data)");
     process.exit(2);
   }
   const r = migrateLibraries(dirs[0] ?? dataDir(), { check });

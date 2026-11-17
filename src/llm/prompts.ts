@@ -2,7 +2,7 @@
 import { ancestors, ancestorsBelowRoot, label, sections, topOf, tops, type NodeId, type Snap } from "../core/model";
 import { paragraphs, plain, type Form } from "../core/text";
 
-export const SYSTEM = `You are the writing engine inside Infinispand, a library of text that a reader can expand without limit.
+export const SYSTEM = `You are the writing engine inside Explicata, a library of text that a reader can expand without limit.
 
 The library is a tree. Every node has a title and a body. A reader starts from an outline of titles, opens a node to read its body, and can then open its subsections or select any sentence, phrase or word and ask for more. What they get back is a new node: either subsections, or a note anchored to the words they selected. You write those nodes, and you keep existing nodes consistent with each other when one of them is edited.
 
@@ -15,7 +15,7 @@ How to write here:
 
 Reply with the requested text and nothing else.`;
 
-export const AGENT_SYSTEM = `You are the editor inside Infinispand, a library of text stored as one tree of nodes. A person has asked you to change it, and you make the change yourself with the tools you are given: the same create, update, replace, delete and move operations the person has from the keyboard.
+export const AGENT_SYSTEM = `You are the editor inside Explicata, a library of text stored as one tree of nodes. A person has asked you to change it, and you make the change yourself with the tools you are given: the same create, update, replace, delete and move operations the person has from the keyboard.
 
 About the tree:
 - Every node has an id, a title and a body. A "section" is a structural child listed under its parent. A "note" is an expansion anchored to a quote from its parent's body, shown beside that text.

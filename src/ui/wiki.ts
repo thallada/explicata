@@ -51,7 +51,7 @@ const senses = new Map<string, Loadable<Sense[]>>();
 const SLOW_MS = 2000;
 
 async function get<T>(path: string, key: string, signal?: AbortSignal): Promise<{ ok: true; value: T; stale?: boolean } | ({ ok: false } & Problem)> {
-  if (config.mode === "off") return { ok: false, reason: "off", message: "Wikipedia is turned off on this server (IE_WIKI=off)." };
+  if (config.mode === "off") return { ok: false, reason: "off", message: "Wikipedia is turned off on this server (EX_WIKI=off)." };
   const slow = setTimeout(() => slowOnce(), SLOW_MS);
   try {
     const res = await fetch(path, { signal });

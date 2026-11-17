@@ -33,13 +33,13 @@ import { JOB_CALLS } from "./links/review";
 
 const PORT = Number(process.env.PORT ?? 4747);
 // Host names the dev server answers to besides localhost. Tailscale names are allowed so that
-// `tailscale serve` works; IE_HOSTS adds more (comma-separated; a leading dot matches subdomains).
-const ALLOWED_HOSTS = [".ts.net", ...(process.env.IE_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean)];
+// `tailscale serve` works; EX_HOSTS adds more (comma-separated; a leading dot matches subdomains).
+const ALLOWED_HOSTS = [".ts.net", ...(process.env.EX_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean)];
 const DATA = dataDir();
-const PROD = process.env.IE_PROD === "1";
-const MODEL = process.env.IE_MODEL ?? "claude-opus-5-5";
-const USER = process.env.IE_USER ?? userInfo().username;
-const LIBRARY = resolve(process.env.IE_LIBRARY ?? join(root, "library"));
+const PROD = process.env.EX_PROD === "1";
+const MODEL = process.env.EX_MODEL ?? "claude-opus-5-5";
+const USER = process.env.EX_USER ?? userInfo().username;
+const LIBRARY = resolve(process.env.EX_LIBRARY ?? join(root, "library"));
 
 // ---- model ----
 
@@ -52,11 +52,11 @@ if (process.env.ANTHROPIC_API_KEY?.startsWith("sk-ant-oat")) {
   console.log("ANTHROPIC_API_KEY holds a subscription token; using it as CLAUDE_CODE_OAUTH_TOKEN instead.");
 }
 const apiKey = Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
-const wanted = process.env.IE_LLM ?? (apiKey ? "claude" : process.env.CLAUDE_CODE_OAUTH_TOKEN ? "subscription" : "off");
+const wanted = process.env.EX_LLM ?? (apiKey ? "claude" : process.env.CLAUDE_CODE_OAUTH_TOKEN ? "subscription" : "off");
 const llm: LLM | null =
   wanted === "claude" ? claudeLLM(MODEL)
   : wanted === "subscription" ? subscriptionLLM(MODEL)
-  : wanted === "mock" ? withMockUsage(mockLLM({ delay: Number(process.env.IE_MOCK_DELAY ?? 12) }))
+  : wanted === "mock" ? withMockUsage(mockLLM({ delay: Number(process.env.EX_MOCK_DELAY ?? 12) }))
   : null;
 
 // Usage: every provider reports into one tracker (server/usage.ts), served at GET /api/usage.
@@ -71,27 +71,27 @@ if (wanted === "subscription") {
 
 // ---- web research for the editor agent ----
 
-// IE_WEB=off takes web search and fetch away from the agent entirely; IE_WEB_SEARCHES and
-// IE_WEB_FETCHES cap each run (default 5 and 5). The browser asks for research; this decides.
+// EX_WEB=off takes web search and fetch away from the agent entirely; EX_WEB_SEARCHES and
+// EX_WEB_FETCHES cap each run (default 5 and 5). The browser asks for research; this decides.
 const web = webConfig(process.env, Boolean(llm));
-if (process.env.IE_WEB && !web.on && web.why) console.warn(`web research is off: ${web.why}.`);
+if (process.env.EX_WEB && !web.on && web.why) console.warn(`web research is off: ${web.why}.`);
 
 // ---- Wikipedia ----
 
-// IE_WIKI picks where /api/wiki/* gets its answers: the real Wikipedia (live), the fixtures in
+// EX_WIKI picks where /api/wiki/* gets its answers: the real Wikipedia (live), the fixtures in
 // server/wikiMock.ts (mock: tests and offline work, no network at all), or nowhere (off). An
 // unrecognised value is treated as off, so a typo never sends requests nobody asked for.
 type WikiMode = "live" | "mock" | "off";
-const wikiWanted = process.env.IE_WIKI ?? "live";
+const wikiWanted = process.env.EX_WIKI ?? "live";
 const wikiMode: WikiMode = wikiWanted === "live" || wikiWanted === "mock" ? wikiWanted : "off";
-if (wikiMode !== wikiWanted) console.warn(`IE_WIKI=${wikiWanted} is not live, mock or off; Wikipedia is off.`);
+if (wikiMode !== wikiWanted) console.warn(`EX_WIKI=${wikiWanted} is not live, mock or off; Wikipedia is off.`);
 // The mock keeps nothing on disk and never holds itself offline, so one test's "offline" title
 // does not leak into the next.
-const mockWiki = wikiMode === "mock" ? new WikiClient({ lang: process.env.IE_WIKI_LANG, fetch: makeMockWikiFetch(undefined, Number(process.env.IE_WIKI_MOCK_BULK_MS) || 0), spacingMs: 0, persist: false, offlineHoldMs: 0 }) : null;
+const mockWiki = wikiMode === "mock" ? new WikiClient({ lang: process.env.EX_WIKI_LANG, fetch: makeMockWikiFetch(undefined, Number(process.env.EX_WIKI_MOCK_BULK_MS) || 0), spacingMs: 0, persist: false, offlineHoldMs: 0 }) : null;
 const wikiClient = () => (wikiMode === "off" ? null : (mockWiki ?? wiki()));
 const handleWiki = wikiMode === "off" ? wikiOff : wikiRoutes(() => wikiClient()!);
 /** What the UI may know: the mode, the language, and whether a contact is set (never the contact). */
-const wikiState = { mode: wikiMode, lang: wikiLang(process.env.IE_WIKI_LANG), contact: validContact(process.env.IE_WIKI_CONTACT) !== null };
+const wikiState = { mode: wikiMode, lang: wikiLang(process.env.EX_WIKI_LANG), contact: validContact(process.env.EX_WIKI_CONTACT) !== null };
 
 /** A short reason for a failed model call, whichever provider made it. */
 const explain = (err: unknown) => (err instanceof SubscriptionError ? { status: err.status, message: err.message } : describeError(err));
@@ -104,7 +104,7 @@ const started = performance.now();
 // migration (npm run migrate) has a dry run and verifies what it writes.
 const held = lockHolder(DATA);
 if (held) {
-  console.error(`Another server (pid ${held.pid}${held.port ? `, port ${held.port}` : ""}) has ${DATA} open; stop it first, or set IE_DATA to another directory.`);
+  console.error(`Another server (pid ${held.pid}${held.port ? `, port ${held.port}` : ""}) has ${DATA} open; stop it first, or set EX_DATA to another directory.`);
   process.exit(1);
 }
 const libraries = new Libraries(DATA);
@@ -125,20 +125,20 @@ const startMs = Math.round(performance.now() - started);
 // ---- each library's link discovery, notices and routes (server/bundle.ts) ----
 
 // The embedding model is loaded on first use, in a worker thread shared by every library;
-// IE_EMBED=off turns it off, and scanning then matches by text alone.
-const embed = process.env.IE_EMBED === "off" ? null : embedder();
+// EX_EMBED=off turns it off, and scanning then matches by text alone.
+const embed = process.env.EX_EMBED === "off" ? null : embedder();
 const shared: Shared = {
   llm: () => llm,
   wiki: wikiClient,
   embed,
-  reviewCalls: Math.max(1, Number(process.env.IE_REVIEW_CALLS) || JOB_CALLS),
+  reviewCalls: Math.max(1, Number(process.env.EX_REVIEW_CALLS) || JOB_CALLS),
   user: USER,
   state: () => ({
     user: USER,
     llm: llm?.kind ?? "off",
     model: llm?.model ?? null,
     wiki: wikiState,
-    embed: embed ? (process.env.IE_EMBED === "fake" ? "fake" : "on") : "off",
+    embed: embed ? (process.env.EX_EMBED === "fake" ? "fake" : "on") : "off",
     web: { on: web.on, searches: web.searches, fetches: web.fetches },
     libraries: libraries.list(),
   }),
@@ -295,8 +295,8 @@ const CSP = [
 ].join("; ");
 
 function serveStatic(res: ServerResponse, path: string) {
-  // IE_DIST: another build to serve (the browser tests build one per port, so runs side by side do not collide).
-  const dist = resolve(root, process.env.IE_DIST ?? "dist");
+  // EX_DIST: another build to serve (the browser tests build one per port, so runs side by side do not collide).
+  const dist = resolve(root, process.env.EX_DIST ?? "dist");
   let file = resolve(dist, "." + path);
   if (!file.startsWith(dist) || !existsSync(file) || path === "/") file = join(dist, "index.html");
   res.writeHead(200, {
@@ -334,7 +334,7 @@ createServer(async (req, res) => {
     serveStatic(res, path);
   }
 }).listen(PORT, "127.0.0.1", () => {
-  console.log(`Infinispand  http://localhost:${PORT}   model: ${llm ? `${llm.kind}${llm.model ? `: ${llm.model}` : ""}` : "off (set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN to generate)"}   data: ${DATA}`);
+  console.log(`Explicata  http://localhost:${PORT}   model: ${llm ? `${llm.kind}${llm.model ? `: ${llm.model}` : ""}` : "off (set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN to generate)"}   data: ${DATA}`);
   for (const l of libraries.list()) console.log(`library “${l.title}” (/l/${l.id}): ${libraries.get(l.id)!.titles().length} top-level sections, ${l.nodes} nodes`);
   console.log(`${libraries.stores.size} librar${libraries.stores.size === 1 ? "y" : "ies"} opened in ${startMs} ms`);
   console.log(`web research: ${web.on ? `on (at most ${web.searches} searches and ${web.fetches} pages read per request)` : `off${web.why ? ` (${web.why})` : ""}`}`);

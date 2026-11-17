@@ -72,7 +72,7 @@ export class Bundle {
     this.nodeIndex.watch(store.main);
     const getLinker = () => (this.linker ??= new Linker({ doc: main, wiki: shared.wiki, embedder: shared.embed, index: this.nodeIndex }));
     this.pending = new PendingStore(join(store.dir, "links", "pending.json"));
-    // The link reviewer asks the configured model (no tools, structured verdicts); IE_REVIEW_CALLS caps a background job's calls.
+    // The link reviewer asks the configured model (no tools, structured verdicts); EX_REVIEW_CALLS caps a background job's calls.
     this.reviewer = new Reviewer({ llm: shared.llm, wiki: shared.wiki, pending: this.pending, snap: () => store.main.snap() });
     this.jobs = new Jobs({
       snap: () => store.main.snap(),

@@ -8,12 +8,12 @@
  * term of several words and not a single lower-case word, and fails on a sentence that says
  * "mockfail" (src/llm/mock.ts).
  *
- * IE_SHOTS=<dir> also saves the links list with each filter, light and dark, into that directory.
+ * EX_SHOTS=<dir> also saves the links list with each filter, light and dark, into that directory.
  */
 import { expect, test, type Page } from "@playwright/test";
 import { addTop, command, idle, keys, linksHere, selected, settle, state, visit } from "./helpers";
 
-const SHOTS = process.env.IE_SHOTS;
+const SHOTS = process.env.EX_SHOTS;
 
 const nolink = (page: Page) => state(page, (s) => (s.snap.nodes[s.focus.node].nolink ?? []) as string[]);
 const panel = (page: Page) => page.locator("[data-links-panel]");

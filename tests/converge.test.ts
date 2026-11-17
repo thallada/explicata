@@ -164,7 +164,7 @@ describe("convergence", () => {
           }
         }
       }),
-      { numRuns: Number(process.env.IE_RUNS ?? 200) },
+      { numRuns: Number(process.env.EX_RUNS ?? 200) },
     );
   }, 300_000);
 });

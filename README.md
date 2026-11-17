@@ -1,9 +1,10 @@
-# Infinispand
+# Explicata
 
 A tree of writing you can expand without limit. It opens as an outline of titles; every node, sentence,
 phrase and word can be opened further. The first levels are written ahead of time and open
 instantly; past them, a model writes the expansion on request. Everything is editable, by you or
-by a model, and the tree is versioned like git.
+by a model, and the tree is versioned like git. The name is Latin for "things unfolded" (*explicare*,
+to unfold).
 
 Everything is a node of a library: a single versioned tree whose root is the library itself.
 Any node, with everything under it, can be moved under any other, copied, saved to a file, or
@@ -33,27 +34,27 @@ use on their own machine.
 |---|---|---|
 | `ANTHROPIC_API_KEY` | unset | Enables generation. The key stays in the server process. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | unset | A subscription token, used when no API key is set. A token put in `ANTHROPIC_API_KEY` by mistake is moved here. |
-| `IE_MODEL` | `claude-opus-5-5` | Model for every call. |
-| `IE_LLM` | `claude` with a key, `subscription` with a token, else `off` | `mock`: a deterministic stand-in (the tests). |
-| `IE_DATA` | `.data` | Where the libraries and their caches are kept. Delete it to start again from the seed and the starter trees. |
-| `IE_LIBRARY` | `library` | Starter trees (`.md` files in the text format), written into the first library when `IE_DATA` is empty. |
-| `IE_USER` | your login name | The name on commits the server makes for you (the page lets you change yours with `/user`). |
-| `IE_WIKI` | `live` | `mock`: built-in test articles, no network (the browser tests); `off`: every `/api/wiki/*` route answers 503. |
-| `IE_HOSTS` | (none) | Extra host names the dev server answers to, comma-separated. `localhost` and `*.ts.net` (Tailscale) are always allowed. |
-| `IE_WIKI_LANG` | `en` | Which Wikipedia. |
-| `IE_WIKI_CONTACT` | unset | An email address, an `https://` URL or `User:Name` for the User-Agent of Wikipedia requests. Without it requests are spaced 6.5 s apart (the page says so once, the first time it is slow); with it, 1 s. Nothing else about you is sent. |
-| `IE_WEB` | `on` when a model is configured | `off` takes web search and fetch away from the editor agent, whatever the page asks. |
-| `IE_WEB_SEARCHES`, `IE_WEB_FETCHES` | `5`, `5` | Searches and page reads one request to the editor may make. |
-| `IE_REVIEW_CALLS` | `50` | Model calls the link reviewer may make in one `/linkhere` or `/linkall` (each call judges up to 60 links). What is left past the cap waits for you. |
-| `IE_EMBED` | on | Local embeddings for link discovery (bge-small, loaded on first use in a worker thread, about 560 MB of memory). `off`: links are found by text alone. `fake`: hashed words, no download (the tests). |
-| `IE_EMBED_MODEL` | `Xenova/bge-small-en-v1.5` | Downloaded once into `IE_DATA/models/`. `Snowflake/snowflake-arctic-embed-xs` is a drop-in alternative. |
-| `IE_EMBED_THREADS` | `4` | ONNX threads for the embedding model. |
-| `IE_EMBED_OFFLINE` | unset | `1`: never download, use cached model files only. |
+| `EX_MODEL` | `claude-opus-5-5` | Model for every call. |
+| `EX_LLM` | `claude` with a key, `subscription` with a token, else `off` | `mock`: a deterministic stand-in (the tests). |
+| `EX_DATA` | `.data` | Where the libraries and their caches are kept. Delete it to start again from the seed and the starter trees. |
+| `EX_LIBRARY` | `library` | Starter trees (`.md` files in the text format), written into the first library when `EX_DATA` is empty. |
+| `EX_USER` | your login name | The name on commits the server makes for you (the page lets you change yours with `/user`). |
+| `EX_WIKI` | `live` | `mock`: built-in test articles, no network (the browser tests); `off`: every `/api/wiki/*` route answers 503. |
+| `EX_HOSTS` | (none) | Extra host names the dev server answers to, comma-separated. `localhost` and `*.ts.net` (Tailscale) are always allowed. |
+| `EX_WIKI_LANG` | `en` | Which Wikipedia. |
+| `EX_WIKI_CONTACT` | unset | An email address, an `https://` URL or `User:Name` for the User-Agent of Wikipedia requests. Without it requests are spaced 6.5 s apart (the page says so once, the first time it is slow); with it, 1 s. Nothing else about you is sent. |
+| `EX_WEB` | `on` when a model is configured | `off` takes web search and fetch away from the editor agent, whatever the page asks. |
+| `EX_WEB_SEARCHES`, `EX_WEB_FETCHES` | `5`, `5` | Searches and page reads one request to the editor may make. |
+| `EX_REVIEW_CALLS` | `50` | Model calls the link reviewer may make in one `/linkhere` or `/linkall` (each call judges up to 60 links). What is left past the cap waits for you. |
+| `EX_EMBED` | on | Local embeddings for link discovery (bge-small, loaded on first use in a worker thread, about 560 MB of memory). `off`: links are found by text alone. `fake`: hashed words, no download (the tests). |
+| `EX_EMBED_MODEL` | `Xenova/bge-small-en-v1.5` | Downloaded once into `EX_DATA/models/`. `Snowflake/snowflake-arctic-embed-xs` is a drop-in alternative. |
+| `EX_EMBED_THREADS` | `4` | ONNX threads for the embedding model. |
+| `EX_EMBED_OFFLINE` | unset | `1`: never download, use cached model files only. |
 | `PORT` | `4747` | |
 
-For the tests: `IE_MOCK_DELAY` (ms per mock token), `IE_WIKI_MOCK_BULK_MS` (delay on background
-Wikipedia requests), `IE_PROD=1` and `IE_DIST` (serve a build, and which one), `IE_E2E_PORT` and
-`IE_E2E_DATA` (playwright.config.ts).
+For the tests: `EX_MOCK_DELAY` (ms per mock token), `EX_WIKI_MOCK_BULK_MS` (delay on background
+Wikipedia requests), `EX_PROD=1` and `EX_DIST` (serve a build, and which one), `EX_E2E_PORT` and
+`EX_E2E_DATA` (playwright.config.ts).
 
 ## Using it
 
@@ -271,8 +272,8 @@ Press `?` for every key. The short version:
   it rejects is kept, with its one-line reason, and not looked for again. The model gets no tools,
   only the candidates: each phrase's sentence, its section's title and path, and the target's title
   and description (or first sentence); many candidates go in one call, and nothing judged is sent
-  twice. Without a model (`IE_LLM=off`), or when a call fails or a job reaches its cap
-  (`IE_REVIEW_CALLS`), nothing unreviewed is linked: the candidates are suggested instead, and the
+  twice. Without a model (`EX_LLM=off`), or when a call fails or a job reaches its cap
+  (`EX_REVIEW_CALLS`), nothing unreviewed is linked: the candidates are suggested instead, and the
   status line says why.
 - A **suggestion** has a faint dashed underline. `Tab` reaches suggestions; `y` links one, `n`
   declines it (remembered in the node, on every replica). `/autolink suggest` leaves every
@@ -314,7 +315,7 @@ sources linked. `Esc` stops a run and keeps nothing of it (its edits were on its
 
 Every claim taken from the web is linked (↗) to the page it came from, and only pages retrieved in
 that run may be cited; any other address is refused. Each request may make at most
-`IE_WEB_SEARCHES` searches and `IE_WEB_FETCHES` reads. Page text is treated as data, never
+`EX_WEB_SEARCHES` searches and `EX_WEB_FETCHES` reads. Page text is treated as data, never
 instructions.
 
 What is sent where:
@@ -327,7 +328,7 @@ What is sent where:
   page **from this machine** and a small model summarises it. A guard in the server refuses every
   other tool, any non-public address, any page the run's searches did not return and the request
   did not name, and anything past the caps.
-- **With `IE_LLM=mock`** nothing leaves the machine.
+- **With `EX_LLM=mock`** nothing leaves the machine.
 
 ## How it works
 
@@ -378,14 +379,14 @@ What is sent where:
 On disk:
 
 ```
-IE_DATA/libraries/index.json                 the libraries, in order: id, title, when made, whether deleted
-IE_DATA/libraries/<id>/<branch>.loro         a library, one Loro snapshot per branch
-IE_DATA/libraries/<id>/links/pending.json    its link suggestions, the reviewer's verdicts and your decisions (derived)
-IE_DATA/libraries/<id>/vectors/nodes.*       its sections as vectors (derived)
-IE_DATA/libraries/.deleted/<id>-<time>/      a deleted library, moved aside whole
-IE_DATA/wiki-cache/                          Wikipedia answers (derived, shared)
-IE_DATA/models/                              the embedding model (shared)
-IE_DATA/server.lock                          the running server's pid
+EX_DATA/libraries/index.json                 the libraries, in order: id, title, when made, whether deleted
+EX_DATA/libraries/<id>/<branch>.loro         a library, one Loro snapshot per branch
+EX_DATA/libraries/<id>/links/pending.json    its link suggestions, the reviewer's verdicts and your decisions (derived)
+EX_DATA/libraries/<id>/vectors/nodes.*       its sections as vectors (derived)
+EX_DATA/libraries/.deleted/<id>-<time>/      a deleted library, moved aside whole
+EX_DATA/wiki-cache/                          Wikipedia answers (derived, shared)
+EX_DATA/models/                              the embedding model (shared)
+EX_DATA/server.lock                          the running server's pid
 ```
 
 A library's id is its database's own id (base 36); its name is its root's title. Each library is a
@@ -404,21 +405,21 @@ history entry. An address that names nothing shows the library's root; one witho
 (`/n/…`, `/doc/…`) is read in the library last used; a library the server does not have goes to
 the first one.
 
-When `IE_DATA` is empty, the first library is made with the seed and every `library/*.md`; a file
+When `EX_DATA` is empty, the first library is made with the seed and every `library/*.md`; a file
 that does not parse is logged and skipped. A library made later starts with its root alone.
 
 ### Deleting a library
 
 `D` in the libraries panel (or `DELETE /api/libraries/<id>`) moves the library's directory, whole
-and unchanged, to `IE_DATA/libraries/.deleted/<id>-<time>/` and marks its entry in `index.json`
+and unchanged, to `EX_DATA/libraries/.deleted/<id>-<time>/` and marks its entry in `index.json`
 deleted; the page says where it went. The last library cannot be deleted, and `u` cannot undo a
-deletion. To bring one back: stop the server, move the directory back to `IE_DATA/libraries/<id>/`,
-remove the `"deleted"` and `"movedTo"` fields from its entry in `IE_DATA/libraries/index.json`, and
+deletion. To bring one back: stop the server, move the directory back to `EX_DATA/libraries/<id>/`,
+remove the `"deleted"` and `"movedTo"` fields from its entry in `EX_DATA/libraries/index.json`, and
 start the server. Nothing ever empties `.deleted/`.
 
 ### From the single-library layout
 
-A data directory written before libraries (`IE_DATA/library/main.loro`) is not opened: the server
+A data directory written before libraries (`EX_DATA/library/main.loro`) is not opened: the server
 says, in one line, to run the migration, which only ever runs when asked. Stop the server (and let
 every open page say `saved` first: a page of the old library cannot send its edits to the new one),
 then:
@@ -429,7 +430,7 @@ npm run migrate              # the same, then writes it
 ```
 
 Both take another directory as an argument (`npm run migrate -- --check /path/to/data`); without
-one, `IE_DATA`, else `.data`. The migration copies the tree into a new library (a new id, a history
+one, `EX_DATA`, else `.data`. The migration copies the tree into a new library (a new id, a history
 of one commit): titles, bodies, notes with their anchors, locks, authorship, targets, declined
 phrases, the Wikipedia container with its articles' notes, the order of everything, and what each
 node was last reconciled with, so nothing turns stale. Every node target is rewritten to the new
@@ -439,10 +440,10 @@ when first needed. Before writing, it checks the copy node by node against the o
 count, text, notes, anchors, flags, staleness, and every target that resolved resolving to the same
 node) and again from the file it wrote; any difference stops it with a report and leaves the
 directory as it was. Then `libraries/` is put in place in one rename, and `library/`,
-`library.json`, `links/` and `vectors/` are moved, unchanged, to `IE_DATA/backup-<time>/`. History,
+`library.json`, `links/` and `vectors/` are moved, unchanged, to `EX_DATA/backup-<time>/`. History,
 branches other than main (listed, and kept in the backup) and resolved conflicts are not carried.
 It refuses while a server has the directory open, and a second run does nothing. A directory
-older still (`IE_DATA/docs/`) must first be opened once by a version from before libraries
+older still (`EX_DATA/docs/`) must first be opened once by a version from before libraries
 (commit c4d6856).
 
 To go back: stop the server, move `libraries/` away and the backup's contents back, and check out

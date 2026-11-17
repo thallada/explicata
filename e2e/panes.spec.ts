@@ -19,7 +19,7 @@ const paneTitles = async (page: Page) => (await panes(page)).map((p) => p.title)
 const nodeId = (page: Page, title: string) => page.evaluate((t) => (Object.values((globalThis as any).__ie.snap.nodes) as any[]).find((n) => n.title === t).id as string, title);
 
 async function open(page: Page) {
-  await openAt(page, "Infinispand");
+  await openAt(page, "Explicata");
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
   // The library pane and the tree's; hoisting makes the tree's top the first.
@@ -40,12 +40,12 @@ test("the library is the first pane, and any node of it opens in the next; reloa
   expect(await paneTitles(page)).toEqual(["Library"]);
   await expect(page.locator(".pane.root .rows > .node")).toHaveCount(await state(page, (s) => s.snap.nodes[s.snap.root].children.filter((c: string) => !s.snap.nodes[c].articles).length));
   await keys(page, "j l"); // the first top-level node's row, then open it
-  expect(await paneTitles(page)).toEqual(["Library", "Infinispand"]);
+  expect(await paneTitles(page)).toEqual(["Library", "Explicata"]);
   // Its pane is headed like any other; its text, a prompt its sections cite, is folded.
-  await expect(page.locator(".pane:not(.root) .pane-head h2")).toHaveText("Infinispand");
+  await expect(page.locator(".pane:not(.root) .pane-head h2")).toHaveText("Explicata");
   await expect(page.locator(".pane:not(.root) .abstract.seed.folded")).toBeVisible();
   await keys(page, "j l"); // the next one: its pane opens beside the first one's, below it in the same column
-  expect(await paneTitles(page)).toEqual(["Library", "Infinispand", "A mind made of text"]);
+  expect(await paneTitles(page)).toEqual(["Library", "Explicata", "A mind made of text"]);
   await keys(page, "l l"); // into its first section, and open that
   const third = await paneTitles(page);
   expect(third).toHaveLength(4);
@@ -68,13 +68,13 @@ test("the library is the first pane, and any node of it opens in the next; reloa
 test("auto shows panes at 1920 px and on a laptop's 1366, the panes as pages on a phone or a narrow window; v and /view switch", async ({ page }) => {
   await open(page);
   await expect(page.locator(".app.view-panes .strip .pane")).toHaveCount(1);
-  await expect(page.locator(".strip .pane.root h1")).toHaveText("Infinispand");
+  await expect(page.locator(".strip .pane.root h1")).toHaveText("Explicata");
   await page.setViewportSize({ width: 1366, height: 768 });
   await expect(page.locator(".app.view-panes .strip .pane")).toHaveCount(1);
   for (const [width, height] of [[820, 900], [390, 800]]) {
     await page.setViewportSize({ width, height });
     await expect(page.locator(".app.view-pages .panes[data-layout=pages] .strip .pane"), `${width}`).toHaveCount(1);
-    await expect(page.locator(".trail .trail-step")).toHaveText(["Infinispand"]);
+    await expect(page.locator(".trail .trail-step")).toHaveText(["Explicata"]);
   }
   await page.setViewportSize({ width: 1920, height: 1080 });
   await expect(page.locator(".strip .pane")).toHaveCount(1);
@@ -101,7 +101,7 @@ test("opening three levels deep gives four panes left to right; h moves back lef
   await keys(page, "l l l j j l l l");
   await expect(page.locator(".strip .pane")).toHaveCount(4);
   const ps = await panes(page);
-  expect(ps.map((p) => p.title)).toEqual(["Infinispand", "Expansion by depth", "Generation on demand", "Deepening a leaf"]);
+  expect(ps.map((p) => p.title)).toEqual(["Explicata", "Expansion by depth", "Generation on demand", "Deepening a leaf"]);
   for (let i = 1; i < ps.length; i++) expect(ps[i].left).toBeGreaterThan(ps[i - 1].left);
   // In each parent's list, the child whose pane is showing is marked.
   await expect(page.locator(".pane .node.showing > .row")).toHaveText(["Expansion by depth", "Generation on demand", "Deepening a leaf"].map((t) => new RegExp(t)));
@@ -111,7 +111,7 @@ test("opening three levels deep gives four panes left to right; h moves back lef
   expect(await focusedTitle(page)).toBe("Generation on demand");
   await keys(page, "h");
   expect(await focusedTitle(page)).toBe("Expansion by depth");
-  expect(await paneTitles(page)).toEqual(["Infinispand", "Expansion by depth", "Generation on demand", "Deepening a leaf"]);
+  expect(await paneTitles(page)).toEqual(["Explicata", "Expansion by depth", "Generation on demand", "Deepening a leaf"]);
   // And forward again along the same trail.
   await keys(page, "l");
   expect(await focusedTitle(page)).toBe("Levels of a node");
@@ -121,14 +121,14 @@ test("opening three levels deep gives four panes left to right; h moves back lef
   expect(await focusedTitle(page)).toBe("Deepening a leaf");
   await expect(page.locator(".pane.active .pane-head h2")).toHaveText("Generation on demand");
   await keys(page, "q");
-  expect(await paneTitles(page)).toEqual(["Infinispand", "Expansion by depth"]);
+  expect(await paneTitles(page)).toEqual(["Explicata", "Expansion by depth"]);
   expect(await focusedTitle(page)).toBe("Generation on demand");
   await keys(page, "q");
-  expect(await paneTitles(page)).toEqual(["Infinispand"]);
+  expect(await paneTitles(page)).toEqual(["Explicata"]);
   expect(await focusedTitle(page)).toBe("Expansion by depth");
   // The first pane stays.
   await keys(page, "q");
-  expect(await paneTitles(page)).toEqual(["Infinispand"]);
+  expect(await paneTitles(page)).toEqual(["Explicata"]);
   await expect(page.locator(".status .message")).toContainText("first pane stays");
 });
 
@@ -141,19 +141,19 @@ test("j and k move among siblings, and the strip follows", async ({ page }) => {
   await keys(page, "j");
   expect(await focusedTitle(page)).toBe("Pre-generated depth");
   await keys(page, "l"); // open it: its pane appears
-  expect(await paneTitles(page)).toEqual(["Infinispand", "Expansion by depth", "Pre-generated depth"]);
+  expect(await paneTitles(page)).toEqual(["Explicata", "Expansion by depth", "Pre-generated depth"]);
   await keys(page, "j"); // a closed sibling: the open one's pane stays until something else is opened
   expect(await focusedTitle(page)).toBe("Generation on demand");
-  expect(await paneTitles(page)).toEqual(["Infinispand", "Expansion by depth", "Pre-generated depth"]);
+  expect(await paneTitles(page)).toEqual(["Explicata", "Expansion by depth", "Pre-generated depth"]);
   await keys(page, "k");
-  expect(await paneTitles(page)).toEqual(["Infinispand", "Expansion by depth", "Pre-generated depth"]);
+  expect(await paneTitles(page)).toEqual(["Explicata", "Expansion by depth", "Pre-generated depth"]);
   await keys(page, "k k k k"); // stops at the first sibling, never wanders into other panes
   expect(await focusedTitle(page)).toBe("Levels of a node");
   await keys(page, "j j j j j j");
   expect(await focusedTitle(page)).toBe("Deeper, not longer");
   // A click on a row does what l does: focus it and show its pane, beside the one already open there.
   await page.locator(".pane .row", { hasText: "Generation on demand" }).click();
-  expect(await paneTitles(page)).toEqual(["Infinispand", "Expansion by depth", "Pre-generated depth", "Generation on demand"]);
+  expect(await paneTitles(page)).toEqual(["Explicata", "Expansion by depth", "Pre-generated depth", "Generation on demand"]);
   expect(await focusedTitle(page)).toBe("Generation on demand");
 });
 
@@ -177,9 +177,9 @@ test("a pre-generated note opened in a pane is set inside the pane", async ({ pa
 test("in panes everything is reachable with the mouse: rows, headings, marked spans, a dragged selection", async ({ page }) => {
   await open(page);
   await page.locator(".pane .row", { hasText: "Borrowed from Gwern" }).click();
-  expect(await paneTitles(page)).toEqual(["Infinispand", "Borrowed from Gwern"]);
+  expect(await paneTitles(page)).toEqual(["Explicata", "Borrowed from Gwern"]);
   await page.locator(".pane .row", { hasText: "Semantic zoom" }).click();
-  expect(await paneTitles(page)).toEqual(["Infinispand", "Borrowed from Gwern", "Semantic zoom"]);
+  expect(await paneTitles(page)).toEqual(["Explicata", "Borrowed from Gwern", "Semantic zoom"]);
   // A marked span opens its note, and closes it again.
   const anchor = page.locator(".pane .anchor", { hasText: "StretchText" });
   await anchor.click();
@@ -189,11 +189,11 @@ test("in panes everything is reachable with the mouse: rows, headings, marked sp
   // A pane's heading focuses its node, leaving the trail as it is; a click on the focused row whose pane is showing keeps it; its x closes it.
   await page.locator(".pane-head", { hasText: "Borrowed from Gwern" }).click();
   expect(await focusedTitle(page)).toBe("Borrowed from Gwern");
-  expect(await paneTitles(page)).toEqual(["Infinispand", "Borrowed from Gwern", "Semantic zoom"]);
+  expect(await paneTitles(page)).toEqual(["Explicata", "Borrowed from Gwern", "Semantic zoom"]);
   await page.locator(".pane .row", { hasText: "Borrowed from Gwern" }).click();
-  expect(await paneTitles(page)).toEqual(["Infinispand", "Borrowed from Gwern", "Semantic zoom"]);
+  expect(await paneTitles(page)).toEqual(["Explicata", "Borrowed from Gwern", "Semantic zoom"]);
   await page.locator('.pane[data-pane-index="1"] .pane-ctl .pane-btn.close').click();
-  expect(await paneTitles(page)).toEqual(["Infinispand"]);
+  expect(await paneTitles(page)).toEqual(["Explicata"]);
   await page.locator(".pane .row", { hasText: "Borrowed from Gwern" }).click();
   await page.locator(".pane .row", { hasText: "Typography" }).click();
   // Dragging across a pane's text makes that range the focus.
@@ -223,14 +223,14 @@ test("past the viewport, earlier panes become spines; a click on one brings it b
   expect(await strip.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
   // The root has slid under the rest and shows as a spine, its title set vertically.
   const spine = page.locator('.col[data-covered] .spine').first();
-  await expect(spine).toHaveText("Infinispand");
+  await expect(spine).toHaveText("Explicata");
   await expect.poll(() => spine.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
   expect(await spine.locator(".spine-title").evaluate((el) => getComputedStyle(el).writingMode)).toBe("vertical-rl");
   const box = (await spine.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.width).toBeLessThan(60);
   await spine.click();
-  expect(await focusedTitle(page)).toBe("Infinispand");
+  expect(await focusedTitle(page)).toBe("Explicata");
   // The trail stays; the strip slides back to show the first pane whole.
   await expect(page.locator(".strip .pane")).toHaveCount(4);
   await expect.poll(async () => (await panes(page))[0].left).toBe(0);

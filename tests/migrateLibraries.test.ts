@@ -173,6 +173,7 @@ describe.each(["pre", "main", "mixed"])("migrating data written by %s", (name) =
     const rootNote = root.children.map((c) => b.nodes[c]).find((n) => n.kind === "note")!;
     expect(rootNote.anchors.map((x) => x.text)).toEqual(["Root words"]);
     expect(rootNote.body).toBe("A note on the library root itself.");
+    // The fixtures were written when the project was called Infinispand.
     expect(b.nodes[root.children[0]].title).toBe("Infinispand");
     expect(b.nodes[root.children[1]].title).toBe("Migration notes");
     // Locks: set on a model's node, taken off a person's.

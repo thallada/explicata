@@ -1,8 +1,8 @@
 /**
- * Web research on the server: whether it is on (IE_WEB), the per-run caps (IE_WEB_SEARCHES,
- * IE_WEB_FETCHES), and the Messages API's web tools as the API-key route declares them.
+ * Web research on the server: whether it is on (EX_WEB), the per-run caps (EX_WEB_SEARCHES,
+ * EX_WEB_FETCHES), and the Messages API's web tools as the API-key route declares them.
  *
- * The browser asks for research on an agent turn; what it gets is decided here. With IE_WEB=off a
+ * The browser asks for research on an agent turn; what it gets is decided here. With EX_WEB=off a
  * turn never carries web tools, whatever the browser asked, and the caps the browser sends are
  * replaced by the server's.
  */
@@ -23,14 +23,14 @@ const count = (v: string | undefined, d: number) => {
   return v !== undefined && v !== "" && Number.isInteger(n) && n >= 0 && n <= 50 ? n : d;
 };
 
-/** IE_WEB is on or off (default on, when there is a model at all); anything else is off, said once. */
+/** EX_WEB is on or off (default on, when there is a model at all); anything else is off, said once. */
 export function webConfig(env: Record<string, string | undefined>, hasModel: boolean): WebConfig {
-  const caps = { searches: count(env.IE_WEB_SEARCHES, DEFAULT_LIMITS.searches), fetches: count(env.IE_WEB_FETCHES, DEFAULT_LIMITS.fetches) };
-  const wanted = env.IE_WEB ?? "on";
+  const caps = { searches: count(env.EX_WEB_SEARCHES, DEFAULT_LIMITS.searches), fetches: count(env.EX_WEB_FETCHES, DEFAULT_LIMITS.fetches) };
+  const wanted = env.EX_WEB ?? "on";
   if (!hasModel) return { on: false, ...caps, why: "no model is configured" };
-  if (wanted === "off") return { on: false, ...caps, why: "IE_WEB=off" };
-  if (wanted !== "on") return { on: false, ...caps, why: `IE_WEB=${wanted} is not on or off` };
-  if (caps.searches === 0 && caps.fetches === 0) return { on: false, ...caps, why: "IE_WEB_SEARCHES and IE_WEB_FETCHES are both 0" };
+  if (wanted === "off") return { on: false, ...caps, why: "EX_WEB=off" };
+  if (wanted !== "on") return { on: false, ...caps, why: `EX_WEB=${wanted} is not on or off` };
+  if (caps.searches === 0 && caps.fetches === 0) return { on: false, ...caps, why: "EX_WEB_SEARCHES and EX_WEB_FETCHES are both 0" };
   return { on: true, ...caps };
 }
 

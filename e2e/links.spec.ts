@@ -1,5 +1,5 @@
 /**
- * Links and Wikipedia, keyboard only, against the mock Wikipedia (IE_WIKI=mock, server/wikiMock.ts)
+ * Links and Wikipedia, keyboard only, against the mock Wikipedia (EX_WIKI=mock, server/wikiMock.ts)
  * and the shared library with links written into it over the op API (e2e/helpers.ts). Nothing here
  * touches the network: requests to wikipedia.org are refused, so a test that opens one only sees
  * the address it would have gone to.
@@ -403,14 +403,14 @@ test("a disambiguation page lists its senses as rows; a missing article, an unre
   await command(page, "/link w:Rate limited example");
   await keys(page, "Enter");
   await expect(page.locator(".wiki-pane.active").locator(".wiki-problem")).toContainText("fewer requests");
-  await expect(page.locator(".status .message")).toContainText("IE_WIKI_CONTACT");
+  await expect(page.locator(".status .message")).toContainText("EX_WIKI_CONTACT");
   expect(await page.evaluate(() => localStorage.getItem("ie:wiki-hint"))).toBe("true");
   await keys(page, "h h h");
   await command(page, "/link w:Slow article");
   await keys(page, "Enter");
   await expect(page.locator(".wiki-pane.active").locator(".wiki-wait")).toContainText("Loading");
   await expect(page.locator(".wiki-pane.active").locator(".wiki-head h2")).toHaveText("Slow article", { timeout: 10_000 });
-  await expect(page.locator(".status .message")).not.toContainText("IE_WIKI_CONTACT");
+  await expect(page.locator(".status .message")).not.toContainText("EX_WIKI_CONTACT");
   await keys(page, "h h h");
   await command(page, "/unlink");
 });

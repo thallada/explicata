@@ -10,7 +10,7 @@ import type { SeedNode, SeedNote } from "../seed/types";
 import { parseDoc } from "./format";
 import { clip } from "./text";
 
-export const SEED_TITLE = "Infinispand";
+export const SEED_TITLE = "Explicata";
 
 export interface BuildOptions {
   /** Name on the commit that creates the tree's top ("seed" by default, as on the commits under it). */

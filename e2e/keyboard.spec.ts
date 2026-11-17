@@ -15,7 +15,7 @@ const titlesUnder = (page: Page, title: string) =>
 
 /** The first tree, opened in the column (hoisted, with the library one step out). */
 async function open(page: Page) {
-  await openPage(page, "Infinispand");
+  await openPage(page, "Explicata");
   await page.evaluate(() => document.fonts.ready);
 }
 
@@ -29,7 +29,7 @@ test("opens on an outline of ten titles with the prompt folded above it", async 
   await expect(page.locator("article > .outline > .node")).toHaveCount(10);
   await expect(page.locator(".node.open")).toHaveCount(0);
   await expect(page.locator(".abstract.seed.folded")).toBeVisible();
-  await expect(page.locator("h1")).toHaveText("Infinispand");
+  await expect(page.locator("h1")).toHaveText("Explicata");
   await page.keyboard.press("Enter");
   await expect(page.locator(".abstract.seed.folded")).toHaveCount(0);
   await expect(page.locator(".abstract.seed")).toContainText("I think maybe we want something like CDRTs under the hood");

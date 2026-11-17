@@ -147,6 +147,8 @@ export interface Sample {
 // ---- store ----
 
 const clientId = Math.random().toString(36).slice(2);
+// Browser keys keep the prefix `ie:` from the project's first name (infinite-expand), so settings
+// already stored in a browser are found.
 const lsGet = <T>(k: string, d: T): T => {
   try {
     const v = localStorage.getItem(k);
@@ -1184,7 +1186,7 @@ class Store {
         // Once per browser: why Wikipedia is slow, and what makes it fast.
         if (lsGet("ie:wiki-hint", false)) return;
         lsSet("ie:wiki-hint", true);
-        this.say("Wikipedia is answering slowly: without a contact address the server may only ask it a few times a minute. Start the server with IE_WIKI_CONTACT set (an email address, an https:// URL or User:Name) to lift that.");
+        this.say("Wikipedia is answering slowly: without a contact address the server may only ask it a few times a minute. Start the server with EX_WIKI_CONTACT set (an email address, an https:// URL or User:Name) to lift that.");
       });
       this.user = lsGet("ie:user", state?.user ?? "you");
       if (state) this.llm = refreshAfterCalls(remoteLLM(state.llm, state.model ?? undefined));
@@ -1459,7 +1461,7 @@ class Store {
 
   /** The window's title: the article on the column's article page, else the node the reader is on. */
   private setTitle() {
-    document.title = this.colWiki ? `${this.colWiki.title} · Wikipedia` : label(this.snap, this.activeNode) || "Infinispand";
+    document.title = this.colWiki ? `${this.colWiki.title} · Wikipedia` : label(this.snap, this.activeNode) || "Explicata";
   }
 
   /** Every edit is saved as it is made; this says whether the server has it yet. */
@@ -3130,7 +3132,7 @@ class Store {
     if (!this.writable()) return;
     if (!this.generating) return this.say("No model configured, so there is no editor to ask.");
     if (opts.research && !instruction.trim()) return this.say("Say what to research: /research <question>. The editor writes what it finds into the focused node.");
-    if (opts.research && !this.web.on) return this.say("Web research is off on this server (IE_WEB=off). : on a node still asks the editor, without the web.");
+    if (opts.research && !this.web.on) return this.say("Web research is off on this server (EX_WEB=off). : on a node still asks the editor, without the web.");
     if (this.agentRun?.running) return this.say("The editor is still working: Esc stops it.");
     const research = (opts.research ?? wantsResearch(instruction)) && this.web.on;
     const focus = this.focus.node;
@@ -3433,7 +3435,7 @@ class Store {
   /** The status line's account of a job; `made`, once it is over, the links the reviewer approved that this page made. */
   jobText(j: JobState, made?: number): string {
     const eta = j.etaSec ? ` · about ${j.etaSec < 90 ? `${j.etaSec} s` : `${Math.round(j.etaSec / 60)} min`} left` : "";
-    const slow = j.slow && j.state === "running" ? " · Wikipedia is asked once every 6.5 s without a contact: start the server with IE_WIKI_CONTACT (an email, https:// URL or User:Name) for about 6× faster" : "";
+    const slow = j.slow && j.state === "running" ? " · Wikipedia is asked once every 6.5 s without a contact: start the server with EX_WIKI_CONTACT (an email, https:// URL or User:Name) for about 6× faster" : "";
     const r = j.review;
     const fell = r?.fallback ? ` · ${this.links.fallbackText(r.fallback)}: ${r.left} left for you` : "";
     if (j.state === "running") {

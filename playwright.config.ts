@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defineConfig } from "@playwright/test";
 
-// IE_E2E_PORT lets two runs go side by side.
-const PORT = Number(process.env.IE_E2E_PORT ?? 4760);
+// EX_E2E_PORT lets two runs go side by side.
+const PORT = Number(process.env.EX_E2E_PORT ?? 4760);
 // Each run gets an empty data directory, so it starts from a freshly seeded library.
-const data = process.env.IE_E2E_DATA ?? mkdtempSync(join(tmpdir(), "ie-e2e-"));
-process.env.IE_E2E_DATA = data;
+const data = process.env.EX_E2E_DATA ?? mkdtempSync(join(tmpdir(), "ie-e2e-"));
+process.env.EX_E2E_DATA = data;
 
 export default defineConfig({
   testDir: "e2e",
@@ -27,7 +27,7 @@ export default defineConfig({
     // Each port builds into its own directory: two runs side by side must not rebuild the files the
     // other is serving.
     command: `npx vite build --outDir dist-e2e-${PORT} --emptyOutDir && npx tsx server/index.ts`,
-    env: { IE_DIST: `dist-e2e-${PORT}`, IE_PROD: "1", IE_LLM: "mock", IE_MOCK_DELAY: "10", IE_DATA: data, PORT: String(PORT), IE_USER: "tester", IE_WIKI: "mock", IE_EMBED: "fake", IE_WIKI_MOCK_BULK_MS: "60" },
+    env: { EX_DIST: `dist-e2e-${PORT}`, EX_PROD: "1", EX_LLM: "mock", EX_MOCK_DELAY: "10", EX_DATA: data, PORT: String(PORT), EX_USER: "tester", EX_WIKI: "mock", EX_EMBED: "fake", EX_WIKI_MOCK_BULK_MS: "60" },
     url: `http://localhost:${PORT}/api/state`,
     reuseExistingServer: false,
     timeout: 60_000,

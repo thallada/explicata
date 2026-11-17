@@ -4,7 +4,7 @@
  * bare [[marks]] resolved on save, model-written text with its marks taken out and checked, the
  * Related list, /linkhere and /linkall with progress and a cancel, the /autolink modes, and latency. Against the
  * mock model, the mock Wikipedia (Octopus, Cephalopod, Fred Hoyle, Hoyle state, Carbon-12, Lambda
- * calculus, …) and the hashed-words embedder (IE_EMBED=fake).
+ * calculus, …) and the hashed-words embedder (EX_EMBED=fake).
  */
 import { expect, test, type Page } from "@playwright/test";
 import { addTop, autoLayout, command, idle, jump, keys, linksHere, paced, selected, settle, state, visit, writeReport } from "./helpers";

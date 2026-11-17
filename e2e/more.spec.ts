@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { command, idle, jump, keys, openPage, settle, state } from "./helpers";
 
 /** The first tree as the page (hoisted), with the library one step out. */
-const open = (page: Page) => openPage(page, "Infinispand");
+const open = (page: Page) => openPage(page, "Explicata");
 
 test.afterEach(({ page }) => settle(page));
 
@@ -63,7 +63,7 @@ test("hoisting makes one node the whole page; Esc at its top steps out to its pa
   await jump(page, "Semantic conflicts");
   await page.keyboard.press("z");
   await expect(page.locator("h1")).toHaveText("Semantic conflicts");
-  await expect(page.locator(".crumbs")).toHaveText(/^Library › Infinispand › Versioning and merge ›/);
+  await expect(page.locator(".crumbs")).toHaveText(/^Library › Explicata › Versioning and merge ›/);
   await expect(page.locator("article > .outline > .node")).toHaveCount(3);
   await page.keyboard.press("Escape");
   await expect(page.locator("h1")).toHaveText("Versioning and merge");
@@ -71,11 +71,11 @@ test("hoisting makes one node the whole page; Esc at its top steps out to its pa
   expect(await state(page, (s) => s.snap.nodes[s.focus.node].title)).toBe("Semantic conflicts");
   await page.keyboard.press("O"); // collapse everything: the focus goes to the top
   await page.keyboard.press("Escape");
-  await expect(page.locator("h1")).toHaveText("Infinispand");
+  await expect(page.locator("h1")).toHaveText("Explicata");
   await page.keyboard.press("O");
   await page.keyboard.press("Escape");
   await expect(page.locator("h1")).toHaveText("Library");
-  expect(await state(page, (s) => s.snap.nodes[s.focus.node].title)).toBe("Infinispand");
+  expect(await state(page, (s) => s.snap.nodes[s.focus.node].title)).toBe("Explicata");
   await expect(page).toHaveURL(/\/n\/[^/]+$/);
   // On the root itself, the address is the library's.
   await page.keyboard.press("O");
@@ -118,7 +118,7 @@ test("an outside agent edits over HTTP with the same ops, and the open page foll
   await open(page);
   const tree = await (await request.get("/api/tree/main")).json();
   // The tree is the whole library; its top-level trees are the root's sections.
-  expect(Object.values<any>(tree.nodes).filter((n) => n.parent === tree.root).map((n) => n.title)).toContain("Infinispand");
+  expect(Object.values<any>(tree.nodes).filter((n) => n.parent === tree.root).map((n) => n.title)).toContain("Explicata");
   const target = Object.values<any>(tree.nodes).find((n) => n.title === "The first tree");
   expect(target).toBeTruthy();
   const res = await request.post("/api/ops/main", {

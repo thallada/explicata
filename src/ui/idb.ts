@@ -4,7 +4,7 @@ let dbp: Promise<IDBDatabase> | null = null;
 
 function db(): Promise<IDBDatabase> {
   return (dbp ??= new Promise((resolve, reject) => {
-    // The project's former name: kept, so replicas already stored in a browser are found.
+    // The project's first name (infinite-expand): kept, so replicas already stored in a browser are found.
     const req = indexedDB.open("infinite-expand", 1);
     req.onupgradeneeded = () => req.result.createObjectStore("kv");
     req.onsuccess = () => resolve(req.result);

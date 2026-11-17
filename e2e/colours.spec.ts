@@ -113,8 +113,8 @@ test("every kind of pane's title rule is drawn by the curve into it, in the pane
 
 test("a pane's colour is a function of the forest: unchanged by focus, a source scrolled out of sight, folding to a tab, or which way its rule is drawn", async ({ page }) => {
   await library(page);
-  for (const t of ["Infinispand", "Fixed points"]) await clickOpen(page, "Library", t);
-  await clickOpen(page, "Infinispand", "Expansion by depth");
+  for (const t of ["Explicata", "Fixed points"]) await clickOpen(page, "Library", t);
+  await clickOpen(page, "Explicata", "Expansion by depth");
   await clickOpen(page, "Fixed points", "The idea itself");
   const colourOf = async () => Object.fromEntries((await lines(page)).map((l) => [l.to, { stroke: l.stroke, colour: l.colour, hue: l.paneHue }]));
   const before = await colourOf();

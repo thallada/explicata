@@ -86,7 +86,7 @@ function serve(data: string, library: string, port = PORT): { child: ChildProces
   const out: string[] = [];
   const child = spawn(process.execPath, ["--import", "tsx", "server/index.ts"], {
     cwd: ROOT,
-    env: { ...process.env, IE_PROD: "1", IE_LLM: "mock", IE_MOCK_DELAY: "0", IE_WIKI: "mock", IE_EMBED: "fake", IE_DATA: data, IE_LIBRARY: library, PORT: String(port), IE_USER: "tester" },
+    env: { ...process.env, EX_PROD: "1", EX_LLM: "mock", EX_MOCK_DELAY: "0", EX_WIKI: "mock", EX_EMBED: "fake", EX_DATA: data, EX_LIBRARY: library, PORT: String(port), EX_USER: "tester" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   servers.push(child);
@@ -140,7 +140,7 @@ describe("the server with several libraries", () => {
     expect(a.title).toBe("Library");
     const treeA = await get(`/api/l/${a.id}/tree`);
     const topsA = treeA.nodes[treeA.root].children.map((c: string) => treeA.nodes[c].title);
-    expect(topsA).toEqual(["Infinispand", "Tides"]);
+    expect(topsA).toEqual(["Explicata", "Tides"]);
     // The unprefixed routes are the first library's.
     expect((await get("/api/tree")).library).toBe(a.id);
     expect((await get("/api/state")).library).toBe(a.id);

@@ -1,6 +1,6 @@
 /**
  * Suggestions and what was decided about them. Derived data, so they live on the server under
- * <IE_DATA>/libraries/<id>/links/pending.json, one file per library, and never in the library.
+ * <EX_DATA>/libraries/<id>/links/pending.json, one file per library, and never in the library.
  *
  * A scan replaces what was pending for its node, but what was decided is kept: the model
  * reviewer's verdict (link or not, and why), a person's decision, and when an approved link was

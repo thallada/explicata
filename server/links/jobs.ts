@@ -32,7 +32,7 @@ export interface JobState {
   finishedAt?: number;
   /** Seconds left, estimated from the requests still to make and the client's spacing. */
   etaSec: number | null;
-  /** The client is spacing requests for want of a contact (IE_WIKI_CONTACT). */
+  /** The client is spacing requests for want of a contact (EX_WIKI_CONTACT). */
   slow: boolean;
   message?: string;
   /** The reviewer's part, for a job started with review: verdicts so far, calls made of those allowed, and why it stopped early if it did. */
@@ -55,7 +55,7 @@ export class Jobs {
       pending: PendingStore;
       announce: (state: JobState) => void;
       reviewer?: Reviewer;
-      /** Calls a job's review may make (IE_REVIEW_CALLS). */
+      /** Calls a job's review may make (EX_REVIEW_CALLS). */
       reviewCalls?: number;
     },
   ) {}

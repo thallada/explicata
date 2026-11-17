@@ -43,11 +43,11 @@ semicolon was throttled after about 500 requests; with the semicolon it ran 2,50
 without a 429. Browser requests are limited by IP or user id, "not based on the user agent at all".
 
 *Consequence for this app.* The privacy rule (no name, email or host in the UA) and the policy pull
-in opposite directions. With no contact, the default UA `Infinispand/0.1 (personal knowledge tool)`
+in opposite directions. With no contact, the default UA `Explicata/0.1 (personal knowledge tool)`
 should be expected to fall in the 10/min "unidentified" tier. I did not provoke a 429 to check
 this. The client therefore spaces requests 6.5 s apart when there is no contact. If the owner sets
-`IE_WIKI_CONTACT` to an email address, an `https://` URL or `User:Name`, the UA becomes
-`Infinispand/0.1 (<contact>)` and the spacing drops to 1 s, a third of the 200/min budget. The
+`EX_WIKI_CONTACT` to an email address, an `https://` URL or `User:Name`, the UA becomes
+`Explicata/0.1 (<contact>)` and the spacing drops to 1 s, a third of the 200/min budget. The
 policy does expect a contact. A throwaway address or a wiki user page is enough, and either keeps
 the owner's real identity out of the UA.
 
@@ -152,7 +152,7 @@ What would make it necessary:
 4. Needing to work offline for long periods.
 
 **Autocomplete without a contact.** At 6.5 s spacing, server-side autocomplete is slow: set
-`IE_WIKI_CONTACT`. (Calling `search/title` from the browser would be the "unauthenticated browser"
+`EX_WIKI_CONTACT`. (Calling `search/title` from the browser would be the "unauthenticated browser"
 tier, 200/min per IP; not done.)
 
 ## 5. What makes a good candidate (from the demonstration)
@@ -197,7 +197,7 @@ tier, 200/min per IP; not done.)
   hits).
 - Embeddings: `Xenova/bge-small-en-v1.5`, q8 ONNX, **34 MB** on disk, 384 dimensions, MIT. Load
   0.6 s from cache, 1.5 s including the download. With 4 threads (the default,
-  `IE_EMBED_THREADS`): **43 paragraphs/s** for ~110-word paragraphs and **450 short strings/s**;
+  `EX_EMBED_THREADS`): **43 paragraphs/s** for ~110-word paragraphs and **450 short strings/s**;
   with 8 threads, 61/s and 575/s. Process RSS is about 560 MB once loaded. The 600-node library
   embeds in about 15 s. `all-MiniLM-L6-v2` (Apache-2.0, 23 MB) is about 1.3× faster but separates
   senses less clearly.
@@ -210,12 +210,12 @@ considered and set aside:
 - EmbeddingGemma-300m is under the Gemma terms and is 10× larger.
 - Qwen3-Embedding-0.6B is Apache, but has about 18× the parameters; its CPU speed was not measured.
 
-`IE_EMBED_MODEL=Snowflake/snowflake-arctic-embed-xs` (Apache-2.0) is a drop-in alternative.
+`EX_EMBED_MODEL=Snowflake/snowflake-arctic-embed-xs` (Apache-2.0) is a drop-in alternative.
 
 ## 7. Caches
 
-`<IE_DATA>/wiki-cache/<lang>/titles.json` (found 30 d, missing 3 d), `small.json` (summaries 14 d,
-senses 14 d, suggest and search 1 d), `articles/` (7 d). Vectors, per library: `<IE_DATA>/libraries/<id>/vectors/<name>.json`
+`<EX_DATA>/wiki-cache/<lang>/titles.json` (found 30 d, missing 3 d), `small.json` (summaries 14 d,
+senses 14 d, suggest and search 1 d), `articles/` (7 d). Vectors, per library: `<EX_DATA>/libraries/<id>/vectors/<name>.json`
 and `.f32`. An expired entry is still served, marked `stale`, when the network is down. The
 variables that configure all this are in the README.
 
@@ -353,7 +353,7 @@ another tree); each tree's heading lists what is already linked in it, and each 
 heading what is linked there. The model has no tools; it returns, by structured output, a verdict
 (link or not) and a reason of at most twelve words per proposal. The system prompt names each
 blind spot above as a reason to reject. Verdicts are stored with the suggestion in
-`IE_DATA/libraries/<id>/links/pending.json` (each library its own), keyed by node, phrase and target rather than by offsets, so a
+`EX_DATA/libraries/<id>/links/pending.json` (each library its own), keyed by node, phrase and target rather than by offsets, so a
 suggestion found again by a later scan keeps its verdict and is never sent twice. Rejected phrases
 are skipped by later scans of that node, as declined ones are.
 
@@ -366,11 +366,11 @@ list can say who decided.
 
 **Cost.** A node scanned after an edit costs at most 2 calls (`SCAN_CALLS`), almost always 1, and
 none when nothing new was found. A `/linkhere` or `/linkall` job costs ⌈N / 60⌉ calls for N new
-candidates, at most `IE_REVIEW_CALLS` (default 50, so 3,000 candidates); the status line counts
+candidates, at most `EX_REVIEW_CALLS` (default 50, so 3,000 candidates); the status line counts
 them, and a second run asks nothing about what the first judged. Every call uses the configured
-model (`IE_MODEL`) at effort `low`: the app has no per-task model setting, and none was added.
+model (`EX_MODEL`) at effort `low`: the app has no per-task model setting, and none was added.
 
-**Falling back.** With no model (`IE_LLM=off`), when a call fails (a limit reached, the network
+**Falling back.** With no model (`EX_LLM=off`), when a call fails (a limit reached, the network
 gone), or when a job reaches its cap, nothing unreviewed is applied: what is left stays pending, is
 drawn as suggestions and listed under *pending*, and the status line says why ("Not reviewed (the
 reviewer failed: …)").

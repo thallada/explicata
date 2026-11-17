@@ -4,15 +4,15 @@
  *
  * Node text never leaves the machine: the model runs in a worker thread of this process
  * (transformers.js on onnxruntime-node, server/embedWorker.mjs). It is loaded on first use; its
- * files are downloaded once from the Hugging Face hub into <IE_DATA>/models/. If that fails
+ * files are downloaded once from the Hugging Face hub into <EX_DATA>/models/. If that fails
  * (offline, no native runtime), embed() returns null and callers fall back to text search.
  *
  *   embedder.embed(texts)           Float32Array[] (unit length) or null
  *   new VectorIndex(file).upsert()  re-embeds only entries whose text hash changed
  *   index.search / textSearch / hybrid    cosine top-k, BM25, and the two fused
  *
- * IE_EMBED_MODEL picks the model (default Xenova/bge-small-en-v1.5, MIT, 384 dimensions);
- * IE_EMBED=off turns embeddings off, IE_EMBED=fake uses hashed words (the tests).
+ * EX_EMBED_MODEL picks the model (default Xenova/bge-small-en-v1.5, MIT, 384 dimensions);
+ * EX_EMBED=off turns embeddings off, EX_EMBED=fake uses hashed words (the tests).
  */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
@@ -46,15 +46,15 @@ export type Loader = (spec: ModelSpec, cacheDir: string) => Promise<EmbedFn>;
 /**
  * The model with transformers.js, in a worker thread: loading it and every batch run off the main
  * thread, so the server keeps answering while a library is being embedded. A few threads are
- * nearly as fast as all of them and leave the machine usable (IE_EMBED_THREADS, default 4);
- * IE_EMBED_OFFLINE=1 reads only files downloaded before.
+ * nearly as fast as all of them and leave the machine usable (EX_EMBED_THREADS, default 4);
+ * EX_EMBED_OFFLINE=1 reads only files downloaded before.
  */
 const workerLoader: Loader = (spec, cacheDir) =>
   new Promise((resolveLoad, rejectLoad) => {
     // execArgv: [] keeps a TypeScript loader (tsx) out of the worker, which is plain JavaScript.
     const worker = new Worker(new URL("./embedWorker.mjs", import.meta.url), {
       execArgv: [],
-      workerData: { id: spec.id, pooling: spec.pooling, cacheDir, offline: process.env.IE_EMBED_OFFLINE === "1", threads: Number(process.env.IE_EMBED_THREADS) || 4 },
+      workerData: { id: spec.id, pooling: spec.pooling, cacheDir, offline: process.env.EX_EMBED_OFFLINE === "1", threads: Number(process.env.EX_EMBED_THREADS) || 4 },
     });
     // The worker must not keep a script alive that is otherwise done.
     worker.unref();
@@ -90,7 +90,7 @@ const workerLoader: Loader = (spec, cacheDir) =>
   });
 
 /**
- * A stand-in model for tests and offline runs (IE_EMBED=fake): a bag of hashed words, normalised,
+ * A stand-in model for tests and offline runs (EX_EMBED=fake): a bag of hashed words, normalised,
  * so texts sharing words are near each other. It needs no download and separates nothing subtle.
  */
 export function fakeVector(text: string, dim = 384): Float32Array {
@@ -176,10 +176,10 @@ export class Embedder {
 }
 
 let shared: Embedder | null = null;
-/** The server's embedder, configured from IE_DATA, IE_EMBED_MODEL and IE_EMBED. */
+/** The server's embedder, configured from EX_DATA, EX_EMBED_MODEL and EX_EMBED. */
 export function embedder(): Embedder {
-  const mode = process.env.IE_EMBED;
-  shared ??= new Embedder({ model: mode === "fake" ? "fake" : process.env.IE_EMBED_MODEL, off: mode === "off", loader: mode === "fake" ? fakeLoader : workerLoader });
+  const mode = process.env.EX_EMBED;
+  shared ??= new Embedder({ model: mode === "fake" ? "fake" : process.env.EX_EMBED_MODEL, off: mode === "off", loader: mode === "fake" ? fakeLoader : workerLoader });
   return shared;
 }
 

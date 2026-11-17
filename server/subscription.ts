@@ -73,7 +73,7 @@ const INHERITED = /^(CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_CODE_(ENTRYPOINT
  * OAuth token inside Claude Code, so neither is ever passed on.
  */
 function childEnv(): Record<string, string | undefined> {
-  const env: Record<string, string | undefined> = { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: "infinispand/1.0.0" };
+  const env: Record<string, string | undefined> = { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: "explicata/1.0.0" };
   for (const k of Object.keys(env)) if (k === "ANTHROPIC_API_KEY" || k === "ANTHROPIC_AUTH_TOKEN" || INHERITED.test(k)) delete env[k];
   return env;
 }

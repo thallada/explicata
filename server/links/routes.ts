@@ -20,7 +20,7 @@
  *                               or POST { node, text, title, ancestors }
  *   POST /api/links/jobs        { scope: "node" | "library", node?, review? } → the job's state (node: a node's id, scanned with
  *                               everything under it; on the library root, the whole library); it runs in the background
- *                               (with review, the model reviewer judges what it finds, within IE_REVIEW_CALLS calls)
+ *                               (with review, the model reviewer judges what it finds, within EX_REVIEW_CALLS calls)
  *   GET  /api/links/jobs        → { job } (the current or last one)
  *   DELETE /api/links/jobs      → cancel the running job
  *   GET  /api/links/status      → embeddings, the node index, the pending count, the job

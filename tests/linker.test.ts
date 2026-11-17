@@ -2,7 +2,7 @@
  * Link discovery (server/links): the extractor, the tiering rule, density and first mention,
  * self and ancestor exclusion, declined phrases, marks, degraded text-only mode, the incremental
  * node index, background jobs, and accept/reject. Offline: the mock Wikipedia and the hashed-words
- * embedder (IE_EMBED=fake).
+ * embedder (EX_EMBED=fake).
  */
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";

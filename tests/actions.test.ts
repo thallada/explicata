@@ -64,7 +64,7 @@ describe("actions", () => {
 
   it("the selection menu puts Copy first, then what the words carry, then the lenses, linking and Related", () => {
     const { act, calls } = recorder();
-    const plain = selectionEntries(sel({ related: [{ title: "Expansion by depth", where: "Infinispand" }, { title: "Nodes" }] }), act);
+    const plain = selectionEntries(sel({ related: [{ title: "Expansion by depth", where: "Explicata" }, { title: "Nodes" }] }), act);
     expect(labels(plain)).toEqual([
       "# “a probability for each possible next piece”",
       "Copy",

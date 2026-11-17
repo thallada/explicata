@@ -139,7 +139,7 @@ describe("/api/wiki over the mock provider", () => {
     for (const path of ["/api/wiki/summary?title=Octopus", "/api/wiki/lookup", "/api/wiki/anything"]) {
       expect(await get(off.base, path)).toEqual({
         status: 503,
-        body: { ok: false, reason: "off", message: "Wikipedia is turned off on this server (IE_WIKI=off)." },
+        body: { ok: false, reason: "off", message: "Wikipedia is turned off on this server (EX_WIKI=off)." },
       });
     }
     expect((await fetch(`${off.base}/api/state`)).status).toBe(418);

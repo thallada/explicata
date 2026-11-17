@@ -1,5 +1,5 @@
 {
-  "name": "infinispand",
+  "name": "explicata",
   "version": "1.0.0",
   "private": true,
   "description": "A tree of writing you can expand without limit: an outline whose every node, sentence and word opens further, written ahead or by a model, versioned like git.",
@@ -8,7 +8,7 @@
     "test": "vitest run",
     "dev": "tsx server/index.ts",
     "build": "vite build",
-    "start": "IE_PROD=1 tsx server/index.ts",
+    "start": "EX_PROD=1 tsx server/index.ts",
     "e2e": "playwright test",
     "check": "tsc --noEmit",
     "verify": "tsx scripts/verify.ts",

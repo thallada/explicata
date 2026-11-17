@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 /** The checkout's root directory. */
 export const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 
-/** Where the library and everything derived from it are kept: IE_DATA, or .data in the checkout. */
-export const dataDir = () => resolve(process.env.IE_DATA ?? join(ROOT, ".data"));
+/** Where the library and everything derived from it are kept: EX_DATA, or .data in the checkout. */
+export const dataDir = () => resolve(process.env.EX_DATA ?? join(ROOT, ".data"));
 
 /** A failure with the HTTP status it should be answered with. */
 export class HttpError extends Error {

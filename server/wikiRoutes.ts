@@ -16,7 +16,7 @@
  * Answers: 200 { ok: true, ... }; 400 bad input; 404 { ok: false, reason: "missing" };
  * 503 { ok: false, reason, retryAfter } when Wikipedia is unreachable or asked us to wait.
  * A request the browser abandons (a superseded keystroke) is dropped from the queue unsent.
- * With IE_WIKI=off the server wires in wikiOff instead: every route answers 503 reason "off".
+ * With EX_WIKI=off the server wires in wikiOff instead: every route answers 503 reason "off".
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { HttpError, abortOnClose, sendJson as send } from "./util";
@@ -125,9 +125,9 @@ export function wikiRoutes(client: () => WikiClient) {
   };
 }
 
-/** IE_WIKI=off: the routes exist, so the UI can tell "turned off" from "unreachable", but none works. */
+/** EX_WIKI=off: the routes exist, so the UI can tell "turned off" from "unreachable", but none works. */
 export async function wikiOff(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
   if (!url.pathname.startsWith("/api/wiki/")) return false;
-  send(res, 503, { ok: false, reason: "off", message: "Wikipedia is turned off on this server (IE_WIKI=off)." });
+  send(res, 503, { ok: false, reason: "off", message: "Wikipedia is turned off on this server (EX_WIKI=off)." });
   return true;
 }

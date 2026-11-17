@@ -177,7 +177,7 @@ export const TUNING: Tuning = {
 };
 
 /**
- * Per-model adjustments. The test model (IE_EMBED=fake: hashed words) gives a 7-word description
+ * Per-model adjustments. The test model (EX_EMBED=fake: hashed words) gives a 7-word description
  * and a paragraph a cosine of 0.1–0.3 when they share a word and 0 when they share none.
  */
 const PROFILES: Record<string, Partial<Tuning>> = {

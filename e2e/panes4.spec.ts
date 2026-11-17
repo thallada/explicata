@@ -27,8 +27,8 @@ async function forest(page: Page) {
   await open(page, "Library", "Octopus minds");
   await open(page, "Octopus minds", "A separate experiment");
   await open(page, "A separate experiment", "The common ancestor");
-  await open(page, "Library", "Infinispand");
-  await open(page, /Infinispand/, "Expansion by depth");
+  await open(page, "Library", "Explicata");
+  await open(page, /Explicata/, "Expansion by depth");
   await open(page, "Expansion by depth", "Levels of a node");
   await open(page, "Expansion by depth", "Generation on demand");
   await open(page, "Library", "The tides");
