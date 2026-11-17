@@ -229,7 +229,7 @@ test("the menu's keys: ↑ ↓ Home End move, Enter runs, Esc closes and gives t
   await open(page);
   await keys(page, "j");
   const before = await state(page, (s) => s.focus.node);
-  await page.locator(".docbar .tool[aria-haspopup]").click();
+  await page.locator(".docbar .tool[aria-haspopup=menu]").click();
   await expect(menu(page)).toBeFocused();
   await keys(page, "j k");
   expect(await state(page, (s) => s.focus.node)).toBe(before);
@@ -437,7 +437,7 @@ test.describe("on a phone", () => {
     await outside();
     await expect(page.locator(".menu.sheet")).toHaveCount(0);
     // The top bar's menu, a sheet too.
-    await page.locator(".docbar .tool[aria-haspopup]").tap();
+    await page.locator(".docbar .tool[aria-haspopup=menu]").tap();
     await expect(page.locator(".menu.sheet")).toBeVisible();
     await expect(item(page, "Jump to a section…")).toHaveCount(1);
   });
