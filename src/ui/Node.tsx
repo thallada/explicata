@@ -276,11 +276,10 @@ export function NodeBody({ id, inline, inNote }: { id: NodeId; inline?: boolean;
   const snap = store.snap;
   const n = snap.nodes[id];
   if (store.edit?.node === id && store.edit.field === "body") return <BodyEditor id={id} />;
-  const rewrite = [...store.pending.values()].find((p) => p.node === id && p.kind === "rewrite");
   const { placed, orphans } = notesFor(snap, id);
   const paras = paragraphs(n.body);
   return (
-    <span class={`body${rewrite ? " rewriting" : ""}`} data-body={id}>
+    <span class="body" data-body={id}>
       {paras.map((r, i) => (
         <Para key={i} id={id} range={r} notes={placed} inline={!!inline} inNote={!!inNote} first={i === 0} />
       ))}

@@ -24,7 +24,7 @@ import { clip, formFor, plain, rangeAt, sentences, slugify, words, type Form, ty
 import { applyLinks, linkIndex, nodeRef, ownerSection, resolveNode } from "../core/links";
 import { annotationsOf, articleNodes, inArticles, makeAnchor, reanchor, type ArticleKey } from "../core/article";
 import { describeTarget, formatTarget, hostOf, parseTargetLoose, wikiKey, type Ref } from "../core/ref";
-import { article as wikiArticle, articleText, cachedExtract, sectionPath, sectionsUnder, sectionTexts, configureWiki, revisionUrl, sensesOf as wikiSenses, wikiUrl, type Article, type WikiConfig } from "./wiki";
+import { article as wikiArticle, articleText, cachedExtract, sectionPath, sectionsUnder, sectionTexts, configureWiki, sensesOf as wikiSenses, wikiUrl, type Article, type WikiConfig } from "./wiki";
 import type { ArticleText } from "./articleText";
 import { LENSES } from "../llm/prompts";
 import {
@@ -78,6 +78,7 @@ export const sameRef = (a: PaneRef, b: PaneRef): boolean =>
   a.kind === b.kind && (a.kind === "node" ? a.id === (b as { id: NodeId }).id : a.title === (b as { title: string }).title && a.sec === (b as { sec?: number }).sec);
 /** What a pane shows, as a key: `n:<node id>`, or `w:<title>` with `#<section>`. A link's target has the same key as the pane it opens. */
 export const refKey = (p: PaneRef): string => (p.kind === "node" ? `n:${p.id}` : `w:${p.title}${p.sec !== undefined ? `#${p.sec}` : ""}`);
+const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 const isPaneRef = (r: unknown): r is PaneRef => {
   const o = r as Record<string, unknown> | null;
   return !!o && typeof o === "object" && ((o.kind === "node" && typeof o.id === "string") || (o.kind === "wiki" && typeof o.title === "string" && typeof o.lang === "string"));
@@ -127,7 +128,7 @@ export const PANES_MIN_WIDTH = 900;
 export interface Pending {
   key: string;
   node: NodeId;
-  kind: "note" | "sections" | "rewrite";
+  kind: "note" | "sections";
   range?: Range;
   /** A note being written on words of an article: which article (its key) and section. */
   art?: { key: string; sec: number };
@@ -163,9 +164,8 @@ const lsSet = (k: string, v: unknown) => {
 };
 
 /**
- * The settings this browser stored. `review` is now the default for links found after an edit; a
- * browser that stored the old default, `suggest`, without choosing it (every setting is stored
- * together) moves to it. A mode chosen with /autolink since is kept.
+ * The settings this browser stored. Every setting is stored together, so a stored `suggest` may be
+ * an earlier default rather than a choice: unless it was chosen with /autolink, the default applies.
  */
 function storedSettings(): Partial<Store["settings"]> {
   const s = lsGet<Partial<Store["settings"]>>("ie:settings", {});
@@ -237,8 +237,7 @@ class Store {
   });
   /**
    * The links list (S): every link found or made in a node and everything under it (on the library
-   * root, the whole library), as it stands, under
-   * filters by status; the selected row's words are focused in the text.
+   * root, the whole library), filtered by status; the selected row's words are focused in the text.
    */
   review: { node: NodeId; ids: NodeId[]; show: Record<Status, boolean>; key: string | null } | null = null;
 
@@ -462,22 +461,21 @@ class Store {
   }
 
   /**
-   * The panes, left to right: the top node, then at each step the child section that is open and
-   * on the way to the focused node. Derived from focus and the open set; nothing else is stored.
+   * The panes as a plain trail down to the focus: the top node, then at each step the child section
+   * that is open and on the way to the focused node.
    */
-  panePath(): NodeId[] {
+  private pathRefs(): PaneRef[] {
     const s = this.snap;
     const path = [this.top];
     const f = this.focus.node;
-    if (!s.nodes[f]) return path;
-    const chain = new Set([f, ...ancestors(s, f)]);
-    if (!chain.has(this.top)) return path;
-    for (let cur = this.top; ; ) {
-      const next = s.nodes[cur].children.find((c) => chain.has(c));
-      if (!next || s.nodes[next].kind !== "section" || !this.open.has(next)) return path;
-      path.push(next);
-      cur = next;
-    }
+    const chain = new Set(s.nodes[f] ? [f, ...ancestors(s, f)] : []);
+    if (chain.has(this.top))
+      for (let cur = this.top; ; cur = path[path.length - 1]) {
+        const next = s.nodes[cur].children.find((c) => chain.has(c));
+        if (!next || s.nodes[next].kind !== "section" || !this.open.has(next)) break;
+        path.push(next);
+      }
+    return path.map((id) => ({ kind: "node" as const, id }));
   }
 
   // ---- the trail of panes ----
@@ -528,15 +526,6 @@ class Store {
     return hit ? { forest: focusIn(this.forest, hit.node.id), depth: hit.depth } : null;
   }
 
-  private setForest(next: Forest<PaneRef, Back>) {
-    this.forest = next;
-  }
-
-  /** The panes as a plain trail down to the focus (open sections on the way). */
-  private pathRefs(): PaneRef[] {
-    return this.panePath().map((id) => ({ kind: "node" as const, id }));
-  }
-
   /**
    * Keep the trail holding the focus. Moving within the panes (back left, along a pane's rows)
    * leaves the trail as it is. When the focus lands somewhere the focused branch does not hold, a
@@ -549,7 +538,7 @@ class Store {
     const s = this.snap;
     let f = prune(this.forest, (p) => p.kind === "wiki" || !!s.nodes[p.id]);
     if (!rooted(f, { kind: "node", id: this.top }, sameRef)) f = withBranch(f, this.pathRefs(), sameRef);
-    if (f !== this.forest) this.setForest(f);
+    this.forest = f;
     this.paneAt = Math.max(0, Math.min(this.paneAt, this.trail.length - 1));
     if (this.aux) return;
     const n = this.trail.length;
@@ -557,11 +546,11 @@ class Store {
     for (const i of order) if (i >= 0 && i < n && this.holds(i, this.focus)) return void (this.paneAt = i);
     const fork = this.forkHolding(this.focus);
     if (fork) {
-      this.setForest(fork.forest);
+      this.forest = fork.forest;
       this.paneAt = fork.depth;
       return;
     }
-    this.setForest(withBranch(this.forest, this.pathRefs(), sameRef));
+    this.forest = withBranch(this.forest, this.pathRefs(), sameRef);
     const at = this.trail.findIndex((_, i) => this.holds(i, this.focus));
     this.paneAt = at >= 0 ? at : this.trail.length - 1;
   }
@@ -573,7 +562,7 @@ class Store {
    * beside it). Returns the pane it is in.
    */
   openPane(i: number, ref: PaneRef): number {
-    this.setForest(openIn(this.forest, i, ref, !this.replacing, sameRef));
+    this.forest = openIn(this.forest, i, ref, !this.replacing, sameRef);
     this.saveView();
     this.emit();
     return Math.min(i + 1, this.trail.length - 1);
@@ -604,14 +593,14 @@ class Store {
   /** A pane of the forest by its id: its node, depth in its tree, column, tree and parent. */
   forkNode(id: number): Placed<PaneRef, Back> | undefined {
     const m = this.branch;
-    if (!m.index) m.index = new Map(this.panesPlaced.map((x) => [x.node.id, x]));
+    m.index ??= new Map(this.panesPlaced.map((x) => [x.node.id, x]));
     return m.index.get(id);
   }
 
   /** Whether any pane shows this node. */
   private paneShows(id: NodeId): boolean {
     const m = this.branch;
-    if (!m.ids) m.ids = new Set(this.panesPlaced.flatMap((x) => (x.node.ref.kind === "node" ? [x.node.ref.id] : [])));
+    m.ids ??= new Set(this.panesPlaced.flatMap((x) => (x.node.ref.kind === "node" ? [x.node.ref.id] : [])));
     return m.ids.has(id);
   }
 
@@ -657,7 +646,7 @@ class Store {
     const f = focusIn(this.forest, id);
     const hit = this.forkNode(id);
     if (!hit || f === this.forest) return;
-    this.setForest(f);
+    this.forest = f;
     this.land(hit.depth);
   }
 
@@ -681,7 +670,7 @@ class Store {
   private goPane(id: number) {
     const here = this.branchNodes[this.paneAt];
     const seen = this.backHere();
-    this.setForest(focusIn(here ? updateIn(this.forest, here.id, (n) => ({ ...n, seen })) : this.forest, id));
+    this.forest = focusIn(here ? updateIn(this.forest, here.id, (n) => ({ ...n, seen })) : this.forest, id);
     const hit = this.forkNode(id)!;
     const b = hit.node.seen;
     if (b && b.pane === hit.depth && this.snap.nodes[b.focus.node] && (b.aux ? this.auxValid(b.aux) : this.holds(b.pane, b.focus))) return this.restore(b);
@@ -754,7 +743,7 @@ class Store {
     const active = this.branchNodes[this.paneAt];
     const wasAt = this.paneAt;
     const r = closeIn(this.forest, hit.node.id, active.id);
-    this.setForest(r.forest);
+    this.forest = r.forest;
     this.saveView();
     const now = this.forkNode(r.active)!;
     this.paneAt = now.depth;
@@ -781,30 +770,34 @@ class Store {
     this.land(i);
   }
 
-  /** A pane dragged up or down its column, to just above another (or to the bottom). */
-  /** The page has measured where panes were opened from in their parents: their columns stand in that order (forks.ts columns). */
-  setPaneSources(srcs: Map<number, number>) {
-    const f = setSources(this.forest, srcs);
+  private changeForest(f: Forest<PaneRef, Back>) {
     if (f === this.forest) return;
-    this.setForest(f);
+    this.forest = f;
     this.saveView();
     this.emit();
   }
 
+  /** The page has measured where panes were opened from in their parents: their columns stand in that order (forks.ts columns). */
+  setPaneSources(srcs: Map<number, number>) {
+    this.changeForest(setSources(this.forest, srcs));
+  }
+
+  /** A pane dragged up or down its column, to just above another (or to the bottom). */
   reorderPane(id: number, before: number | null) {
-    const f = reorder(this.forest, id, before);
-    if (f === this.forest) return;
-    this.setForest(f);
-    this.saveView();
-    this.emit();
+    this.changeForest(reorder(this.forest, id, before));
+  }
+
+  /** The active pane's column, top to bottom, and its place there (-1: none). */
+  private activeColumn(): { col: number[]; i: number } {
+    const here = this.branchNodes[this.paneAt];
+    const x = here && this.forkNode(here.id);
+    const col = x ? (this.paneColumns.get(x.col) ?? []).map((y) => y.node.id) : [];
+    return { col, i: here ? col.indexOf(here.id) : -1 };
   }
 
   /** Whether the active pane can move up or down its column (the pane menu offers what it can). */
   paneMoves(): { above: boolean; below: boolean } {
-    const here = this.branchNodes[this.paneAt];
-    const x = here && this.panesPlaced.find((y) => y.node.id === here.id);
-    const col = x ? (this.paneColumns.get(x.col) ?? []) : [];
-    const i = col.findIndex((y) => y.node.id === here?.id);
+    const { col, i } = this.activeColumn();
     return { above: i > 0, below: i >= 0 && i < col.length - 1 };
   }
 
@@ -812,14 +805,11 @@ class Store {
   movePane(delta: number) {
     if (!this.panes) return this.say("Panes are moved in the panes view (v).");
     this.syncTrail();
-    const here = this.branchNodes[this.paneAt];
-    const x = here && this.panesPlaced.find((y) => y.node.id === here.id);
-    if (!x) return;
-    const col = (this.paneColumns.get(x.col) ?? []).map((y) => y.node.id);
-    const i = col.indexOf(here.id);
+    const { col, i } = this.activeColumn();
+    if (i < 0) return;
     if (col.length < 2) return this.say("This is the only pane in its column.");
     if (delta < 0 ? i === 0 : i === col.length - 1) return this.say(`This pane is at the ${delta < 0 ? "top" : "foot"} of its column.`);
-    this.reorderPane(here.id, delta < 0 ? col[i - 1] : (col[i + 2] ?? null));
+    this.reorderPane(col[i], delta < 0 ? col[i - 1] : (col[i + 2] ?? null));
   }
 
   /** P (on the active pane) or a pane's pin: pin or unpin it. */
@@ -828,7 +818,7 @@ class Store {
     const hit = id === undefined ? undefined : this.forkNode(id);
     if (!hit) return;
     const on = !hit.node.pinned;
-    this.setForest(pinIn(this.forest, hit.node.id, on));
+    this.forest = pinIn(this.forest, hit.node.id, on);
     this.saveView();
     this.say(on ? "Pinned: this pane stays open when what it was opened from closes, and never folds away. P again unpins it." : "Unpinned.");
   }
@@ -1257,7 +1247,7 @@ class Store {
       // Back and forward move between places in the library (as pages, between panes).
       addEventListener("popstate", () => this.popped());
     } catch (err) {
-      this.fatal = err instanceof Error ? err.message : String(err);
+      this.fatal = errText(err);
       this.emit();
     }
   }
@@ -1279,30 +1269,25 @@ class Store {
     location.assign(inLibrary(id, "/"));
   }
 
-  /** A new library, with its root alone; `open` switches to it. */
-  async createLibrary(title: string, open = false): Promise<LibraryInfo | null> {
+  /** A new library, with its root alone, opened. */
+  async createLibrary(title: string) {
     try {
       const lib = await createLibrary(title);
       await this.listLibraries();
-      if (open) this.switchLibrary(lib.id);
-      else this.say(`Made the library “${lib.title}”.`);
-      return lib;
+      this.switchLibrary(lib.id);
     } catch (err) {
       this.say(`Could not make the library: ${(err as Error).message}`);
-      return null;
     }
   }
 
   /** Rename a library (an ordinary commit on its root's title, made by the server). */
-  async renameLibrary(id: string, title: string): Promise<boolean> {
+  async renameLibrary(id: string, title: string) {
     try {
       const lib = await renameLibrary(id, title);
       await this.listLibraries();
       this.say(`Renamed the library to “${lib.title}”.`);
-      return true;
     } catch (err) {
       this.say(`Could not rename the library: ${(err as Error).message}`);
-      return false;
     }
   }
 
@@ -1337,7 +1322,7 @@ class Store {
     const words = arg.trim();
     if (!words) return this.openLibraries();
     const made = /^new\s+(.+)$/.exec(words);
-    if (made) return void this.createLibrary(made[1], true);
+    if (made) return void this.createLibrary(made[1]);
     const list = await this.listLibraries().catch(() => this.libraries);
     const lower = words.toLowerCase();
     const hit = list.find((l) => l.id === words) ?? list.find((l) => l.title.toLowerCase() === lower) ?? list.find((l) => l.title.toLowerCase().startsWith(lower));
@@ -1443,7 +1428,7 @@ class Store {
     if (edit.kind === "rename" && this.libraries.find((l) => l.id === edit.id)?.title === name) return this.libCancel();
     p.edit = null;
     this.emit();
-    if (edit.kind === "new") await this.createLibrary(name, true);
+    if (edit.kind === "new") await this.createLibrary(name);
     else await this.renameLibrary(edit.id, name);
   }
 
@@ -1491,8 +1476,8 @@ class Store {
   }
 
   /** Views and the branch are kept per library, so each library opens where it was left. */
-  private viewKey(branch = this.repo.current) {
-    return `ie:view:${this.library}:${branch}`;
+  private viewKey() {
+    return `ie:view:${this.library}:${this.repo.current}`;
   }
   private branchKey() {
     return `ie:branch:${this.library}`;
@@ -1679,11 +1664,8 @@ class Store {
     }
     const named = w ? ({ node: s.root } as const) : resolve(s, path);
     const found = "node" in named && inArticles(s, named.node) ? ({ node: s.root } as const) : named;
-    if ("missing" in found) {
-      this.say(`There is no ${found.missing.replace(/^no /, "")} here. Showing the library.`);
-      this.hoist = null;
-      this.focus = { node: s.root, grain: "node" };
-    } else if (isLibraryRoot(s, found.node)) {
+    if ("missing" in found || isLibraryRoot(s, found.node)) {
+      if ("missing" in found) this.say(`There is no ${found.missing.replace(/^no /, "")} here. Showing the library.`);
       this.hoist = null;
       this.focus = { node: s.root, grain: "node" };
     } else {
@@ -1697,9 +1679,9 @@ class Store {
       const at = this.trail.findIndex((p) => p.kind === "node" && p.id === found.node);
       const fork = at < 0 && this.panes ? this.panesPlaced.find((x) => x.node.ref.kind === "node" && x.node.ref.id === found.node) : undefined;
       if (fork) {
-        this.setForest(focusIn(this.forest, fork.node.id));
+        this.forest = focusIn(this.forest, fork.node.id);
         this.paneAt = fork.depth;
-      } else if (this.panes && at < 0) this.setForest(withBranch(this.forest, this.pathRefs(), sameRef));
+      } else if (this.panes && at < 0) this.forest = withBranch(this.forest, this.pathRefs(), sameRef);
       else if (at >= 0) this.paneAt = at;
     }
     this.repairView();
@@ -1902,9 +1884,7 @@ class Store {
       if (i > 0) {
         const from = this.trail[i].from;
         if (from && from.pane < i) return this.restore(from);
-        this.paneAt = i - 1;
-        const q = this.trail[i - 1];
-        return q.kind === "node" ? this.setFocus({ node: q.id, grain: "node" }) : this.setFocus(this.focus, { kind: "wiki", host: `p${i - 1}`, row: { t: "head" } });
+        return this.land(i - 1);
       }
       return this.hoist ? this.stepOut() : undefined;
     }
@@ -2081,13 +2061,9 @@ class Store {
 
   private apply(ops: Op[], message: string): NodeId[] {
     this.agentUndo = null;
-    try {
-      return this.doc.as(this.user, () => this.doc.apply(ops, message).created);
-    } catch (err) {
-      if (!(err instanceof OpError)) throw err;
-      this.say(err.message);
-      return [];
-    }
+    let made: NodeId[] = [];
+    this.attempt(() => (made = this.doc.as(this.user, () => this.doc.apply(ops, message).created)));
+    return made;
   }
 
   /** Run a write that may refuse with an OpError, reporting the refusal. */
@@ -2108,7 +2084,7 @@ class Store {
       try {
         return await job();
       } catch (err) {
-        this.say(err instanceof Error ? err.message : String(err));
+        this.say(errText(err));
         return undefined;
       } finally {
         this.busy--;
@@ -2426,14 +2402,10 @@ class Store {
     const doc = this.doc;
     this.pending.set(p.key, p);
     this.busy++;
-    const started = performance.now();
-    let first = true;
+    const firstToken = this.firstToken();
     const onText = (d: string) => {
       p.text += d;
-      if (first) {
-        first = false;
-        this.t0 = { what: "first-token", at: started };
-      }
+      firstToken();
       this.emit(node);
     };
     this.emit(node);
@@ -2449,20 +2421,38 @@ class Store {
     const linked = notesOf(snap, node).map((c) => snap.nodes[c]).find((c) => c.ref?.kind === "wiki" && c.anchors.some((a) => a.start === range[0] && a.end === range[1]))?.ref;
     const grounded = !spec && linked?.kind === "wiki" ? cachedExtract(linked.title).then((g) => g ?? undefined) : Promise.resolve(undefined);
     const nearby = spec ? Promise.resolve([]) : this.links.nearby(node);
-    (spec ? spec.done : Promise.all([grounded, nearby]).then(([grounding, near]) => streamExpansion(this.llm, snap, { ...req, grounding, nearby: near }, onText)))
-      .then((text) => {
+    this.writing(
+      p,
+      (spec ? spec.done : Promise.all([grounded, nearby]).then(([grounding, near]) => streamExpansion(this.llm, snap, { ...req, grounding, nearby: near }, onText))).then((text) => {
         let marks: Mark[] = [];
         const id = commitExpansion(doc, req, text, (_, m) => (marks = m));
         this.open.add(id);
         this.saveView();
         this.links.scan(id, "model", marks);
-      })
-      .catch((err) => this.say(err instanceof Error ? err.message : String(err)))
+      }),
+    );
+  }
+
+  /** Model writing shown as it arrives (its pending text): busy until it ends, a failure said. */
+  private writing(p: Pending, job: Promise<unknown>) {
+    job
+      .catch((err) => this.say(errText(err)))
       .finally(() => {
         this.pending.delete(p.key);
         this.busy--;
         this.emit();
       });
+  }
+
+  /** Call on each piece of text a request streams: the first is recorded as its first token, timed from now. */
+  private firstToken() {
+    const at = performance.now();
+    let first = true;
+    return () => {
+      if (!first) return;
+      first = false;
+      this.t0 = { what: "first-token", at };
+    };
   }
 
   private generateSections(id: NodeId) {
@@ -2471,31 +2461,20 @@ class Store {
     const p: Pending = { key: `p${++this.seq}`, node: id, kind: "sections", text: "" };
     this.pending.set(p.key, p);
     this.busy++;
-    const started = performance.now();
-    let first = true;
+    const firstToken = this.firstToken();
     this.emit();
     const marked = new Set<NodeId>();
     const hooks = this.writeHooks();
-    deepen(this.llm, this.doc, id, (d) => {
+    const job = deepen(this.llm, this.doc, id, (d) => {
       p.text += d;
-      if (first) {
-        first = false;
-        this.t0 = { what: "first-token", at: started };
-      }
+      firstToken();
       this.emit(id);
-    }, undefined, { ...hooks, marks: (node, marks) => (marked.add(node), hooks.marks!(node, marks)) })
-      .then((created) => {
-        created.forEach((c) => this.open.add(c));
-        // Model-written nodes are scanned like any other writing, marks or not.
-        for (const c of created.length ? created : [id]) if (!marked.has(c)) this.links.scan(c, "model");
-      })
-      .catch((err) => this.say(err instanceof Error ? err.message : String(err)))
-      .finally(() => {
-        this.pending.delete(p.key);
-        this.busy--;
-        this.saveView();
-        this.emit();
-      });
+    }, undefined, { ...hooks, marks: (node, marks) => (marked.add(node), hooks.marks!(node, marks)) }).then((created) => {
+      created.forEach((c) => this.open.add(c));
+      // Model-written nodes are scanned like any other writing, marks or not.
+      for (const c of created.length ? created : [id]) if (!marked.has(c)) this.links.scan(c, "model");
+    });
+    this.writing(p, job.finally(() => this.saveView()));
   }
 
   /** With speculation on, start writing the focused sentence's expansion before it is asked for. */
@@ -2545,7 +2524,7 @@ class Store {
       },
       auto: () => this.set("auto", arg !== "off"),
       speculate: () => this.set("speculate", arg !== "off"),
-      curves: () => (this.set("curves", arg !== "off"), this.emit()),
+      curves: () => this.set("curves", arg !== "off"),
       colors: () => this.setColors(arg),
       view: () => (["auto", "column", "panes"].includes(arg) ? this.setView(arg as View) : this.say(`/view auto, column or panes (now ${this.settings.view}, showing ${this.panes ? "panes" : "column"})`)),
       resolve: () => this.resolveAll(),
@@ -2561,14 +2540,11 @@ class Store {
       research: () => this.agent(arg, { research: true }),
     };
     if (verb.startsWith("/") && builtin[verb.slice(1)]) return builtin[verb.slice(1)]();
-    if (this.inArticleText) {
-      const lens = LENSES.find((l) => l === text.toLowerCase());
-      return this.expandArticle(lens ?? "elaborate", lens ? undefined : text);
-    }
+    const lens = LENSES.find((l) => l === text.toLowerCase());
+    if (this.inArticleText) return this.expandArticle(lens ?? "elaborate", lens ? undefined : text);
     if (this.aux?.kind === "wiki") return this.say("Select words of the article first (i), then : asks about them. The editor works on your own nodes.");
     if (this.focus.grain !== "node") {
       // A question about the selection becomes a note answering it.
-      const lens = LENSES.find((l) => l === text.toLowerCase());
       return this.generateNote(this.focus.node, this.focus.range!, lens ?? "elaborate", lens ? undefined : text);
     }
     this.agent(text);
@@ -2577,7 +2553,7 @@ class Store {
   // ---- keys on aux rows: Wikipedia views, targets, "Linked from" ----
 
   /** The article text an aux focus is in: the lead or the section its row shows, with the article. None while it loads, or on a row that shows no text. */
-  auxSpot(a: Aux | null = this.aux): Spot | null {
+  private auxSpot(a: Aux | null): Spot | null {
     if (a?.kind !== "wiki") return null;
     const h = this.wikiHost(a.host);
     const art = h ? wikiArticle(h.title, h.lang) : null;
@@ -2734,17 +2710,13 @@ class Store {
     this.pending.set(p.key, p);
     this.busy++;
     this.emit();
-    streamArticleNote(this.llm, req, (d) => ((p.text += d), this.emit()))
-      .then((text) => {
+    this.writing(
+      p,
+      streamArticleNote(this.llm, req, (d) => ((p.text += d), this.emit())).then((text) => {
         this.open.add(commitArticleNote(doc, req, text));
         this.saveView();
-      })
-      .catch((err) => this.say(err instanceof Error ? err.message : String(err)))
-      .finally(() => {
-        this.pending.delete(p.key);
-        this.busy--;
-        this.emit();
-      });
+      }),
+    );
   }
 
   /** What a note on words of an article is written from: the lead, the section around the words (trimmed), and the reader's own sentence if the article was opened from one. */
@@ -2936,7 +2908,6 @@ class Store {
   auxActivate() {
     const a = this.aux;
     if (!a) return;
-    const s = this.snap;
     if (a.kind === "target") {
       const r = this.targetOf(a.of);
       return r ? this.follow(r) : undefined;
@@ -2947,7 +2918,7 @@ class Store {
     const link = this.auxLink(a);
     if (link) return this.follow({ kind: "wiki", title: link.title, lang: link.lang });
     const row = a.row;
-    if (row.t === "back") return this.openLinking(this.mentionsOf(h.lang, wikiArticle(h.title, h.lang).state === "ready" ? (wikiArticle(h.title, h.lang) as { value: { title: string } }).value.title : h.title)[row.i]);
+    if (row.t === "back") return this.openLinking(this.mentionsOf(h.lang, this.hostArticle(a.host)!.title)[row.i]);
     if (row.t === "sense") {
       const ss = wikiSenses(h.title, h.lang);
       if (ss.state === "ready" && ss.value[row.i]) this.follow({ kind: "wiki", title: ss.value[row.i].title, lang: h.lang });
@@ -3013,9 +2984,8 @@ class Store {
     const a = this.aux;
     let target: { title: string; lang: string } | null = a ? this.auxLink(a) : null;
     if (!target && a?.kind === "wiki") {
-      const h = this.wikiHost(a.host);
-      const art = h && wikiArticle(h.title, h.lang);
-      if (h) target = { title: art?.state === "ready" ? art.value.title : h.title, lang: h.lang };
+      const k = this.hostArticle(a.host);
+      if (k) target = { title: k.title, lang: k.lang };
     }
     if (!target) {
       const f = this.focus;
@@ -3090,7 +3060,6 @@ class Store {
       this.apply([{ op: "update", id, ref }], `${spot.existing ? "Retarget" : "Target"} “${clip(spot.text || label(s, id), 40)}”: ${clip(what, 50)}`);
       this.say(`${spot.range ? "Linked" : "This node is about"} ${what}.`);
     }
-    this.emit();
   }
 
   /** /link target: link the selection (or the node) to a target typed in the text form, or to a Wikipedia title. */
@@ -3368,10 +3337,7 @@ class Store {
     const before = this.reviewRows();
     this.agentUndo = null;
     if (row.status === "linked" && row.note) this.removeLink(row.note);
-    else if (row.sugg) {
-      this.links.reject([row.sugg]);
-      this.say(`Declined “${clip(row.quote, 40)}”: it will not be suggested here again · u undoes`);
-    }
+    else if (row.sugg) this.rejectSuggestion(row.sugg);
     this.reviewAfter(before, row.key);
   }
 
@@ -3404,11 +3370,10 @@ class Store {
     this.emit();
   }
 
-  endReview(message = "") {
+  endReview() {
     this.review = null;
     this.mode = "normal";
-    if (message) this.say(message);
-    else this.emit();
+    this.emit();
   }
 
   /**
@@ -3509,20 +3474,13 @@ class Store {
   }
 
   /** Wait (a little) until the server has every edit this page made. */
-  private async whenSynced(ms = 5000) {
-    const until = Date.now() + ms;
+  private async whenSynced() {
+    const until = Date.now() + 5000;
     void this.session.sync(this.repo.current);
     while (!this.session.synced() && Date.now() < until) await new Promise((r) => setTimeout(r, 100));
   }
 
   // ---- a node and everything under it: copy, export, import, move ----
-
-  /** A write on the replica on screen: refused while viewing history, reported if refused. */
-  private nodeWrite(fn: () => void) {
-    if (!this.writable()) return;
-    this.agentUndo = null;
-    this.attempt(fn);
-  }
 
   /** /duplicate [title]: a copy of the active node and everything under it, placed just after it, which then has the focus. */
   duplicateNode(title = "") {
@@ -3530,18 +3488,19 @@ class Store {
     const id = this.activeNode;
     if (isLibraryRoot(s, id)) return this.say("The library itself is not copied: /export saves it to a file.");
     const name = title.replace(/\s+/g, " ").trim() || `${s.nodes[id].title} (copy)`;
-    this.nodeWrite(() => {
-      const parent = s.nodes[id].parent!;
-      const index = s.nodes[parent].children.indexOf(id) + 1;
-      const [copy] = this.doc.as(this.user, () => this.doc.apply([{ op: "copy", id, parent, index, title: name }], `Duplicate “${clip(s.nodes[id].title, 40)}” as “${clip(name, 40)}”`).created);
-      this.go(copy);
-      this.remember(true);
-      this.say(`Saved a copy as “${clip(name, 60)}”, just after the original; this is the copy.`);
-    });
+    if (!this.writable()) return;
+    const parent = s.nodes[id].parent!;
+    const index = s.nodes[parent].children.indexOf(id) + 1;
+    const [copy] = this.apply([{ op: "copy", id, parent, index, title: name }], `Duplicate “${clip(s.nodes[id].title, 40)}” as “${clip(name, 40)}”`);
+    if (!copy) return;
+    this.go(copy);
+    this.remember(true);
+    this.say(`Saved a copy as “${clip(name, 60)}”, just after the original; this is the copy.`);
   }
 
   /** /export: the active node and everything under it, to a file in the text format, written from this replica, so unsynced edits are included. */
-  exportNode(id = this.activeNode) {
+  exportNode() {
+    const id = this.activeNode;
     const s = this.doc.snap();
     const n = s.nodes[id];
     if (!n) return;
@@ -3570,8 +3529,8 @@ class Store {
     input.click();
   }
 
-  /** A .md file as a new last child of a node (the active one by default; on the library root, a new top-level node). */
-  async importFile(file: File, parent = this.activeNode) {
+  /** A .md file as a new last child of a node (on the library root, a new top-level node). */
+  private async importFile(file: File, parent: NodeId) {
     if (file.size > IMPORT_MAX) return this.say(`${file.name} is too large to import (the limit is ${IMPORT_MAX / 1024 / 1024} MB).`);
     if (!this.writable()) return;
     const text = await file.text();
@@ -3624,7 +3583,9 @@ class Store {
     const n = s.nodes[id];
     if (n.parent === target) return this.say(`“${clip(label(s, id), 40)}” is under “${clip(label(s, target), 40)}” already.`);
     const from = n.parent!;
-    this.nodeWrite(() => {
+    if (!this.writable()) return;
+    this.agentUndo = null;
+    this.attempt(() => {
       this.doc.as(this.user, () => this.doc.apply([{ op: "move", id, parent: target }], `Move “${clip(label(s, id), 40)}” under “${clip(label(s, target), 40)}”`));
       this.open.add(target);
       this.go(id);
@@ -3748,7 +3709,6 @@ class Store {
     this.attempt(() => {
       if (here) revertSubtreeTo(this.doc, commit, here);
       else revertTo(this.doc, commit);
-      this.repairView();
       this.say(here ? `Reverted “${clip(label(this.snap, here), 40)}” and what is under it to “${clip(commit.message, 50)}” as a new commit; the rest of the library is unchanged.` : `Reverted the library to “${clip(commit.message, 50)}” as a new commit.`);
     });
     this.repairView();
@@ -3764,7 +3724,7 @@ class Store {
       this.session.watch(name, doc, true);
       this.switchBranch(name);
     } catch (err) {
-      this.say(err instanceof Error ? err.message : String(err));
+      this.say(errText(err));
     }
   }
 
@@ -3795,7 +3755,7 @@ class Store {
       );
       void this.afterMerge(report);
     } catch (err) {
-      this.say(err instanceof Error ? err.message : String(err));
+      this.say(errText(err));
     }
   }
 
