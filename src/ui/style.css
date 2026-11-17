@@ -470,6 +470,8 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 /* The active pane: the heavy rule across its top; its other three edges in the stronger ink are drawn with the curves (Panes.tsx), over the hairlines it shares with its neighbours, so a move from pane to pane repaints only those lines. */
 .pane.active::after { height: 3px; }
 .panes .curves path.frame.frame { stroke: var(--edge-strong); fill: none; stroke-dasharray: none; }
+/* With the curves off, the pane draws them itself. */
+.panes[data-curves="off"] .pane.active::after { bottom: 0; height: auto; background: none; border: 1px solid var(--edge-strong); border-top: 3px solid var(--fg); }
 .pane.on-branch:not(.active)::after { height: 1px; background: var(--faint); }
 
 /* The curves: from what each pane was opened from to its title, behind nothing but in the gaps between lines. */

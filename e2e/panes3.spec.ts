@@ -161,7 +161,7 @@ test("every pane of a crowded column shows at least its tab, above or below the 
   for (const c of centred) expect(c.off).toBeLessThanOrEqual(1.5);
   // The curve becomes a tab's line where it meets it: no stub of it before the meeting.
   const stubs = await page.evaluate(() =>
-    [...document.querySelectorAll<SVGPathElement>(".curves path:not(.foot)")].filter((p) => {
+    [...document.querySelectorAll<SVGPathElement>(".curves path:not(.foot):not(.frame)")].filter((p) => {
       const pe = document.querySelector<HTMLElement>(`.pane[data-tid="${p.dataset.to}"]`);
       return pe?.dataset.ruled?.includes("tab") && (p.getAttribute("d")!.match(/M/g) ?? []).length > 1;
     }).length,
@@ -310,7 +310,7 @@ test("a dotted curve to a source out of sight in its pane turns, at its end, tow
   const lib = pane(page, "Library").locator(".pane-scroll");
   const lead = async () =>
     page.evaluate(() => {
-      const p = [...document.querySelectorAll<SVGPathElement>(".curves path:not(.foot)")].find((x) => x.classList.contains("lost"));
+      const p = [...document.querySelectorAll<SVGPathElement>(".curves path:not(.foot):not(.frame)")].find((x) => x.classList.contains("lost"));
       if (!p) return null;
       const a = p.getPointAtLength(0);
       const b = p.getPointAtLength(8);

@@ -315,7 +315,7 @@ test("a curve per open edge, from where each pane was opened to its title; it fo
   // The focused branch (Two kinds of cell → Complex cells) in its own ink; the others not.
   expect(edge("Two kinds of cell", "Complex cells")[0].cls).toContain("on");
   expect(edge("Two kinds of cell", "Simple cells")[0].cls).not.toContain("on");
-  expect(await page.locator(".curves path.on").first().evaluate((el) => getComputedStyle(el).stroke)).not.toBe(await page.locator(".curves path:not(.on)").first().evaluate((el) => getComputedStyle(el).stroke));
+  expect(await page.locator(".curves path.on").first().evaluate((el) => getComputedStyle(el).stroke)).not.toBe(await page.locator(".curves path:not(.on):not(.frame)").first().evaluate((el) => getComputedStyle(el).stroke));
   // Scroll Eukaryote's text: the curve out of it moves with its link.
   const before = edge("Eukaryote", "Bacteria")[0].a;
   await pane(page, "Eukaryote").locator(".pane-scroll").evaluate((el) => (el.scrollTop = 40));
@@ -402,7 +402,7 @@ test("curves down one gutter take lanes of their own, side by side, up to as man
   for (let i = 0; i < 10; i++) await keys(page, "j Enter");
   await still(page);
   const runs = await page.evaluate(() =>
-    [...document.querySelectorAll<SVGPathElement>(".curves path")].map((p) => {
+    [...document.querySelectorAll<SVGPathElement>(".curves path:not(.frame)")].map((p) => {
       const v = /C[^C]*?([\d.]+) [\d.]+V/.exec(p.getAttribute("d")!);
       return { lane: Number(p.dataset.lane), x: v ? Number(v[1]) : NaN };
     }),

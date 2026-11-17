@@ -52,7 +52,7 @@ const lines = (page: Page) =>
     };
     const svg = document.querySelector<SVGSVGElement>(".curves")!.getBoundingClientRect();
     const box = { left: Math.round(svg.left), top: Math.round(svg.top) };
-    return [...document.querySelectorAll<SVGPathElement>(".curves path:not(.foot)")].map((p) => {
+    return [...document.querySelectorAll<SVGPathElement>(".curves path:not(.foot):not(.frame)")].map((p) => {
       const pe = document.querySelector<HTMLElement>(`.pane[data-tid="${p.dataset.to}"]`)!;
       const a = p.getPointAtLength(0);
       const b = p.getPointAtLength(p.getTotalLength());

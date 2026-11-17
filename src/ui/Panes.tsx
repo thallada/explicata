@@ -832,7 +832,7 @@ export function Panes() {
   }, []);
 
   return (
-    <div class="panes" data-colors={store.settings.colors}>
+    <div class="panes" data-colors={store.settings.colors} data-curves={store.settings.curves ? undefined : "off"}>
       <div class="strip" ref={strip}>
         {order.map((c) => {
           const items = cols.get(c)!;
@@ -1204,9 +1204,9 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     if (!p) {
       p = document.createElementNS("http://www.w3.org/2000/svg", "path");
       p.dataset.key = c.key;
-      p.dataset.from = String(c.from);
-      p.dataset.to = String(c.to);
     }
+    if (p.dataset.from !== String(c.from)) p.dataset.from = String(c.from);
+    if (p.dataset.to !== String(c.to)) p.dataset.to = String(c.to);
     if (p.getAttribute("d") !== c.d) p.setAttribute("d", c.d);
     if (p.getAttribute("class") !== c.cls) p.setAttribute("class", c.cls);
     if (p.dataset.lane !== String(c.lane)) p.dataset.lane = String(c.lane);
