@@ -73,6 +73,9 @@ class Pane extends Component<PaneProps> {
   }
 }
 
+/** Sent when something the curves are drawn from changes without a render or a scroll: a pane's tab coming or going, the selection bar moving. */
+export const GEOMETRY = "ie:geometry";
+
 /**
  * A pane scrolled past its title shows its tab at its top, as a folded one does (data-scrolled): an
  * observer on the title's rule, against the pane's own scroll box less the tab, so nothing is done
@@ -93,7 +96,10 @@ function watchHead(tid: number) {
   const io = new IntersectionObserver(
     (es) => {
       const e = es[es.length - 1];
+      const was = pane.hasAttribute("data-scrolled");
       setAttr(pane, "data-scrolled", !e.isIntersecting && !!e.rootBounds && e.boundingClientRect.height > 0 && e.boundingClientRect.bottom <= e.rootBounds.top + 1);
+      // The curve into it lands in its tab now, or its title again.
+      if (was !== pane.hasAttribute("data-scrolled")) window.dispatchEvent(new Event(GEOMETRY));
     },
     { root: scroll, rootMargin: `-${TAB}px 0px 0px 0px` },
   );
@@ -265,6 +271,20 @@ function nearestY(el: Element | null | false) {
   const top = pad + TAB;
   if (r.top < c.top + top) box.scrollTop += r.top - c.top - top;
   else if (r.bottom > c.bottom - pad) box.scrollTop += Math.min(r.bottom - c.bottom + pad, r.top - c.top - top);
+}
+
+/**
+ * Whether the rule under a pane's title shows (below where its tab would be, above what covers its
+ * foot): if not, the pane shows its tab instead, and a curve into it lands in the tab's foot.
+ */
+function ruleShows(p: HTMLElement, col: DOMRect, next: number): boolean {
+  if (p.hasAttribute("data-buried")) return false;
+  const head = p.querySelector<HTMLElement>(HEADS);
+  const rule = (head?.matches(".top") ? head.querySelector<HTMLElement>("h1") : head)?.getBoundingClientRect();
+  if (!rule) return false;
+  const r = p.getBoundingClientRect();
+  const sc = p.querySelector<HTMLElement>(":scope > .pane-scroll")!.getBoundingClientRect();
+  return rule.bottom > Math.max(r.top, col.top, sc.top) + TAB && rule.bottom <= Math.min(next, col.bottom, sc.bottom);
 }
 
 const setAttr = (el: Element | undefined, name: string, on: boolean) => {
@@ -446,7 +466,17 @@ export function Panes() {
     if (!el) return;
     const colEls = [...el.querySelectorAll<HTMLElement>(":scope > .col")];
     mark(el, colEls, ACROSS, false, colEls[0]?.querySelector<HTMLElement>(".spine")?.offsetWidth ?? 0);
-    for (const c of colEls) if (c.classList.contains("crowded")) mark(c, [...c.querySelectorAll<HTMLElement>(":scope > .pane")], DOWN, true, TAB);
+    for (const c of colEls) {
+      const ps = [...c.querySelectorAll<HTMLElement>(":scope > .pane")];
+      if (!c.classList.contains("crowded")) {
+        for (const p of ps) setAttr(p, "data-tab", false);
+        continue;
+      }
+      mark(c, ps, DOWN, true, TAB);
+      // A covered pane shows its tab only when the rule under its title does not show: never both.
+      const cb = c.getBoundingClientRect();
+      ps.forEach((p, i) => setAttr(p, "data-tab", p.hasAttribute("data-covered") && !ruleShows(p, cb, ps[i + 1]?.getBoundingClientRect().top ?? Infinity)));
+    }
   };
 
   /**
@@ -546,7 +576,7 @@ export function Panes() {
     const wrap = el.parentElement!;
     const onScroll = (e: Event) => {
       const t = e.target as HTMLElement;
-      if (t === el || t.classList?.contains("col")) measure();
+      measure();
       // A scroll inside what peeks (the wheel over it) keeps it out; any other moves things from under it.
       if (peeked.length && !peeked.some((p) => p !== t && p.contains(t)) && !(t === peeked[0] && peeked.length === 1 && !t.classList.contains("pane"))) hide();
       schedule();
@@ -574,6 +604,7 @@ export function Panes() {
       moving = Math.max(0, moving - 1);
       if (!moving) schedule();
     };
+    window.addEventListener(GEOMETRY, schedule);
     wrap.addEventListener("transitionrun", onRun);
     wrap.addEventListener("transitionend", onEnd);
     wrap.addEventListener("transitioncancel", onEnd);
@@ -779,6 +810,7 @@ export function Panes() {
       clearTimeout(later.current);
       clearTimeout(timer);
       wrap.removeEventListener("scroll", onScroll, { capture: true });
+      window.removeEventListener(GEOMETRY, schedule);
       wrap.removeEventListener("transitionrun", onRun);
       wrap.removeEventListener("transitionend", onEnd);
       wrap.removeEventListener("transitioncancel", onEnd);
@@ -846,6 +878,8 @@ interface Edge {
   under?: { x: number; y: number };
   /** For a source out of sight in its pane: the point on the pane's edge, over it, where the curve ends turned toward it. */
   hint?: { x: number; y: number };
+  /** For a link: its underline, line by line (the last runs on into the curve). */
+  lines?: { x0: number; x1: number; y: number }[];
   textRight: number;
   ex: number;
   ey: number;
@@ -898,13 +932,15 @@ const lanesUsed = new Map<number, string[]>();
 function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
   if (!el || !svg) return;
   if (!store.settings.curves) {
-    if (svg.firstChild) svg.replaceChildren();
+    for (const p of svg.querySelectorAll("path")) p.remove();
+    for (const s of document.querySelectorAll("[data-curved]")) s.removeAttribute("data-curved");
     markRuled(paneEls(el), new Map());
     return;
   }
-  // The curves' layer is painted from its box's whole pixel: positions are measured from there, so that a hairline set on device pixels lands on them.
-  const sb = svg.getBoundingClientRect();
-  const box = { left: Math.round(sb.left), top: Math.round(sb.top) };
+  // The curves' layer covers the window from its corner (style.css), so its pixels are the device's and a hairline set on device pixels lands on them; it shows only over the strip.
+  const box = { left: 0, top: 0 };
+  // (Clipped inside the drawing: a CSS clip on the layer would have it resampled, softening every hairline.)
+  const area = (svg.parentElement as HTMLElement).getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const els = paneEls(el);
   const colEls = [...el.children] as HTMLElement[];
@@ -922,6 +958,8 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
   const feet = new Map<number, { x0: number; x1: number; y: number; hue?: number; on: boolean }>();
   /** The panes whose tab's foot a curve into them draws already. */
   const tabbed = new Set<number>();
+  /** The links whose underline a curve draws. */
+  const curved = new Set<HTMLElement>();
   const edges: Edge[] = [];
   for (const x of store.panesPlaced) {
     const parent = x.parent;
@@ -943,27 +981,24 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     const nextCol = colEls[colEls.indexOf(ccol) + 1]?.getBoundingClientRect().left ?? Infinity;
     const shownRight = Math.min(cbox.right, nextCol);
     // A pane folded down a crowded column shows its tab, and may still show its title under it.
-    // A pane folded down a crowded column, or scrolled past its title, shows its tab (data-covered, data-scrolled).
-    let folded = ce.hasAttribute("data-covered");
-    if (ce.hasAttribute("data-buried")) ey = cbox.top + TAB / 2;
+    // A pane showing its tab (folded down a crowded column, or scrolled past its title): the curve lands in the tab's foot; else in the rule under its title, where that shows (the same test as the tab's, ruleShows, so the two hand over at once).
+    const below = ccol.classList.contains("crowded") ? ((ce.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top ?? Infinity) : Infinity;
+    let folded = ce.hasAttribute("data-tab") || ce.hasAttribute("data-scrolled") || ce.hasAttribute("data-buried") || (ce.hasAttribute("data-covered") && !ruleShows(ce, ccolBox, below));
+    if (folded) ey = cbox.top + TAB / 2;
     else {
       const scroll = ce.querySelector<HTMLElement>(".pane-scroll")!.getBoundingClientRect();
-      // Under the tab, a rule does not show.
-      const top = Math.max(cbox.top, scroll.top) + TAB;
       const t = ce.querySelector<HTMLElement>(".pane-head h2, .top h1, .wiki-head h2");
       const tr = t?.getBoundingClientRect();
-      ey = folded ? cbox.top + TAB / 2 : tr && tr.bottom > scroll.top + 4 ? Math.max(scroll.top + 6, tr.top + Math.min(tr.height, 32) / 2) : scroll.top + 14;
+      ey = tr && tr.bottom > scroll.top + 4 ? Math.max(scroll.top + 6, tr.top + Math.min(tr.height, 32) / 2) : scroll.top + 14;
       // The rule: under the pane's own head (a section's, a page's title, an article's), not an article's set under a node; the focused head's too (the heavy rule on top marks the active pane).
       const head = ruled ? ce.querySelector<HTMLElement>(HEADS) : null;
       const ruleEl = head?.matches(".top") ? head.querySelector<HTMLElement>("h1") : head;
-      const rs = (ruleEl ?? ce.querySelector<HTMLElement>(".pane-head, .top h1, .wiki-head"))?.getBoundingClientRect();
-      if (rs && rs.bottom <= top) {
+      const rr = ruleEl?.getBoundingClientRect();
+      // Scrolled past its title (its tab is on its way): its tab's foot.
+      if (rr && rr.bottom <= Math.max(cbox.top, scroll.top) + TAB) {
         folded = true;
         ey = cbox.top + TAB / 2;
-      }
-      const rr = ruleEl ? rs : undefined;
-      const below = ccol.classList.contains("crowded") ? ((ce.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top ?? Infinity) : Infinity;
-      if (rr && rr.bottom > top + 4 && rr.bottom < Math.min(scroll.bottom, below) && rr.left < shownRight) {
+      } else if (rr && ruleShows(ce, ccolBox, below) && rr.left < shownRight) {
         ey = level(rr.bottom - 0.5);
         ex = Math.max(left + ARRIVE, rr.left);
         rule = { x0: ex, x1: Math.min(rr.right, shownRight) };
@@ -990,8 +1025,9 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     let sy: number;
     let under: { x: number; y: number } | undefined;
     let hint: { x: number; y: number } | undefined;
+    let lines: { x0: number; x1: number; y: number }[] | undefined;
     // What of the pane shows: its own scroll box (below its tab, if folded), less what the pane after it in a crowded column covers, down to the column's foot.
-    const pfolded = pe.hasAttribute("data-covered");
+    const pfolded = pe.hasAttribute("data-tab") || pe.hasAttribute("data-buried");
     const pscroll = pe.querySelector<HTMLElement>(".pane-scroll")!.getBoundingClientRect();
     const nextTop = pcol.classList.contains("crowded") ? (pe.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top : undefined;
     const sc = { top: pfolded || pe.hasAttribute("data-scrolled") ? Math.max(pscroll.top, pbox.top + TAB) : pscroll.top, bottom: Math.min(pscroll.bottom, nextTop ?? Infinity, pcol.getBoundingClientRect().bottom) };
@@ -1032,6 +1068,8 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
         const j = Math.max(2, sy - uy);
         under = { x: r.right, y: uy };
         sx = r.right + 2 * j;
+        // A link's underline (solid, not a note's dotted one) is drawn here, as the start of the curve, so the two meet exactly; its own is left out (data-curved).
+        if (s.matches(".lnk, .wiki-text a")) lines = [...rects].filter((q) => q.width > 0 && q.bottom > sc.top && q.top < sc.bottom).map((q) => ({ x0: q.left, x1: q.right, y: level(underline(s, q)) }));
       }
       if (sy < sc.top + 2 || sy > sc.bottom - 2 || sx > textRight + 1) {
         lost = true;
@@ -1051,6 +1089,10 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
       }
       sy = level(sy);
       if (under) under.y = level(under.y);
+      if (under && lines?.length && !lost) {
+        under.y = lines[lines.length - 1].y;
+        curved.add(s);
+      } else lines = undefined;
     }
     if (ruled && feet.has(parent.id) && !rules.get(parent.id)?.includes("tab")) rules.set(parent.id, rules.has(parent.id) ? "head tab" : "tab");
     // A curve that cannot reach its pane (dotted) leaves the pane's own rule as it is.
@@ -1060,7 +1102,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
       tabbed.delete(x.node.id);
     }
     const gutter = colEls.indexOf(ccol);
-    edges.push({ from: parent.id, to: x.node.id, gutter, left: left - box.left, sx: sx - box.left, sy: sy - box.top, under: under && { x: under.x - box.left, y: under.y - box.top }, hint: hint && { x: hint.x - box.left, y: hint.y - box.top }, textRight: textRight - box.left, ex: ex - box.left, ey: ey - box.top, on: branch.has(x.node.id) && branch.has(parent.id), lost, hue: x.node.hue, rule: rule && { x0: rule.x0 - box.left, x1: rule.x1 - box.left } });
+    edges.push({ from: parent.id, to: x.node.id, gutter, left: left - box.left, sx: sx - box.left, sy: sy - box.top, under: under && { x: under.x - box.left, y: under.y - box.top }, hint: hint && { x: hint.x - box.left, y: hint.y - box.top }, lines: lines?.map((q) => ({ x0: q.x0 - box.left, x1: q.x1 - box.left, y: q.y - box.top })), textRight: textRight - box.left, ex: ex - box.left, ey: ey - box.top, on: branch.has(x.node.id) && branch.has(parent.id), lost, hue: x.node.hue, rule: rule && { x0: rule.x0 - box.left, x1: rule.x1 - box.left } });
   }
   // Lanes, gutter by gutter.
   const lane = new Map<Edge, number>();
@@ -1086,8 +1128,11 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     const g = e.left + LANE_LAST - i * LANE_PITCH;
     const dy = e.ey - e.sy;
     let d: string;
+    // A link's underline, its lines in turn, the last running on into the step down to the lead-out.
+    const lastLine = e.lines?.[e.lines.length - 1];
+    const underPath = e.under && (lastLine ? e.lines!.slice(0, -1).map((q) => `M${fx(q.x0)} ${fx(q.y)}H${fx(q.x1)}`).join("") + `M${fx(lastLine.x0)} ${fx(e.under.y)}H${fx(e.under.x)}` : `M${fx(e.under.x)} ${fx(e.under.y)}`);
     const join = e.under
-      ? `M${fx(e.under.x)} ${fx(e.under.y)}C${fx((e.under.x + e.sx) / 2)} ${fx(e.under.y)} ${fx((e.under.x + e.sx) / 2)} ${fx(e.sy)} ${fx(e.sx)} ${fx(e.sy)}`
+      ? `${underPath}C${fx((e.under.x + e.sx) / 2)} ${fx(e.under.y)} ${fx((e.under.x + e.sx) / 2)} ${fx(e.sy)} ${fx(e.sx)} ${fx(e.sy)}`
       : e.hint
         ? `M${fx(e.hint.x)} ${fx(e.hint.y)}V${fx(e.sy + Math.sign(e.hint.y - e.sy) * 6)}Q${fx(e.hint.x)} ${fx(e.sy)} ${fx(e.sx)} ${fx(e.sy)}`
         : `M${fx(e.sx)} ${fx(e.sy)}`;
@@ -1109,10 +1154,25 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     if (e.rule) d += e.rule.x0 < e.ex - 0.01 ? `M${fx(e.rule.x0)} ${fx(e.ey)}H${fx(e.rule.x1)}` : `H${fx(e.rule.x1)}`;
     out.push({ key: `${e.from}>${e.to}`, from: e.from, to: e.to, lane: i, cls: `${e.on ? "on" : ""}${e.lost ? " lost" : ""}`, d, hue: e.hue === undefined ? "" : String(e.hue) });
   }
+  // What peeks out, and the selection bar, leave their places clear of the curves (holes in a mask), but for the curves that belong to what peeks.
+  const peeked = [...el.querySelectorAll<HTMLElement>("[data-peek]")];
+  const local = (r: DOMRect) => ({ x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height });
+  const holes = peeked.map((p) => local(p.getBoundingClientRect()));
+  const bar = document.querySelector<HTMLElement>(".pane > .selbar");
+  const barHole = bar && bar.style.visibility !== "hidden" ? [local(bar.getBoundingClientRect())] : [];
+  const owned = (id: number) => {
+    const p = els.get(id);
+    return !!p && peeked.some((q) => q.contains(p));
+  };
+  const { under, over } = layers(svg, area, [...holes, ...barHole], barHole);
   // Each curve keeps its element, changed only where it changed, so only what moved is painted again.
   const had = new Map<string, SVGPathElement>();
   for (const p of svg.querySelectorAll<SVGPathElement>("path")) had.set(p.dataset.key!, p);
-  out.forEach((c, k) => {
+  const at = new Map<Element, number>([
+    [under, 0],
+    [over, 0],
+  ]);
+  out.forEach((c) => {
     let p = had.get(c.key);
     had.delete(c.key);
     if (!p) {
@@ -1125,11 +1185,76 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     if (p.getAttribute("class") !== c.cls) p.setAttribute("class", c.cls);
     if (p.dataset.lane !== String(c.lane)) p.dataset.lane = String(c.lane);
     if ((p.dataset.hue ?? "") !== c.hue) c.hue ? (p.dataset.hue = c.hue) : delete p.dataset.hue;
-    // In drawing order: the focused branch's last, on top.
-    if (svg.children[k] !== p) svg.insertBefore(p, svg.children[k] ?? null);
+    // In drawing order, the focused branch's last, on top; over what peeks if it belongs to it.
+    const g = owned(c.from) || owned(c.to) ? over : under;
+    const k = at.get(g)!;
+    at.set(g, k + 1);
+    if (g.children[k] !== p) g.insertBefore(p, g.children[k] ?? null);
   });
   for (const p of had.values()) p.remove();
+  for (const s of document.querySelectorAll<HTMLElement>("[data-curved]")) if (!curved.has(s)) s.removeAttribute("data-curved");
+  for (const s of curved) if (!s.hasAttribute("data-curved")) s.setAttribute("data-curved", "");
   markRuled(els, rules);
+}
+
+/**
+ * The curves' two layers: those under what peeks (with holes where it is, and where the selection
+ * bar is), and those over it (its own; a hole only for the bar). Made once; the holes kept as asked.
+ */
+function layers(svg: SVGSVGElement, area: DOMRect, holes: { x: number; y: number; w: number; h: number }[], barHoles: { x: number; y: number; w: number; h: number }[]) {
+  const NS = "http://www.w3.org/2000/svg";
+  let defs = svg.querySelector("defs");
+  if (!defs) {
+    defs = document.createElementNS(NS, "defs");
+    for (const id of ["ie-curve-holes", "ie-curve-bar"]) {
+      const m = document.createElementNS(NS, "mask");
+      m.id = id;
+      m.setAttribute("maskUnits", "userSpaceOnUse");
+      defs.appendChild(m);
+    }
+    const clip = document.createElementNS(NS, "clipPath");
+    clip.id = "ie-curve-area";
+    clip.appendChild(document.createElementNS(NS, "rect"));
+    defs.appendChild(clip);
+    svg.prepend(defs);
+    const shown = document.createElementNS(NS, "g");
+    shown.setAttribute("clip-path", "url(#ie-curve-area)");
+    svg.appendChild(shown);
+    for (const c of ["under", "over"]) {
+      const g = document.createElementNS(NS, "g");
+      g.setAttribute("class", c);
+      shown.appendChild(g);
+    }
+  }
+  // Only over the strip.
+  const r = svg.querySelector("#ie-curve-area rect")!;
+  for (const [k, v] of Object.entries({ x: area.left, y: area.top, width: area.width, height: area.height })) if (r.getAttribute(k) !== String(v)) r.setAttribute(k, String(v));
+  const under = svg.querySelector<SVGGElement>("g.under")!;
+  const over = svg.querySelector<SVGGElement>("g.over")!;
+  const fill = (id: string, g: SVGGElement, hs: typeof holes) => {
+    const m = svg.querySelector<SVGMaskElement>(`#${id}`)!;
+    const key = hs.map((h) => [h.x, h.y, h.w, h.h].map(Math.round).join(",")).join(";");
+    if (m.dataset.key === key) return;
+    m.dataset.key = key;
+    if (!hs.length) {
+      g.removeAttribute("mask");
+      m.replaceChildren();
+      return;
+    }
+    const all = document.createElementNS(NS, "rect");
+    for (const [k, v] of Object.entries({ x: "-10", y: "-10", width: "100000", height: "100000", fill: "white" })) all.setAttribute(k, v);
+    const cut = hs.map((h) => {
+      const r = document.createElementNS(NS, "rect");
+      for (const [k, v] of Object.entries({ x: h.x, y: h.y, width: h.w, height: h.h, fill: "black" })) r.setAttribute(k, String(v));
+      r.setAttribute("class", "hole");
+      return r;
+    });
+    m.replaceChildren(all, ...cut);
+    g.setAttribute("mask", `url(#${id})`);
+  };
+  fill("ie-curve-holes", under, holes);
+  fill("ie-curve-bar", over, barHoles);
+  return { under, over };
 }
 
 /** A pane's own head, whose rule a curve into it lands in: a section's, a page's title, an article's (not an article set under a node). */

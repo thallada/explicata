@@ -110,7 +110,8 @@ Press `?` for every key. The short version:
   fit, the column stacks them the way the strip stacks columns: the pane on the focused branch shown
   whole, those before it stuck a tab apart above it and those after it a tab apart at the column's
   foot, partly covered and at the limit down to a one-line tab, so every pane shows at least its tab.
-  A pane scrolled past its own title shows the same tab at its top, over its text. A click anywhere
+  A pane scrolled past its own title shows the same tab at its top, over its text; a pane shows its
+  tab only while the rule under its title does not show, never both. A click anywhere
   in a pane that is not text, a row or a link makes it the active pane; a click anywhere else, or
   Esc, clears a selection. Mouse resting on a pane that is cut off for any reason (covered across
   or down, too small a share of its column, past its foot): after a moment it peeks out whole over
@@ -125,9 +126,10 @@ Press `?` for every key. The short version:
   in the column, across forks; the same from a node, a selection or an article, back where you were
   in each pane, and left then right comes back. Plain `h` and `l` still move along the focused branch.
   The pane menu (`⋯`) offers the same.
-- **Curves.** A curve runs from the words, row or link each pane was opened from (joined to their
-  underline) into the rule under the pane's title, and draws that rule, so the two are one hairline
-  on device pixels; the focused branch's is drawn stronger. Where the title does not show (the pane
+- **Curves.** A curve runs from the words, row or link each pane was opened from into the rule under
+  the pane's title, and draws that rule, and a link's underline too, so link, curve and rule are one
+  hairline on device pixels. Curves pass over the panes' edges and under the selection bar and the
+  menus; a pane peeking out covers the curves that are not its own; the focused branch's is drawn stronger. Where the title does not show (the pane
   folded to its tab, or scrolled past it), the curve runs into the tab's foot instead; out of a
   folded pane whose source is out of sight, it leaves from the end of that pane's tab foot. A source
   scrolled or covered out of sight in a pane that still shows is pointed at: the curve is dotted
@@ -142,8 +144,9 @@ Press `?` for every key. The short version:
   nothing but the panes' tree decides it (not the focus, a scroll or a fold).
   `/colors line|top|edge|off` (or the menu) puts it there, in a band across each pane's top, down
   its left edge, or nowhere.
-- **The active pane**, where the keys act, has a heavy rule across its top; the rest of the focused
-  branch, a hairline. `q` closes it and every pane opened from it (whatever it shows: a section, a
+- **The active pane**, where the keys act, has a heavy rule across its top and its other edges in a
+  stronger ink; the rest of the focused branch, a hairline across its top. A pane peeking out is
+  edged all round. `q` closes it and every pane opened from it (whatever it shows: a section, a
   note, an article); each pane's x does the same for that pane. `P`, or a pane's pin, pins it: a
   pinned pane stays where it is when a pane it was opened from closes (it shows that its source has
   closed), is never replaced by a Shift open, and is never covered, in its column or along the

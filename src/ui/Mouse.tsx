@@ -236,7 +236,12 @@ let shown: Shown | null = null;
 const watchers = new Set<() => void>();
 const changed = () => watchers.forEach((f) => f());
 
+/** The button whose menu a press on it just closed: the click that follows that press is not one to open it again. */
+let closedBy: { el: HTMLElement; at: number } | null = null;
+
 export function showMenu(entries: Entry[], at: Shown["at"]) {
+  if (at instanceof HTMLElement && closedBy?.el === at && performance.now() - closedBy.at < 1000) return void (closedBy = null);
+  closedBy = null;
   if (shown?.at instanceof HTMLElement) shown.at.removeAttribute("aria-expanded");
   const active = document.activeElement as HTMLElement | null;
   shown = { entries, at, restore: active && active !== document.body && !active.closest(".menu") ? active : shown?.restore ?? null };
@@ -285,7 +290,12 @@ export function Menu({ entries, at, sheet, onClose }: { entries: Entry[]; at: Sh
   }, [entries, at, sheet]);
   // Registered as it is drawn (an effect after paint can come late, and a press outside would be missed).
   useLayoutEffect(() => {
-    const outside = (e: Event) => !ref.current?.contains(e.target as Node) && onClose(false);
+    const outside = (e: Event) => {
+      if (ref.current?.contains(e.target as Node)) return;
+      // A press on the button the menu hangs from closes it, and the click after it does not open it again.
+      if (at instanceof HTMLElement && at.contains(e.target as Node) && e.type === "pointerdown") closedBy = { el: at, at: performance.now() };
+      onClose(false);
+    };
     // A scroll closes it too, but not the one that brought what it is about into view as it opened.
     const opened = performance.now();
     const scrolled = (e: Event) => performance.now() - opened > 250 && outside(e);
@@ -300,7 +310,7 @@ export function Menu({ entries, at, sheet, onClose }: { entries: Entry[]; at: Sh
       window.removeEventListener("resize", away);
       window.removeEventListener("blur", away);
     };
-  }, [onClose]);
+  }, [onClose, at]);
   const cells = () => [...ref.current!.querySelectorAll<HTMLElement>("[data-mi]:not([aria-disabled='true'])")];
   const onKey = (e: KeyboardEvent) => {
     // The menu has the keys while it is open: none reach the page's handler.
@@ -425,6 +435,8 @@ function placeBar(el: HTMLElement | null, shown = false) {
   const clip = sels[0].closest(".pane-scroll")?.getBoundingClientRect();
   const gone = top < bar || top + h > window.innerHeight - 28 || (clip && (last.bottom < clip.top || first.top > clip.bottom));
   el.style.visibility = gone ? "hidden" : "visible";
+  // The curves leave its place clear (Panes.tsx): they are drawn again for where it is now.
+  if (pane) window.dispatchEvent(new Event("ie:geometry"));
 }
 
 /**

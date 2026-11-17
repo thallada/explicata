@@ -350,6 +350,8 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
   --tab: 30px;
   --shade: rgb(0 0 0 / 0.2);
   --pane-rule: #d9d9d9;
+  /* The edges of the active pane and of a pane peeking out. */
+  --edge-strong: #6a6a6a;
   --curve: rgb(0 0 0 / 0.17);
   --curve-on: color-mix(in srgb, var(--link) 62%, transparent);
 }
@@ -357,6 +359,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
   :root {
     --shade: rgb(0 0 0 / 0.6);
     --pane-rule: #3a3a3a;
+    --edge-strong: #a8a8a8;
     --curve: rgb(255 255 255 / 0.16);
     --curve-on: color-mix(in srgb, var(--link) 62%, transparent);
   }
@@ -416,7 +419,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 }
 .tabline .tabtitle { overflow: hidden; text-overflow: ellipsis; }
 .tabline:hover { color: var(--fg); }
-.col.crowded > .pane[data-covered] > .tabline { opacity: 1; pointer-events: auto; }
+.col.crowded > .pane[data-tab] > .tabline { opacity: 1; pointer-events: auto; }
 /* A pane scrolled past its own title shows its tab at its top as well, over its text (Panes.tsx watchHead). */
 .pane[data-scrolled] > .tabline { opacity: 1; pointer-events: auto; }
 /* Its title centred between the rule across the pane's top (heavy on the active pane) and its foot. */
@@ -432,7 +435,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .col[data-buried]:not([data-peek]) .pane-scroll, .col.crowded > .pane[data-buried]:not([data-peek]) > .pane-scroll { content-visibility: hidden; }
 
 /* Peeking: a covered pane or column, the mouse resting on it, raised over its neighbours whole. */
-.col[data-peek], .pane[data-peek] { z-index: 6; box-shadow: 0 3px 18px 0 var(--shade); }
+.col[data-peek], .pane[data-peek] { z-index: 6; box-shadow: 0 3px 18px 0 var(--shade); outline: 1px solid var(--edge-strong); outline-offset: -1px; }
 /* A pane peeking down its column is shown as tall as its text needs; the extra height takes no room, so nothing around it moves. */
 .pane[data-peek-h] { height: var(--peek-h) !important; margin-bottom: calc(-1 * var(--peek-extra, 0px)); }
 .col[data-peek] .spine, .col.crowded > .pane[data-peek] > .tabline { opacity: 0; pointer-events: none; }
@@ -443,14 +446,14 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .grip { position: absolute; z-index: 3; top: 0; left: var(--spine); right: 4.6rem; height: 1.15rem; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .grip::before { content: ""; position: absolute; left: 50%; top: 0.42rem; width: 1.1rem; margin-left: -0.55rem; height: 3px; border-top: 1px solid var(--faint); border-bottom: 1px solid var(--faint); opacity: 0; transition: opacity 0.12s; }
 .col.split .grip:hover::before { opacity: 0.8; }
-.col:not(.split) .grip, .col.crowded > .pane[data-covered] > .grip { display: none; }
+.col:not(.split) .grip, .col.crowded > .pane[data-tab] > .grip { display: none; }
 .tabline { touch-action: none; }
 .panes.dragging, .panes.dragging * { cursor: grabbing !important; user-select: none; }
 .drop-line { position: absolute; z-index: 7; height: 2px; background: var(--link); pointer-events: none; }
 
 /* A pane's pin and ×, top right, in the margin above its title: quiet until pointed at. A pinned pane's pin is filled. */
 .pane-ctl { position: absolute; z-index: 3; top: 0.25rem; right: 0.3rem; display: flex; gap: 0.05rem; }
-.col.crowded > .pane[data-covered] > .pane-ctl { top: 2px; }
+.col.crowded > .pane[data-tab] > .pane-ctl { top: 2px; }
 .pane-btn { display: block; width: 1.3rem; height: 1.3rem; padding: 0.3rem; border-radius: 2px; cursor: pointer; color: var(--rule); }
 .pane-btn svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 .pane:hover .pane-btn { color: var(--faint); }
@@ -464,12 +467,14 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
  * badge is set in the same ink.
  */
 .pane::after { content: ""; position: absolute; z-index: 3; top: 0; left: 0; right: 0; height: 0; background: var(--fg); pointer-events: none; }
-.pane.active::after { height: 3px; }
+/* The active pane: the heavy rule across its top, and its other three edges in the stronger ink (the same hairline width), over the hairlines it shares with its neighbours. */
+.pane.active::after { bottom: 0; height: auto; z-index: 5; background: none; border: 1px solid var(--edge-strong); border-top: 3px solid var(--fg); }
 .pane.on-branch:not(.active)::after { height: 1px; background: var(--faint); }
 
 /* The curves: from what each pane was opened from to its title, behind nothing but in the gaps between lines. */
 /* A layer of its own, so that drawing a curve again does not paint the panes under it again. */
-.curves { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; overflow: hidden; }
+/* Over the panes and their edges, and over a pane peeking out (whose own place the curves leave clear, Panes.tsx curves); under the menus and the selection bar (a hole in them where it is). */
+.curves { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 7; pointer-events: none; overflow: hidden; }
 .curves path { fill: none; stroke: var(--curve); stroke-width: 1; }
 .curves path.on { stroke: var(--curve-on); }
 .curves path.lost { stroke-dasharray: 1 3; }
@@ -538,7 +543,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .col.crowded > .pane[data-ruled~="tab"] + .pane[data-over]::before { background: transparent; }
 [data-colors="line"] .pane[data-hue] > .spine::before { content: ""; position: absolute; top: 1.72rem; left: 50%; width: 0.9rem; margin-left: -0.45rem; height: 1px; background: var(--hue-faint); }
 [data-colors="line"] .pane.on-branch[data-hue] > .spine::before { background: var(--hue); }
-.col.crowded > .pane[data-covered] > .spine::before { display: none; }
+.col.crowded > .pane[data-tab] > .spine::before { display: none; }
 /* top: under the active pane's ink rule, above the focused branch's hairline */
 [data-colors="top"] .pane[data-hue] { background-image: linear-gradient(var(--hue-faint), var(--hue-faint)); background-size: 100% 2px; background-repeat: no-repeat; }
 [data-colors="top"] .pane.on-branch[data-hue] { background-image: linear-gradient(var(--hue), var(--hue)); }
@@ -624,6 +629,8 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
  */
 .lnk { cursor: pointer; text-decoration: underline 1px solid var(--link); text-underline-offset: 0.18em; text-decoration-skip-ink: auto; }
 .lnk:hover, .lnk.on { text-decoration-thickness: 2px; }
+/* A link a curve leaves from: the curve draws its underline (Panes.tsx), so the two meet exactly. */
+.lnk[data-curved], .wiki-text a[data-curved] { text-decoration-color: transparent; }
 .lnk.on { background: var(--wash); }
 .lmark {
   display: inline-block; margin: 0 0.06em 0 0.08em; font-family: var(--serif); font-size: 0.6em; line-height: 1; font-weight: 600;
