@@ -19,7 +19,7 @@
  * With IE_WIKI=off the server wires in wikiOff instead: every route answers 503 reason "off".
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { HttpError, abortOnClose, readJson, sendJson as send } from "./util";
+import { HttpError, abortOnClose, sendJson as send } from "./util";
 import type { CallOpts, Result, Uncached, WikiClient } from "./wiki";
 
 const MAX_TITLES = 200;
@@ -35,9 +35,9 @@ function reply<V>(res: ServerResponse, r: Result<V> | Uncached, key: string) {
   return send(res, 503, r, r.retryAfter ? { "retry-after": String(r.retryAfter) } : {});
 }
 
-function text(url: URL, name: string, max: number, required = true): string {
+function text(url: URL, name: string, max: number): string {
   const v = (url.searchParams.get(name) ?? "").trim();
-  if (!v && required) throw bad(`${name} is required`);
+  if (!v) throw bad(`${name} is required`);
   if (v.length > max) throw bad(`${name} is longer than ${max} characters`);
   return v;
 }

@@ -683,7 +683,7 @@ export class Linker {
     if (!items.length) return [];
     const texts = items.map((i) => ({ id: `${i.title}\u0000${i.description ?? ""}`, text: `${i.title}: ${i.description ?? ""}` }));
     if (this.senseVectors.size > 20_000) this.senseVectors = new VectorIndex(null, this.o.embedder);
-    const rep = await this.senseVectors.upsert(texts, false);
+    const rep = await this.senseVectors.upsert(texts);
     if (rep.degraded) return null;
     const out = items.map((i, k) => ({ ...i, fit: this.calibrate(dot(ctx, this.senseVectors.vectorOf(texts[k].id)!)) }));
     return sorted ? out.sort((a, b) => b.fit - a.fit) : out;

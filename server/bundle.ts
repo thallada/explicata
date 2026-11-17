@@ -87,10 +87,6 @@ export class Bundle {
     this.handleLinks = linkRoutes({ main, linker: getLinker, index: this.nodeIndex, pending: this.pending, jobs: this.jobs, embedder: shared.embed, reviewer: this.reviewer, wrote: () => this.wrote("main") });
   }
 
-  get id() {
-    return this.store.id;
-  }
-
   /** A notice to every page open on this library. */
   announce(message: Record<string, unknown>) {
     const line = `data: ${JSON.stringify(message)}\n\n`;
@@ -253,7 +249,7 @@ export class Bundle {
       const { text, skipped } = serializeDoc(snap, id);
       res.writeHead(200, {
         "content-type": "text/markdown; charset=utf-8",
-        "content-disposition": `attachment; filename="${slugify(snap.nodes[id].title) || "untitled"}${name === "main" ? "" : `-${encodeURIComponent(name)}`}.md"`,
+        "content-disposition": `attachment; filename="${slugify(snap.nodes[id].title)}${name === "main" ? "" : `-${encodeURIComponent(name)}`}.md"`,
         "x-skipped": JSON.stringify(skipped),
       });
       return res.end(text);

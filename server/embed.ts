@@ -264,7 +264,7 @@ export class VectorIndex {
   }
 
   /** Add or update entries. Unchanged text (same hash, vector present) is not re-embedded. */
-  async upsert(items: { id: string; text: string }[], save = true): Promise<UpsertReport> {
+  async upsert(items: { id: string; text: string }[]): Promise<UpsertReport> {
     const todo: Entry[] = [];
     let skipped = 0;
     for (const { id, text } of items) {
@@ -281,7 +281,7 @@ export class VectorIndex {
     if (todo.length) this.bm25 = null;
     const vectors = todo.length && this.embedder ? await this.embedder.embed(todo.map((e) => e.text)) : null;
     if (vectors) todo.forEach((e, i) => (e.vector = vectors[i]));
-    if (save && todo.length) this.save();
+    if (todo.length) this.save();
     return {
       embedded: vectors ? todo.length : 0,
       skipped,

@@ -155,10 +155,6 @@ export class UsageTracker {
     this.startedAt = clock();
   }
 
-  now(): Date {
-    return this.clock();
-  }
-
   configure(provider: Provider | null, model: string | null) {
     this.provider = provider;
     this.model = model;
@@ -173,7 +169,7 @@ export class UsageTracker {
   // ---- the session ----
 
   /** One finished model call. `tokens` null means the reply carried no counts. */
-  recordCall(provider: Provider, tokens: Tokens | null, opts: { ok: boolean; costUsd?: number | null; web?: WebUse | null } = { ok: true }) {
+  recordCall(provider: Provider, tokens: Tokens | null, opts: { ok: boolean; costUsd?: number | null; web?: WebUse | null }) {
     const s = this.session(provider);
     s.calls++;
     if (opts.web) {

@@ -250,7 +250,7 @@ async function librariesApi(req: IncomingMessage, res: ServerResponse, parts: st
     console.log(`libraries: made “${store.title}” (${store.id})`);
     return json(res, 201, { library: info(store.id) });
   }
-  if (id && parts.length === 1 && (method === "PATCH" || method === "POST")) {
+  if (id && parts.length === 1 && method === "PATCH") {
     const input = await readJson<{ title?: unknown }>(req);
     const store = libraries.rename(id, input.title as string);
     bundles.get(id)?.announce({ branch: "main", from: "api" });

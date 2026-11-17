@@ -429,10 +429,6 @@ class KvStore<V> {
     this.schedule();
   }
 
-  get size() {
-    return this.load().size;
-  }
-
   private schedule() {
     if (!this.file || this.timer) return;
     this.timer = setTimeout(() => this.flush(), 1000);

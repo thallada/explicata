@@ -173,7 +173,6 @@ function reanchor(doc: Doc, id: NodeId, was: NodeSnap, now: NodeSnap) {
 /** Roll the whole tree back to a commit by writing the inverse as a new commit. History is kept. */
 export function revertTo(doc: Doc, commit: Commit) {
   const target = at(doc, commit).snap();
-  if (doc.snap().library && !target.library) throw new OpError("that commit is from before the library existed; revert one node to it instead");
   doc.begin(`Revert to “${clip(commit.message, 60)}”`, "human", "revert");
   doc.loro.revertTo(commit.frontiers);
   doc.reread();

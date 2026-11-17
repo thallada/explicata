@@ -256,11 +256,6 @@ export class Libraries {
   saveIndex() {
     writeAtomic(join(this.dir, "index.json"), indexText(this.entries));
   }
-
-  /** Write every library's waiting changes. */
-  flush() {
-    for (const s of this.stores.values()) s.flush();
-  }
 }
 
 function cleanTitle(title: unknown): string {
