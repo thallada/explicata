@@ -108,16 +108,17 @@ export function menuHere(where: Where): Entry[] {
   if (store.selectedText() !== null) return selectionEntries(selCtx(), act);
   const a = store.aux;
   const pinned = !!store.branchNodes[store.paneAt]?.pinned;
+  const moves = store.paneMoves();
   if (a?.kind === "wiki") {
     const h = store.wikiHost(a.host);
-    if (store.panes && (where === "pane" || a.row.t === "head")) return paneEntries(a.host.startsWith("n") ? { node: nodeCtx(a.host.slice(1) as NodeId), pinned } : { article: h?.title, pinned }, act);
+    if (store.panes && (where === "pane" || a.row.t === "head")) return paneEntries(a.host.startsWith("n") ? { node: nodeCtx(a.host.slice(1) as NodeId), pinned, ...moves } : { article: h?.title, pinned, ...moves }, act);
     if (a.row.t === "sec" || a.row.t === "sense") return articleRowEntries(h?.title ?? "Wikipedia", store.panes, act, store.pages);
     return [];
   }
   if (a) return [];
   const id = store.focus.node;
   if (!store.snap.nodes[id]) return [];
-  if (where === "pane" && store.panes) return paneEntries({ node: nodeCtx(id), pinned }, act);
+  if (where === "pane" && store.panes) return paneEntries({ node: nodeCtx(id), pinned, ...moves }, act);
   return nodeEntries(nodeCtx(id), act);
 }
 
@@ -459,8 +460,22 @@ export function SelBar() {
   const on = barFor !== null && store.mode === "normal" && barFor === focusKey() && store.selectedText() !== null;
   const docked = touch();
   const was = useRef(false);
+  /** Docked, the actions are one row that scrolls sideways, its ⋯ and × kept at its end: which ends have more beyond them (a fade says so). */
+  const acts = useRef<HTMLDivElement>(null);
+  const edges = () => {
+    const a = acts.current;
+    if (!a) return;
+    const more = a.scrollWidth - a.clientWidth > 1;
+    a.toggleAttribute("data-before", more && a.scrollLeft > 1);
+    a.toggleAttribute("data-after", more && a.scrollLeft < a.scrollWidth - a.clientWidth - 1);
+  };
   useLayoutEffect(() => {
     if (on) placeBar(ref.current, !was.current);
+    if (on && docked) {
+      // A new selection starts the row from its first action.
+      if (!was.current && acts.current) acts.current.scrollLeft = 0;
+      edges();
+    }
     was.current = on;
   });
   useLayoutEffect(() => {
@@ -491,17 +506,19 @@ export function SelBar() {
   };
   const bar = (
     <div class={`selbar${docked ? " docked" : ""}`} role="toolbar" aria-label="Ask about the selected words" ref={ref} style={docked ? undefined : { visibility: "hidden" }} onMouseDown={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()}>
-      {groups.map((g, i) => (
-        <Fragment key={i}>
-          {i > 0 && <span class="bar-sep" />}
-          {g.map((it) => (
-            <button key={it.key} type="button" title={`${it.label} (${keyText(it.key!)})`} data-key={it.key} onClick={go(it)}>
-              {it.short ?? it.label}
-              <span class="k">{keyText(it.key!)}</span>
-            </button>
-          ))}
-        </Fragment>
-      ))}
+      <div class="bar-acts" ref={acts} onScroll={edges}>
+        {groups.map((g, i) => (
+          <Fragment key={i}>
+            {i > 0 && <span class="bar-sep" />}
+            {g.map((it) => (
+              <button key={it.key} type="button" title={`${it.label} (${keyText(it.key!)})`} data-key={it.key} onClick={go(it)}>
+                {it.short ?? it.label}
+                <span class="k">{keyText(it.key!)}</span>
+              </button>
+            ))}
+          </Fragment>
+        ))}
+      </div>
       <button type="button" class="bar-more" title="More: copy, select less or more, related sections (right-click works too)" aria-haspopup="menu" onClick={(e) => showMenu(selectionEntries(selCtx(), act), e.currentTarget as HTMLElement)}>
         ⋯
       </button>

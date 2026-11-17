@@ -1,6 +1,6 @@
 /** The stacking shared by the panes view's strip and its crowded columns (src/ui/stack.ts). */
 import { describe, expect, it } from "vitest";
-import { coverage, offsets, reveal, starts, whole } from "../src/ui/stack";
+import { coverage, crowds, fill, offsets, reveal, starts, whole } from "../src/ui/stack";
 
 describe("stack", () => {
   it("sticks each item a strip after the one before, a pinned one its whole size, never past where the rest can still be reached", () => {
@@ -33,5 +33,29 @@ describe("stack", () => {
     expect(reveal(880, 1920, at[1], 700, 40, 880)).toBe(660);
     expect(whole(660, 1920, at[1], 700, 40)).toBe(true);
     expect(whole(880, 1920, at[1], 700, 40)).toBe(false);
+  });
+
+  it("a column's height is shared: short panes take what they need, long ones share the rest", () => {
+    expect(fill(700, [200, 1000])).toEqual([200, 500]);
+    expect(fill(700, [1000, 1000])).toEqual([350, 350]);
+    expect(fill(700, [100, 150])).toEqual([100, 600]);
+    expect(fill(700, [300, 2000, 300])).toEqual([233, 234, 233]);
+  });
+
+  it("a column stacks when its panes do not fit at their least; as pages, also whenever a share would cut the pane looked at short", () => {
+    // Wide screen: shared while they fit at their least, whoever is looked at.
+    expect(crowds(850, [1000, 1000], 260)).toBe(false);
+    expect(crowds(850, [1000, 1000, 1000], 260)).toBe(false);
+    expect(crowds(850, [1000, 1000, 1000, 1000], 260)).toBe(true);
+    // As pages: the long pane looked at gets the height.
+    expect(crowds(720, [1000, 1000], 260, 0)).toBe(true);
+    expect(crowds(720, [1000, 1000], 260, 1)).toBe(true);
+    // A short pane looked at, shown whole by the share, leaves the long one beside it.
+    expect(crowds(720, [300, 1000], 260, 0)).toBe(false);
+    expect(crowds(720, [300, 1000], 260, 1)).toBe(true);
+    // Both whole: nothing folds.
+    expect(crowds(720, [300, 350], 260, 1)).toBe(false);
+    // One pane: nothing to fold.
+    expect(crowds(720, [3000], 260, 0)).toBe(false);
   });
 });

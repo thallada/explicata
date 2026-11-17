@@ -8,10 +8,10 @@
  * every open pane.
  *
  * The pure parts are here: which pane a page brings forward when it is swiped to, how a pane is
- * named in the browser's history (so Back, the button or the edge swipe, goes back a pane), and the
- * steps of that history.
+ * named in the browser's history (so Back, the button or the edge swipe, goes back a pane), the
+ * steps of that history, and the tree lines the map draws.
  */
-import type { Forest, Tree } from "./forks";
+import type { Forest, Placed, Tree } from "./forks";
 
 /** Which page a scroll offset rests on: the nearest, among `count`. */
 export function pageAt(scrollLeft: number, width: number, count: number): number {
@@ -92,3 +92,47 @@ export function loadVisits(o: unknown): Visits | null {
   // Kept short: what lies far back is reached by the browser's own history anyway.
   return v.keys.length > 200 ? { keys: v.keys.slice(-200), i: Math.max(0, v.i - (v.keys.length - 200)) } : v;
 }
+
+/**
+ * One stroke of the map's tree lines, in a row of the map, at a level (a column of the panes view,
+ * which is how far the row is indented): `dash`, a root's mark (no line into it: the first pane, or
+ * an orphan, whose source closed); `elbow`, from the row's top down its parent's line and across
+ * into its own mark; `on`, its parent's line going on from the elbow to the row's foot, toward a
+ * later sibling; `pass`, an ancestor's line running through the whole row to a later child of that
+ * ancestor; `down`, the row's own line leaving under its mark for its first child. Each is drawn in
+ * the colour of the pane it leads to (`tid`): a line into a child is the child's branch colour.
+ */
+export interface Rail {
+  kind: "dash" | "elbow" | "on" | "pass" | "down";
+  level: number;
+  tid: number;
+}
+
+/** The map's tree lines, row by row, for every pane in the map's order (forks.ts `all`: tree by tree, depth first). */
+export function rails<R, S>(placed: Placed<R, S>[]): Rail[][] {
+  const at = new Map(placed.map((x) => [x.node.id, x]));
+  const next = (x: Placed<R, S>) => {
+    const sibs = x.parent?.kids ?? [];
+    const j = sibs.findIndex((k) => k.id === x.node.id);
+    return j >= 0 ? sibs[j + 1] : undefined;
+  };
+  return placed.map((x) => {
+    const out: Rail[] = [];
+    const parent = x.parent && at.get(x.parent.id);
+    if (parent) {
+      out.push({ kind: "elbow", level: parent.col, tid: x.node.id });
+      const s = next(x);
+      if (s) out.push({ kind: "on", level: parent.col, tid: s.id });
+    } else out.push({ kind: "dash", level: x.col, tid: x.node.id });
+    if (x.node.kids.length) out.push({ kind: "down", level: x.col, tid: x.node.kids[0].id });
+    for (let c = parent; c?.parent; c = at.get(c.parent.id)) {
+      const s = next(c);
+      const p = at.get(c.parent.id);
+      if (s && p) out.push({ kind: "pass", level: p.col, tid: s.id });
+    }
+    return out;
+  });
+}
+
+/** How far each level of the map is indented, in px: a finger's width at most, less in a deep forest so its deepest rows keep room for their titles. */
+export const mapStep = (deepest: number) => Math.min(16, Math.max(8, Math.floor(140 / Math.max(1, deepest))));

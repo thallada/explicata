@@ -519,7 +519,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
     --hue-none: oklch(80% 0 0);
   }
 }
-:where(.pane, .curves path, .trail-step, .map-row) { --hue: var(--hue-none); }
+:where(.pane, .curves path, .trail-step, .map-row, .drag-ghost, .rail) { --hue: var(--hue-none); }
 [data-hue="0"] { --hue: var(--hue-0); }
 [data-hue="1"] { --hue: var(--hue-1); }
 [data-hue="2"] { --hue: var(--hue-2); }
@@ -528,7 +528,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 [data-hue="5"] { --hue: var(--hue-5); }
 [data-hue="6"] { --hue: var(--hue-6); }
 /* Fainter off the focused branch. Both are fixed per pane, so moving the branch changes no custom property (which every element in the pane would inherit). */
-.pane, .curves path, .trail-step, .map-row { --hue-faint: color-mix(in oklab, var(--hue) 70%, transparent); }
+.pane, .curves path, .trail-step, .map-row, .rail { --hue-faint: color-mix(in oklab, var(--hue) 70%, transparent); }
 .panes:not([data-colors="off"]) .curves path { stroke: var(--hue-faint); stroke-width: var(--hair, 1px); }
 .panes:not([data-colors="off"]) .curves path.on { stroke: var(--hue); }
 /*
@@ -855,12 +855,26 @@ html { scroll-padding-top: 48px; }
 .docbar .tool .chev { display: inline-block; width: 0; height: 0; border: 0.38em solid transparent; border-top: 0.46em solid var(--faint); border-bottom: 0; margin-left: 0.3em; vertical-align: 0.1em; }
 
 /* Touch: no hover, no right-click, no keys. The bar docks at the foot; a menu is a sheet. */
+/* Over the words, the actions are simply in the bar's row. */
+.selbar .bar-acts { display: contents; }
+/*
+ * Docked at the foot (touch): one row, a finger high. The actions scroll sideways under a fade at
+ * whichever end has more beyond it; the ⋯ (the rest: Copy, select less or more, …) and the × that
+ * puts the bar away stay at the row's end.
+ */
 .selbar.docked {
   left: 0; right: 0; bottom: var(--foot-at); top: auto !important; border-width: 1px 0 0; border-radius: 0; box-shadow: none;
-  padding: 0.3rem 0.4rem; background: var(--bg); flex-wrap: wrap; justify-content: center;
+  padding: 0 env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px); background: var(--bg); flex-wrap: nowrap; align-items: stretch;
 }
 .selbar.docked::after, .selbar.docked .k, .selbar.docked .bar-sep { display: none; }
-.selbar.docked button { padding: 0.45rem 0.6rem; font-size: 0.95rem; min-height: 44px; min-width: 44px; }
+.selbar.docked .bar-acts { flex: 1; min-width: 0; display: flex; align-items: stretch; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; padding: 0 4px; }
+.selbar.docked .bar-acts::-webkit-scrollbar { display: none; }
+.selbar.docked .bar-acts[data-after] { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
+.selbar.docked .bar-acts[data-before] { -webkit-mask-image: linear-gradient(to right, transparent, #000 36px); mask-image: linear-gradient(to right, transparent, #000 36px); }
+.selbar.docked .bar-acts[data-before][data-after] { -webkit-mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent); }
+.selbar.docked button { flex: none; padding: 0 10px; font-size: 0.9rem; min-height: 44px; min-width: 44px; }
+.selbar.docked :is(.bar-more, .bar-done) { width: 44px; padding: 0; border-left: 1px solid var(--hair); border-radius: 0; font-variant-caps: normal; letter-spacing: 0; }
+.selbar.docked .bar-done { font-size: 1.15rem; color: var(--dim); }
 .menu.sheet {
   left: 0; right: 0; bottom: var(--foot-at); top: auto; max-width: none; max-height: 70vh; max-height: 70dvh; overflow-y: auto;
   border-width: 3px 0 0; padding-bottom: 0.4rem; font-size: 0.86rem; box-shadow: 0 -2px 10px 0 color-mix(in srgb, var(--fg) 12%, transparent);
@@ -939,6 +953,8 @@ html { scroll-padding-top: 48px; }
 .panes[data-layout="pages"] { --tab: 44px; }
 .panes[data-layout="pages"] .strip { scroll-snap-type: x mandatory; scrollbar-width: none; }
 .panes[data-layout="pages"] .strip::-webkit-scrollbar { display: none; }
+/* While the page glides the strip to a page (Panes.tsx glideTo) nothing snaps on the way; it lands on the page exactly. */
+.panes[data-layout="pages"] .strip[data-gliding] { scroll-snap-type: none; }
 .panes[data-layout="pages"] .col { position: relative; width: 100%; scroll-snap-align: start; scroll-snap-stop: always; }
 .panes[data-layout="pages"] .pane { border-right: 0; }
 /* Room above the title for the pane's buttons, a finger's size; on a tablet the text keeps its measure. */
@@ -951,9 +967,23 @@ html { scroll-padding-top: 48px; }
 /* The first pane never closes. */
 .panes[data-layout="pages"] .pane.root > .pane-ctl > .close { display: none; }
 .panes[data-layout="pages"] .pane-btn.pin.on { color: var(--fg); }
-.panes[data-layout="pages"] .grip { display: none; }
-/* A tab: a swipe across it still turns the page; one down it drags the pane up or down its column. */
-.panes[data-layout="pages"] .tabline { padding: 0 128px 0 var(--spine); font-size: 0.8rem; touch-action: pan-x; }
+/*
+ * A pane in a page shared with others is moved up or down it by a press held on its tab or on the
+ * band above its title, left of its buttons (Panes.tsx): two faint lines mark that band. A swipe
+ * across either still turns the page, and one down still scrolls; held, the pane lifts.
+ */
+.panes[data-layout="pages"] .grip { left: var(--spine); right: 132px; height: 44px; touch-action: pan-x pan-y; cursor: default; -webkit-touch-callout: none; }
+.panes[data-layout="pages"] .grip::before { top: 20px; opacity: 0.6; }
+.panes[data-layout="pages"] .tabline { padding: 0 128px 0 var(--spine); font-size: 0.8rem; touch-action: pan-x pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+/* Lifted: the pane fades where it is; its tab rides just above the finger; a line shows where it will go. */
+.pane[data-lifted] { opacity: 0.4; }
+.drag-ghost {
+  position: absolute; z-index: 8; height: 44px; display: flex; align-items: center; gap: 0.4em; padding: 0 16px; pointer-events: none;
+  background: var(--bg); border-top: 1px solid var(--edge-strong); border-bottom: 2px solid var(--hue, var(--fg)); box-shadow: 0 6px 18px -4px var(--shade);
+  font-family: var(--sans); font-size: 0.8rem; letter-spacing: 0.02em; color: var(--fg); white-space: nowrap; overflow: hidden;
+}
+.drag-ghost .tabtitle { overflow: hidden; text-overflow: ellipsis; }
+.panes[data-layout="pages"] .drop-line { z-index: 9; height: 3px; }
 /* The heavy rule marks the active pane among others in its column; alone on its page it needs none. */
 .panes[data-layout="pages"] .pane.active::after,
 .panes[data-layout="pages"][data-curves="off"] .pane.active::after { bottom: auto; height: 3px; border: 0; background: var(--fg); }
@@ -1004,7 +1034,8 @@ html { scroll-padding-top: 48px; }
   position: relative; flex: none; display: flex; align-items: center; gap: 0.3em; min-width: 44px; max-width: 11em; padding: 0 12px;
   font: inherit; color: var(--dim); background: none; border: 0; border-radius: 0; cursor: pointer;
 }
-.trail-step:hover { border: 0; color: var(--fg); }
+.trail-step:hover { border: 0; }
+@media (hover: hover) { .trail-step:hover { color: var(--fg); } }
 .trail-step::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 10px; height: 1px; background: var(--hue-faint); }
 .trail-step.here { color: var(--fg); font-weight: 600; }
 .trail-step.here::after { height: 2px; background: var(--hue); }
@@ -1012,13 +1043,20 @@ html { scroll-padding-top: 48px; }
 .trail-step + .trail-step::before { content: "›"; position: absolute; left: -0.2em; color: var(--rule); font-weight: 400; }
 .trail-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trail-step .wmark { flex: none; font-size: 0.95em; }
+/* How many panes a step's page holds: a dot each, top to bottom, its own filled in its colour; past four, their number. */
+.trail-stack { flex: none; display: flex; flex-direction: column; gap: 2px; margin: 0 0 2px 1px; }
+.trail-stack i { display: block; width: 4px; height: 4px; border-radius: 50%; background: var(--rule); }
+.trail-stack i.on { background: var(--hue); }
+.trail-count { flex: none; margin-left: 1px; padding: 0 3px; border: 1px solid var(--rule); border-radius: 2px; font-size: 0.6rem; line-height: 1.35; font-weight: 400; color: var(--dim); font-variant-numeric: tabular-nums; }
 .trail-map { flex: none; min-width: 64px; padding: 0 14px; font: inherit; color: var(--dim); background: none; border: 0; border-left: 1px solid var(--hair); border-radius: 0; cursor: pointer; }
-.trail-map:hover, .trail-map[aria-expanded="true"] { border-color: var(--hair); color: var(--fg); }
+.trail-map:hover { border-color: var(--hair); }
+.trail-map[aria-expanded="true"] { color: var(--fg); }
+@media (hover: hover) { .trail-map:hover { color: var(--fg); } }
 .trail-n { color: var(--faint); font-variant-numeric: tabular-nums; margin-left: 0.15em; }
 
 /* The map: every open pane, as an outline of the forest, in a sheet from the foot. */
 .pane-map {
-  position: fixed; left: 0; right: 0; bottom: var(--foot-at); z-index: 30; max-height: 70vh; max-height: 70dvh; overflow-y: auto; outline: none;
+  position: fixed; left: 0; right: 0; bottom: var(--foot-at); z-index: 30; max-height: 70vh; max-height: 70dvh; overflow-y: auto; overscroll-behavior: contain; outline: none;
   background: var(--bg); border-top: 3px double var(--rule); box-shadow: 0 -2px 10px 0 color-mix(in srgb, var(--fg) 12%, transparent);
   padding: 0 env(safe-area-inset-right, 0px) 0.4rem env(safe-area-inset-left, 0px); font-family: var(--sans); font-size: 0.86rem; line-height: 1.35;
 }
@@ -1028,11 +1066,20 @@ html { scroll-padding-top: 48px; }
 }
 .map-hint { font-weight: 400; letter-spacing: 0.02em; text-transform: none; text-align: right; }
 .map-rows { list-style: none; margin: 0; padding: 0; }
-.map-row { display: flex; align-items: stretch; min-height: 44px; padding-left: calc(6px + var(--depth, 0) * 14px); }
+/* Each row 44 px, indented by its column (Pages.tsx sets it); its tree lines drawn in it (pages.ts rails). */
+.map-row { position: relative; display: flex; align-items: stretch; height: 44px; }
 .map-go { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.55em; padding: 0 8px; font: inherit; color: var(--dim); text-align: left; background: none; border: 0; border-radius: 0; cursor: pointer; }
-.map-go:hover { border: 0; color: var(--fg); }
-.map-dash { flex: none; width: 1.1rem; height: 0; border-top: 1px solid var(--hue-faint); }
-.map-row.on-branch .map-dash { border-top: 2px solid var(--hue); }
+.map-go:hover { border: 0; }
+@media (hover: hover) { .map-go:hover { color: var(--fg); } }
+/* A line into a pane in that pane's colour, fainter off the focused branch and stronger on it; over the active row's ground. */
+.rail { position: absolute; z-index: 1; pointer-events: none; border: 0 solid var(--hue-faint); }
+.rail.strong { border-color: var(--hue); }
+.rail.r-dash { border-bottom-width: 1px; }
+.rail.r-elbow { border-left-width: 1px; border-bottom-width: 1px; }
+.rail:is(.r-on, .r-pass, .r-down) { border-left-width: 1px; }
+.rail.strong.r-dash { border-bottom-width: 2px; }
+.rail.strong.r-elbow { border-left-width: 2px; border-bottom-width: 2px; }
+.rail.strong:is(.r-on, .r-pass, .r-down) { border-left-width: 2px; }
 .map-row.on-branch .map-go { color: var(--fg); }
 .map-row.here .map-go { font-weight: 600; background: var(--sel); }
 .map-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1040,7 +1087,9 @@ html { scroll-padding-top: 48px; }
 .map-btn { flex: none; display: block; width: 44px; height: 44px; padding: 14px; color: var(--faint); background: none; border: 0; border-radius: 0; cursor: pointer; }
 .map-btn.none { cursor: default; }
 .map-btn svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
-.map-btn:hover { border: 0; color: var(--fg); background: var(--sel); }
+/* Pointed at with a mouse only: a finger leaves no hover behind on what comes under it next. */
+.map-btn:hover { border: 0; }
+@media (hover: hover) { .map-btn:hover { color: var(--fg); background: var(--sel); } }
 .map-btn.pin.on { color: var(--fg); }
 .map-btn.pin.on svg { fill: currentColor; }
 

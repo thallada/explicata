@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { close, open, plain, trace, type Forest } from "../src/ui/forks";
-import { arrived, findKey, loadVisits, pageAt, paneKey, paneOfPage, visit, type Visits } from "../src/ui/pages";
+import { all, close, open, plain, trace, type Forest } from "../src/ui/forks";
+import { arrived, findKey, loadVisits, mapStep, pageAt, paneKey, paneOfPage, rails, visit, type Visits } from "../src/ui/pages";
 
 const same = (a: string, b: string) => a === b;
 const k = (r: string) => r;
@@ -94,5 +94,49 @@ describe("the pages layout", () => {
     const v = loadVisits({ keys: many, i: 240 })!;
     expect(v.keys).toHaveLength(200);
     expect(v.keys[v.i]).toBe("k240");
+  });
+
+  it("the map's tree lines: a line into each child from its parent's, on toward a later sibling, through the rows between, and down from a parent to its first child", () => {
+    // top ─ a ─ b
+    //     │   └ c
+    //     └ d
+    let f: Forest<string> = plain(["top", "a", "b"]);
+    f = open(f, 1, "c", true, same);
+    f = open(f, 0, "d", true, same);
+    const placed = all(f);
+    const name = new Map(placed.map((x) => [x.node.id, x.node.ref]));
+    const lines = rails(placed).map((rs, i) => [placed[i].node.ref, rs.map((r) => `${r.kind}@${r.level}>${name.get(r.tid)}`).sort().join(" ")]);
+    expect(lines).toEqual([
+      ["top", "dash@0>top down@0>a"],
+      ["a", "down@1>b elbow@0>a on@0>d"],
+      ["b", "elbow@1>b on@1>c pass@0>d"],
+      ["c", "elbow@1>c pass@0>d"],
+      ["d", "elbow@0>d"],
+    ]);
+  });
+
+  it("an orphan has no line into it, only its mark; its own children hang from it", () => {
+    let f: Forest<string> = plain(["top", "a", "b", "e"]);
+    const a = f.trees[0].kids[0];
+    const b = a.kids[0];
+    f = { ...f, trees: f.trees.map((t) => ({ ...t, kids: t.kids.map((k) => ({ ...k, kids: k.kids.map((x) => ({ ...x, pinned: true })) })) })) };
+    const g = close(f, a.id, b.id).forest;
+    expect(g.trees).toHaveLength(2);
+    const placed = all(g);
+    const rs = rails(placed);
+    const orphan = placed.findIndex((x) => x.node.ref === "b");
+    expect(placed[orphan].col).toBe(2);
+    expect(rs[orphan].map((r) => `${r.kind}@${r.level}`)).toEqual(["dash@2", "down@2"]);
+    const e = placed.findIndex((x) => x.node.ref === "e");
+    expect(rs[e].map((r) => `${r.kind}@${r.level}`)).toEqual(["elbow@2"]);
+    // Nothing from the first tree runs into the orphan's rows.
+    expect(rs[orphan].some((r) => r.kind === "pass")).toBe(false);
+  });
+
+  it("the map indents a finger's width a level, less in a deep forest, never under 8 px", () => {
+    expect(mapStep(0)).toBe(16);
+    expect(mapStep(8)).toBe(16);
+    expect(mapStep(10)).toBe(14);
+    expect(mapStep(40)).toBe(8);
   });
 });

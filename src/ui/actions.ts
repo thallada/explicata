@@ -201,6 +201,9 @@ export interface PaneCtx {
   /** An article's pane: its title. */
   article?: string;
   pinned: boolean;
+  /** Whether it can move up, or down, its column (another pane is above it, or below). */
+  above?: boolean;
+  below?: boolean;
 }
 
 export function paneEntries(c: PaneCtx, act: Act): Entry[] {
@@ -218,6 +221,8 @@ export function paneEntries(c: PaneCtx, act: Act): Entry[] {
         { label: "below", key: "A-j", run: () => act.press("A-j") },
       ],
     },
+    (c.above || c.below) && key(act, "Move this pane up", "A-k", { shift: true, keyText: "Alt+⇧k", disabled: !c.above, sub: "in its column" }),
+    (c.above || c.below) && key(act, "Move this pane down", "A-j", { shift: true, keyText: "Alt+⇧j", disabled: !c.below, sub: "in its column" }),
     key(act, "Pin this pane", "P", { checked: c.pinned, sub: "it stays when what opened it closes" }),
     key(act, "Close this pane", "q", { sub: "with what was opened from it" }),
     key(act, "Show as one column", "v"),

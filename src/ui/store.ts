@@ -799,6 +799,29 @@ class Store {
     this.emit();
   }
 
+  /** Whether the active pane can move up or down its column (the pane menu offers what it can). */
+  paneMoves(): { above: boolean; below: boolean } {
+    const here = this.branchNodes[this.paneAt];
+    const x = here && this.panesPlaced.find((y) => y.node.id === here.id);
+    const col = x ? (this.paneColumns.get(x.col) ?? []) : [];
+    const i = col.findIndex((y) => y.node.id === here?.id);
+    return { above: i > 0, below: i >= 0 && i < col.length - 1 };
+  }
+
+  /** Alt+Shift+k and Alt+Shift+j (or the pane menu): move the active pane up or down its column, as dragging it does. */
+  movePane(delta: number) {
+    if (!this.panes) return this.say("Panes are moved in the panes view (v).");
+    this.syncTrail();
+    const here = this.branchNodes[this.paneAt];
+    const x = here && this.panesPlaced.find((y) => y.node.id === here.id);
+    if (!x) return;
+    const col = (this.paneColumns.get(x.col) ?? []).map((y) => y.node.id);
+    const i = col.indexOf(here.id);
+    if (col.length < 2) return this.say("This is the only pane in its column.");
+    if (delta < 0 ? i === 0 : i === col.length - 1) return this.say(`This pane is at the ${delta < 0 ? "top" : "foot"} of its column.`);
+    this.reorderPane(here.id, delta < 0 ? col[i - 1] : (col[i + 2] ?? null));
+  }
+
   /** P (on the active pane) or a pane's pin: pin or unpin it. */
   togglePanePin(id = this.branchNodes[this.paneAt]?.id) {
     if (!this.panes) return this.say("Panes are pinned in the panes view (v).");

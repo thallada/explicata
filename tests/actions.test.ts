@@ -28,6 +28,9 @@ const top = (more: Partial<TopCtx> = {}): TopCtx => ({ view: "auto", autolink: "
 /** Every key the page's handler takes, read from keys.ts: an item's key must be one of them. */
 const handled = new Set([...readFileSync(new URL("../src/ui/keys.ts", import.meta.url), "utf8").matchAll(/case "([^"]+)":/g)].map((m) => m[1]));
 
+/** The Alt keys the page's handler takes (by the key's place: KeyH, ArrowUp…), written as the menus press them ("A-h"). */
+const altKeys = new Set([...readFileSync(new URL("../src/ui/keys.ts", import.meta.url), "utf8").matchAll(/^\s+(Key[A-Z]|Arrow\w+): \(\) =>/gm)].map((m) => `A-${m[1].startsWith("Key") ? m[1].slice(3).toLowerCase() : m[1]}`));
+
 describe("actions", () => {
   it("every item with a key runs by pressing exactly that key, which the key handler takes", () => {
     const { act, calls } = recorder();
@@ -38,6 +41,7 @@ describe("actions", () => {
       ...items(nodeEntries(node({ library: true }), act)),
       ...items(paneEntries({ node: node(), pinned: false }, act)),
       ...items(paneEntries({ article: "Octopus", pinned: true }, act)),
+      ...items(paneEntries({ node: node(), pinned: false, above: true, below: true }, act)),
       ...items(articleRowEntries("Octopus", true, act)),
       ...items(topEntries(top({ canRedo: true }), act)),
       ...items(libraryEntries({ title: "Work", current: false, last: false }, act)),
@@ -48,7 +52,7 @@ describe("actions", () => {
       calls.length = 0;
       it.run();
       expect(calls).toEqual([`press ${it.shift ? "S-" : ""}${it.key}`]);
-      expect(handled.has(it.key!) || it.key === "Escape", `${it.label}: ${it.key}`).toBe(true);
+      expect(handled.has(it.key!) || it.key === "Escape" || altKeys.has(it.key!), `${it.label}: ${it.key}`).toBe(true);
     }
   });
 
@@ -188,6 +192,22 @@ describe("actions", () => {
     expect(find(mine, "Delete…").disabled).toBe(true);
     expect(find(mine, "Delete…").sub).toContain("last library");
     expect(find(topEntries(top(), act), "Libraries…").key).toBe("m");
+  });
+});
+
+describe("moving a pane in its column", () => {
+  it("the pane menu offers Move this pane up and down (Alt+Shift+k j) only where its column has another pane, greyed where it cannot go", () => {
+    const { act, calls } = recorder();
+    expect(labels(paneEntries({ node: node(), pinned: false }, act))).not.toContain("Move this pane up");
+    const es = paneEntries({ node: node(), pinned: false, above: false, below: true }, act);
+    const up = find(es, "Move this pane up");
+    const down = find(es, "Move this pane down");
+    expect(up.disabled).toBe(true);
+    expect(down.disabled).toBe(false);
+    expect([up.keyText, down.keyText]).toEqual(["Alt+⇧k", "Alt+⇧j"]);
+    down.run();
+    expect(calls).toEqual(["press S-A-j"]);
+    expect(labels(paneEntries({ article: "Octopus", pinned: false, above: true, below: false }, act))).toContain("Move this pane up");
   });
 });
 

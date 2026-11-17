@@ -43,6 +43,35 @@ export function offsets(sizes: number[], pinned: boolean[], strip: number, view:
   });
 }
 
+/**
+ * Heights for the panes of one column of height h, from what each needs to show all it holds:
+ * each gets that, or an equal share of what is left, whichever is less; what no pane needs goes to
+ * the one that needs most. So short panes are no taller than their text, and long ones share the rest.
+ */
+export function fill(h: number, needs: number[]): number[] {
+  const out = needs.map(() => 0);
+  const order = needs.map((_, i) => i).sort((a, b) => needs[a] - needs[b]);
+  let rest = h;
+  order.forEach((i, k) => {
+    const share = rest / (order.length - k);
+    out[i] = Math.floor(k === order.length - 1 ? rest : Math.min(needs[i], share));
+    rest -= out[i];
+  });
+  return out;
+}
+
+/**
+ * Whether a column of height h stacks its panes (each folding to a tab but the one looked at)
+ * rather than sharing its height among them: when they do not all fit at their least (`least`
+ * each, or less where a pane needs less); and, given `here`, the pane looked at (as pages, on a
+ * phone), also whenever sharing would leave that pane shorter than what it needs, so it gets the
+ * column's height and the others fold.
+ */
+export function crowds(h: number, needs: number[], least: number, here?: number): boolean {
+  if (needs.reduce((s, x) => s + Math.min(x, least), 0) > h) return true;
+  return here !== undefined && needs.length > 1 && fill(h, needs)[here] < needs[here] - 1;
+}
+
 /** Where each item begins when nothing is stuck: one after another. */
 export const starts = (sizes: number[]) => sizes.map((_, i) => sizes.slice(0, i).reduce((a, b) => a + b, 0));
 

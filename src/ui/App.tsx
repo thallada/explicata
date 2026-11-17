@@ -13,7 +13,7 @@ import { PaneMap, Trail } from "./Pages";
 import { PANES_MIN_WIDTH, store, type Aux, type WRow } from "./store";
 import { WikiPage, WikiView } from "./Wiki";
 import { Usage } from "./Usage";
-import { FirstRun, Hints, Key, MenuHost, SelBar, closeMenu, hideBar, locate, locateIn, menuAt, menuShown, setCard, setPrompt, showBar, type Hint } from "./Mouse";
+import { FirstRun, Hints, Key, MenuHost, SelBar, closeMenu, hideBar, locate, locateIn, menuAt, menuShown, setCard, setPrompt, showBar, touch, type Hint } from "./Mouse";
 import { press } from "./press";
 
 function Page() {
@@ -324,7 +324,8 @@ function Popup() {
  */
 function FocusPopup() {
   const f = store.focus;
-  const note = f.grain !== "node" && store.mode === "normal" && !store.popup && !store.aux ? store.noteAt(f.range) : undefined;
+  // Not on touch: a long press shows the card above its menu, and a tap only opens the link.
+  const note = f.grain !== "node" && store.mode === "normal" && !store.popup && !store.aux && !touch() ? store.noteAt(f.range) : undefined;
   const n = note ? store.snap.nodes[note] : undefined;
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -466,6 +467,15 @@ function StatusLine() {
 // ---- the app ----
 
 let hover: ReturnType<typeof setTimeout> | undefined;
+/** A press or a click: a preview waiting to show does not, and one showing goes. */
+function dropPopup() {
+  clearTimeout(hover);
+  if (!store.popup) return;
+  store.popup = null;
+  store.emit(store.top);
+}
+/** The active pane when last drawn: a preview does not outlive a move to another. */
+let shownPane = "";
 /** The focus last scrolled into view (App's layout effect). */
 let shownFocus = "";
 
@@ -570,6 +580,9 @@ export function App() {
     const key = JSON.stringify([f, store.aux, store.mode, store.panes, store.top, store.colWiki?.title]);
     const moved = key !== shownFocus;
     shownFocus = key;
+    // Another pane opened or gone to (as pages, another page): no preview stays over it.
+    const pane = store.panes ? `${store.paneAt}|${store.branchNodes[store.paneAt]?.id}` : "";
+    if (pane !== shownPane) (shownPane = pane), dropPopup();
     const el =
       moved &&
       !store.panes &&
@@ -594,7 +607,7 @@ export function App() {
 
   const panes = store.panes;
   // A click opens beside what is open (so do Ctrl-, Cmd- and middle clicks); a Shift-click in its place.
-  const onClick = (e: MouseEvent) => store.withReplace(e.shiftKey, () => click(e));
+  const onClick = (e: MouseEvent) => (dropPopup(), store.withReplace(e.shiftKey, () => click(e)));
   const click = (e: MouseEvent) => {
     if (store.mode === "edit") return;
     const target = e.target as HTMLElement;
@@ -758,7 +771,14 @@ export function App() {
     if (menuAt(t, { x: e.clientX, y: e.clientY })) e.preventDefault();
   };
 
-  const onOver = (e: MouseEvent) => {
+  /*
+   * The hover preview is the mouse's: a finger's tap also sends pointerover (and the browser's
+   * compatibility mouseover and mousemove after it, sometimes late), and a card from it would open
+   * over the pane the tap opened. So only a mouse pointer's over counts; a long press shows the card
+   * on touch (Mouse.tsx menuAt).
+   */
+  const onOver = (e: PointerEvent) => {
+    if (e.pointerType !== "mouse") return;
     const anchor = (e.target as HTMLElement).closest<HTMLElement>("[data-note]");
     clearTimeout(hover);
     if (!anchor?.dataset.note || store.open.has(anchor.dataset.note as NodeId)) {
@@ -771,7 +791,7 @@ export function App() {
   };
 
   return (
-    <div class={`app mode-${store.mode}${store.mode === "history" || store.mode === "review" ? " with-panel" : ""}${store.libs ? " with-left" : ""}${panes ? " view-panes" : ""}${store.pages ? " view-pages" : ""}`} onMouseOver={onOver} onContextMenu={onContext}>
+    <div class={`app mode-${store.mode}${store.mode === "history" || store.mode === "review" ? " with-panel" : ""}${store.libs ? " with-left" : ""}${panes ? " view-panes" : ""}${store.pages ? " view-pages" : ""}`} onPointerOver={onOver} onPointerDown={dropPopup} onContextMenu={onContext}>
       <main
         class="page"
         onClick={onClick}

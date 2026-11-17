@@ -21,6 +21,7 @@ export const HELP: [string, [string, string][]][] = [
       ["Shift+Enter", "in panes: open in place of the focused branch's pane in the next column (so does a Shift-click)"],
       ["Alt+h Alt+l", "in panes: the pane this one was opened from (left) / one opened from it (right): the one opened from the focused row or link if it is open, else the one last visited; from a node, a selection or an article alike. Left then right comes back"],
       ["Alt+k Alt+j", "in panes: the pane above / below in the same column, across forks (Alt+↑ ↓ and [ ] too)"],
+      ["Alt+Shift+k j", "in panes: move the active pane up / down its column, as dragging it by its grip or tab does (Alt+Shift+↑ ↓ too; the pane's ⋯ menu offers the same)"],
       ["[ ]", "in panes: the pane above / below in the same column (back where you were in it, or at its head); at the top or bottom nothing moves. A crowded column stacks its panes as the strip stacks columns, covered to a tab; resting the mouse on a covered pane peeks it out; its grip or tab drags it up or down. A faint curve runs from where each pane was opened to its title"],    ],
   ],
   [
@@ -30,7 +31,7 @@ export const HELP: [string, [string, string][]][] = [
       ["", "right-click (a long press on a phone) on words, a row, a link, a note or a pane: what can be done with it, Copy first. Shift+right-click is the browser's own menu"],
       ["", "⋯ by a row, a pane's pin, a page's byline or a note (shown when pointed at): the same menu. A stale flag, clicked, offers what to do about it"],
       ["", "the top bar: the library's name (it opens the libraries panel), undo, redo, and menu: libraries, jump, history, links, layout and settings. A key named in the status line or a panel's head is a button that presses it"],
-      ["", "on a phone the panes are pages, a column each: a tap on a row or a link goes to its pane, a swipe sideways goes from page to page, Back goes back a pane. The trail at the foot names the panes on the way, each in its colour (a tap goes there); its map lists every open pane, to go to, pin or close. What a pane was opened from takes its colour. A long press on a link shows what it opens"],
+      ["", "on a phone the panes are pages, a column each: a tap on a row or a link goes to its pane, a swipe sideways goes from page to page, Back goes back a pane. The pane gone to has the page's height; the others in its column fold to their tabs. The trail at the foot names the panes on the way, each in its colour (a tap goes there), with a dot for each pane in that page's column, the one on the way filled; its map draws every open pane as a tree, each branch in its colour, to go to, pin or close. What a pane was opened from takes its colour. A long press on a link shows what it opens; a tap on one only opens it. A press held on a pane's tab, or on the band above its title, picks the pane up to move it up or down its page (the pane's ⋯ has Move up and Move down too)"],
       ["", "in the libraries panel a click on a row opens that library; its ⋯ (or a right-click) offers open, rename, delete and a new library; a press outside the panel closes it"],
     ],
   ],
@@ -166,10 +167,18 @@ const PANE_KEYS: Record<string, () => void> = {
   ArrowDown: () => store.focusFork(1),
 };
 
+/** Alt+Shift with k j (or ↑ ↓): move the active pane up or down its column. */
+const PANE_MOVE_KEYS: Record<string, () => void> = {
+  KeyK: () => store.movePane(-1),
+  KeyJ: () => store.movePane(1),
+  ArrowUp: () => store.movePane(-1),
+  ArrowDown: () => store.movePane(1),
+};
+
 export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
   if (!store.ready || isTyping(e) || e.metaKey || e.ctrlKey) return;
   if (e.altKey) {
-    const go = !e.shiftKey && store.mode === "normal" ? PANE_KEYS[e.code] : undefined;
+    const go = store.mode === "normal" ? (e.shiftKey ? PANE_MOVE_KEYS : PANE_KEYS)[e.code] : undefined;
     if (!go) return;
     e.preventDefault();
     store.t0 = { what: `A-${e.code}`, at: e.timeStamp };

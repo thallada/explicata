@@ -19,7 +19,7 @@ import { Component, type ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import { ancestors, label, sections, staleness, type NodeId } from "../core/model";
 import { LANES, LANE_FIRST, LANE_LAST, LANE_PITCH, laneOrder } from "./lanes";
-import { ACROSS, DOWN, mark, offsets, reveal, starts, stick, unmark, whole } from "./stack";
+import { ACROSS, DOWN, crowds, fill, mark, offsets, reveal, starts, stick, unmark, whole } from "./stack";
 import { NodeBacklinks, NodeRelated, PaneCtx, TargetRow } from "./Links";
 import { pageAt, paneOfPage } from "./pages";
 import { Abstract, Flags, NodeBody, PendingSections, Row, TitleEditor, TopMatter, isPrompt } from "./Node";
@@ -139,8 +139,8 @@ function Chrome({ props, title, mark }: { props: PaneProps; title: string; mark?
           {title}
         </span>
       </div>
-      <div class="grip" data-grip={tid} title="Drag to move this pane up or down its column" />
-      <div class="tabline" data-spine={props.index} title={title}>
+      <div class="grip" data-grip={tid} title="Drag to move this pane up or down its column (on a phone, hold it first)" onTouchMove={onHandleMove} />
+      <div class="tabline" data-spine={props.index} title={title} onTouchMove={onHandleMove}>
         {mark}
         <span class="tabtitle">{title}</span>
       </div>
@@ -262,6 +262,43 @@ function PaneRow({ id, showing, forked, active }: { id: NodeId; showing: boolean
 
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+/**
+ * As pages, how long the strip takes to glide to a page the page itself goes to (a tap on a row or
+ * a link, the trail, the map, Back): short, easing out. The browser's smooth scroll takes twice as
+ * long or more, at its own pace; a finger's swipe keeps the browser's own snapping.
+ */
+export const GLIDE_MS = 140;
+/** The strip's glide under way: its frame. */
+const glides = new WeakMap<HTMLElement, number>();
+/** Whether the strip is gliding (its scroll events are its own, not a finger's). */
+const gliding = (el: HTMLElement) => glides.has(el);
+/** Stop a glide where it is (a finger has touched the strip): the snapping is the browser's again. */
+function stopGlide(el: HTMLElement) {
+  const f = glides.get(el);
+  if (f === undefined) return;
+  cancelAnimationFrame(f);
+  glides.delete(el);
+  el.removeAttribute("data-gliding");
+}
+/** Glide the strip to a scroll offset, easing out (a cubic), without snapping on the way (data-gliding), landing exactly there. */
+function glideTo(el: HTMLElement, to: number, done: () => void, ms = GLIDE_MS) {
+  stopGlide(el);
+  const from = el.scrollLeft;
+  if (ms <= 0 || Math.abs(to - from) < 1) return void ((el.scrollLeft = to), done());
+  el.setAttribute("data-gliding", "");
+  let t0 = -1;
+  const step = (now: number) => {
+    if (t0 < 0) t0 = now - 1000 / 60;
+    const p = Math.min(1, (now - t0) / ms);
+    el.scrollLeft = from + (to - from) * (1 - (1 - p) ** 3);
+    if (p < 1) return void glides.set(el, requestAnimationFrame(step));
+    glides.delete(el);
+    el.removeAttribute("data-gliding");
+    done();
+  };
+  glides.set(el, requestAnimationFrame(step));
+}
+
 /** Scroll a pane vertically, as little as possible, so that an element in it is in view. */
 function nearestY(el: Element | null | false) {
   const box = el && el.closest<HTMLElement>(".pane-scroll");
@@ -299,25 +336,13 @@ export const PANE_MIN = 260;
 export let TAB = 30;
 const DESK_TAB = 30;
 export const PAGE_TAB = 44;
+/** As pages, how long a finger is held still on a pane's tab or the band above its title to pick the pane up. */
+export const HOLD_MS = 380;
+/** The touch drag's move handler (Panes' effect sets it); the handles call it from their own, blocking, touchmove listeners. */
+let handleMove: ((e: TouchEvent) => void) | null = null;
+const onHandleMove = (e: TouchEvent) => handleMove?.(e);
 /** How long the mouse rests on a covered pane before it peeks out. */
 export const PEEK_MS = 200;
-
-/**
- * Heights for the panes of one column of height h, from what each needs to show all it holds:
- * each gets that, or an equal share of what is left, whichever is less; what no pane needs goes to
- * the one that needs most. So short panes are no taller than their text, and long ones share the rest.
- */
-export function fill(h: number, needs: number[]): number[] {
-  const out = needs.map(() => 0);
-  const order = needs.map((_, i) => i).sort((a, b) => needs[a] - needs[b]);
-  let rest = h;
-  order.forEach((i, k) => {
-    const share = rest / (order.length - k);
-    out[i] = Math.floor(k === order.length - 1 ? rest : Math.min(needs[i], share));
-    rest -= out[i];
-  });
-  return out;
-}
 
 /** The panes drawn, by their id in the forest. */
 const paneEls = (el: HTMLElement) => {
@@ -359,6 +384,8 @@ export function Panes() {
   const instant = useRef(true);
   /** The follow of the latest render (the swipe handlers use it). */
   const followNow = useRef<() => void>(() => {});
+  /** As pages: a finger is on the strip. */
+  const fingers = useRef(false);
   /** The layout last drawn: pages or side by side. */
   const wasPages = useRef<boolean | null>(null);
 
@@ -422,7 +449,11 @@ export function Panes() {
         return n;
       });
       const pinned = ps.map((p) => p.classList.contains("pinned"));
-      const crowded = need.reduce((s, x) => s + Math.min(x, PANE_MIN), 0) > h;
+      // The pane to show whole: on the focused branch, or the one last on it here.
+      const here = tids.find((t) => onBranch.has(t)) ?? (tids.includes(lastIn.current.get(col)!) ? lastIn.current.get(col)! : tids[0]);
+      const k = tids.indexOf(here);
+      // As pages the pane looked at has the screen's height whenever a share would cut it short: the others fold to their tabs.
+      const crowded = crowds(h, need, PANE_MIN, pages ? k : undefined);
       let heights: number[];
       let tops: number[] = [];
       /** What the panes after each leave at the column's foot: a tab each, a pinned one its whole height. */
@@ -450,9 +481,6 @@ export function Panes() {
           if (p.style.bottom !== v) p.style.bottom = v;
         });
       } else for (const p of ps) (p.style.top = ""), (p.style.bottom = "");
-      // The pane to show whole: on the focused branch, or the one last on it here.
-      const here = tids.find((t) => onBranch.has(t)) ?? (tids.includes(lastIn.current.get(col)!) ? lastIn.current.get(col)! : tids[0]);
-      const k = tids.indexOf(here);
       const st = starts(heights);
       const want = crowded ? reveal(c.scrollTop, h - below[k], st[k], heights[k], tops[k], st[st.length - 1] + heights[heights.length - 1] - h) : 0;
       // As the focus moves, the active pane's column scrolls at once and the others once the keys pause (each brings whole panes into view, which costs a frame's painting); any other change, at once.
@@ -538,8 +566,12 @@ export function Panes() {
       const now = instant.current;
       instant.current = false;
       if (Math.abs(target - el.scrollLeft) > 1) {
+        // Not under a finger: where the strip comes to rest decides (the swipe's handlers).
+        if (fingers.current) return;
         programmatic.current = !now;
-        el.scrollTo({ left: target, behavior: now || reducedMotion() ? "auto" : "smooth" });
+        if (now || reducedMotion()) (stopGlide(el), (el.scrollLeft = target));
+        // Landed where it was sent: the scroll was the page's, and is over.
+        else glideTo(el, target, () => (programmatic.current = false));
       }
       return;
     }
@@ -628,11 +660,10 @@ export function Panes() {
      * browser has none), never per frame.
      */
     let rest: ReturnType<typeof setTimeout> | undefined;
-    let touching = false;
     const settle = () => {
       clearTimeout(rest);
-      if (!store.pages) return;
-      if (touching) return void (rest = setTimeout(settle, 120));
+      if (!store.pages || gliding(el)) return;
+      if (fingers.current) return void (rest = setTimeout(settle, 120));
       const colEls = [...el.querySelectorAll<HTMLElement>(":scope > .col")];
       const c = colEls[pageAt(el.scrollLeft, el.clientWidth, colEls.length)];
       const ours = programmatic.current;
@@ -650,10 +681,15 @@ export function Panes() {
       if (id !== undefined) store.toPane(id);
     };
     const ends = "onscrollend" in window;
-    const onTouch = (e: TouchEvent) => (touching = e.type === "touchstart" || e.touches.length > 0);
+    const onTouch = (e: TouchEvent) => {
+      fingers.current = e.type === "touchstart" || e.touches.length > 0;
+      // A finger on the strip takes it from a glide, where it is.
+      if (e.type === "touchstart") (stopGlide(el), (programmatic.current = false));
+    };
     el.addEventListener("touchstart", onTouch, { passive: true });
-    el.addEventListener("touchend", onTouch, { passive: true });
-    el.addEventListener("touchcancel", onTouch, { passive: true });
+    // Its end heard on the window: a touch whose target leaves the page (a pane that closed) ends there too.
+    window.addEventListener("touchend", onTouch, { passive: true, capture: true });
+    window.addEventListener("touchcancel", onTouch, { passive: true, capture: true });
     if (ends) el.addEventListener("scrollend", settle);
     const onScroll = (e: Event) => {
       const t = e.target as HTMLElement;
@@ -810,12 +846,13 @@ export function Panes() {
     /*
      * Dragging a pane up or down its column, by its grip (the band above its title, beside the pin
      * and the x) or its tab: a line shows where it will go; Esc cancels. The column's order is then
-     * its own (forks.ts `reorder`), kept with the panes.
+     * its own (forks.ts `reorder`), kept with the panes. With the mouse (or a pen, or a finger on a
+     * wide screen's panes) by pointer events; as pages, by touch, below.
      */
-    let drag: { tid: number; col: HTMLElement; y0: number; on: boolean; before: number | null; line: HTMLElement | null } | null = null;
+    let drag: { tid: number; col: HTMLElement; y0: number; on: boolean; before: number | null; line: HTMLElement | null; touch?: boolean } | null = null;
     let swallow = false;
     const onDown = (e: PointerEvent) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || (e.pointerType === "touch" && store.pages)) return;
       const t = e.target as HTMLElement;
       if (t.closest("[data-close], [data-pin]")) return;
       const handle = t.closest<HTMLElement>("[data-grip], .tabline");
@@ -825,17 +862,17 @@ export function Panes() {
       drag = { tid: Number(pane.dataset.tid), col, y0: e.clientY, on: false, before: null, line: null };
       handle.setPointerCapture(e.pointerId);
     };
-    const onDrag = (e: PointerEvent) => {
+    const startDrag = () => {
+      drag!.on = true;
+      unpeek();
+      wrap.classList.add("dragging");
+      drag!.line = document.createElement("div");
+      drag!.line.className = "drop-line";
+      wrap.appendChild(drag!.line);
+    };
+    /** Where the dragged pane would go with the pointer at y: the line drawn there. */
+    const dropAt = (y0: number) => {
       if (!drag) return;
-      if (!drag.on) {
-        if (Math.abs(e.clientY - drag.y0) < 5) return;
-        drag.on = true;
-        unpeek();
-        wrap.classList.add("dragging");
-        drag.line = document.createElement("div");
-        drag.line.className = "drop-line";
-        wrap.appendChild(drag.line);
-      }
       const panes = [...drag.col.querySelectorAll<HTMLElement>(":scope > .pane")];
       const mine = panes.findIndex((p) => Number(p.dataset.tid) === drag!.tid);
       const others = panes.filter((_, k) => k !== mine);
@@ -846,28 +883,146 @@ export function Panes() {
       // itself, one that was above lets it in before. So reaching any part of a pane is enough, in
       // either direction.
       let k = -1;
-      while (k + 1 < others.length && tops[k + 1] <= e.clientY) k++;
-      const at = k < 0 ? 0 : k >= mine || e.clientY >= ends[k] ? k + 1 : k;
+      while (k + 1 < others.length && tops[k + 1] <= y0) k++;
+      const at = k < 0 ? 0 : k >= mine || y0 >= ends[k] ? k + 1 : k;
       const i = at < others.length ? at : -1;
       drag.before = i < 0 ? null : Number(others[i].dataset.tid);
       const y = at === 0 ? (tops[0] ?? c.top) : ends[at - 1];
       const box = wrap.getBoundingClientRect();
-      Object.assign(drag.line!.style, { left: `${c.left - box.left}px`, width: `${c.width}px`, top: `${y - box.top - 1}px` });
+      Object.assign(drag.line!.style, { left: `${c.left - box.left}px`, width: `${c.width}px`, top: `${Math.round(Math.max(c.top, Math.min(c.bottom - 3, y)) - box.top - 1)}px` });
+      // The carried tab rides just above the finger, where it is not under it.
+      if (ghost) ghost.style.top = `${Math.round(Math.max(c.top, Math.min(c.bottom - PAGE_TAB, y0 - PAGE_TAB - 18)) - box.top)}px`;
+    };
+    const onDrag = (e: PointerEvent) => {
+      if (!drag || drag.touch) return;
+      if (!drag.on) {
+        if (Math.abs(e.clientY - drag.y0) < 5) return;
+        startDrag();
+      }
+      dropAt(e.clientY);
     };
     const end = (keep: boolean) => {
+      cancelHold();
       if (!drag) return;
       const d = drag;
       drag = null;
       d.line?.remove();
       wrap.classList.remove("dragging");
+      ghost?.remove();
+      ghost = null;
+      cancelAnimationFrame(edge);
+      edge = 0;
+      for (const p of d.col.querySelectorAll(":scope > .pane[data-lifted]")) p.removeAttribute("data-lifted");
       if (d.on) {
-        swallow = true;
+        // The click a mouse's drag ends with is not a click on the pane (a touch drag's end sends none: its touchend is held back).
+        swallow = !d.touch;
         setTimeout(() => (swallow = false), 0);
         if (keep) store.reorderPane(d.tid, d.before);
       }
     };
-    const onUp = () => end(true);
-    const onCancel = () => end(false);
+    const onUp = () => !drag?.touch && end(true);
+    const onCancel = () => !drag?.touch && end(false);
+
+    /*
+     * As pages, by touch: a press held still on a pane's tab, or on the band above its title
+     * (HOLD_MS, never moving more than a few pixels, so a swipe still turns the page and a drag down
+     * still scrolls) picks the pane up: it fades where it is, its tab rides with the finger, and the
+     * line shows where it will go. Near the column's top or foot a crowded column scrolls on its
+     * own. Lifting the finger puts it there; a second finger, or the touch being cancelled, puts it
+     * back. Only the handles listen to touchmove blocking (Chrome `onTouchMove`), and only a lifted
+     * pane's moves are held from the browser's scrolling.
+     */
+    let hold: { timer: ReturnType<typeof setTimeout>; x: number; y: number; id: number; pane: HTMLElement; col: HTMLElement } | null = null;
+    let ghost: HTMLElement | null = null;
+    let edge = 0;
+    let lastY = 0;
+    function cancelHold() {
+      if (!hold) return;
+      clearTimeout(hold.timer);
+      hold = null;
+    }
+    const lift = () => {
+      const h = hold;
+      hold = null;
+      if (!h || !store.pages || !h.pane.isConnected) return;
+      drag = { tid: Number(h.pane.dataset.tid), col: h.col, y0: h.y, on: false, before: null, line: null, touch: true };
+      startDrag();
+      wrap.classList.add("lifting");
+      h.pane.setAttribute("data-lifted", "");
+      ghost = document.createElement("div");
+      ghost.className = "drag-ghost";
+      if (h.pane.dataset.hue !== undefined) ghost.dataset.hue = h.pane.dataset.hue;
+      ghost.innerHTML = h.pane.querySelector(":scope > .tabline")?.innerHTML ?? "";
+      const c = h.col.getBoundingClientRect();
+      const box = wrap.getBoundingClientRect();
+      Object.assign(ghost.style, { left: `${c.left - box.left}px`, width: `${c.width}px` });
+      wrap.appendChild(ghost);
+      lastY = h.y;
+      dropAt(h.y);
+      try {
+        navigator.vibrate?.(8);
+      } catch {
+        /* no vibration here */
+      }
+    };
+    /** Near a crowded column's top or foot, it scrolls under the lifted pane, faster the nearer. */
+    const edgeScroll = () => {
+      edge = 0;
+      if (!drag?.touch) return;
+      const c = drag.col.getBoundingClientRect();
+      const zone = 56;
+      const v = lastY < c.top + zone ? -(c.top + zone - lastY) / zone : lastY > c.bottom - zone ? (lastY - (c.bottom - zone)) / zone : 0;
+      if (!v || !drag.col.classList.contains("crowded")) return;
+      const was = drag.col.scrollTop;
+      drag.col.scrollTop += Math.round(Math.max(-1, Math.min(1, v)) * 14);
+      dropAt(lastY);
+      if (drag.col.scrollTop !== was) edge = requestAnimationFrame(edgeScroll);
+    };
+    const onHoldStart = (e: TouchEvent) => {
+      if (!store.pages) return;
+      // A second finger: whatever was being picked up or carried goes back.
+      if (e.touches.length > 1) return void (hold || drag?.touch ? end(false) : undefined);
+      const t = e.target as HTMLElement;
+      if (t.closest("[data-close], [data-pin], [data-more]")) return;
+      const handle = t.closest<HTMLElement>("[data-grip], .tabline");
+      const pane = handle?.closest<HTMLElement>(".pane");
+      const col = pane?.parentElement as HTMLElement | undefined;
+      if (!handle || !pane || !col || col.querySelectorAll(":scope > .pane").length < 2) return;
+      const p = e.changedTouches[0];
+      cancelHold();
+      hold = { timer: setTimeout(lift, HOLD_MS), x: p.clientX, y: p.clientY, id: p.identifier, pane, col };
+    };
+    const touchOf = (e: TouchEvent, id: number) => [...e.touches].find((x) => x.identifier === id);
+    // Passive, on the strip: a press that moves before it is held long enough is a swipe or a scroll, and picks nothing up.
+    const onHoldMove = (e: TouchEvent) => {
+      if (!hold) return;
+      const p = touchOf(e, hold.id);
+      if (!p || Math.hypot(p.clientX - hold.x, p.clientY - hold.y) > 8) cancelHold();
+    };
+    // Blocking, on the handles only (Chrome's onTouchMove): a lifted pane follows the finger, and the page does not scroll.
+    handleMove = (e: TouchEvent) => {
+      if (!drag?.touch) return;
+      e.preventDefault();
+      const p = [...e.touches][0];
+      if (!p) return;
+      lastY = p.clientY;
+      dropAt(lastY);
+      if (!edge) edge = requestAnimationFrame(edgeScroll);
+    };
+    const onHoldEnd = (e: TouchEvent) => {
+      if (drag?.touch) {
+        // No click after it: the drop is all it does.
+        if (e.cancelable) e.preventDefault();
+        return end(e.type === "touchend");
+      }
+      cancelHold();
+    };
+    // The browser's own long press (a menu, a callout) has nothing to offer while a pane is held or carried.
+    const onLongPress = (e: Event) => {
+      if (!hold && !drag?.touch) return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
     const onKey = (e: KeyboardEvent) => {
       if (drag?.on && e.key === "Escape") {
         e.stopImmediatePropagation();
@@ -882,6 +1037,11 @@ export function Panes() {
       e.stopPropagation();
       e.preventDefault();
     };
+    el.addEventListener("touchstart", onHoldStart, { passive: true });
+    el.addEventListener("touchmove", onHoldMove, { passive: true });
+    el.addEventListener("touchend", onHoldEnd);
+    el.addEventListener("touchcancel", onHoldEnd);
+    window.addEventListener("contextmenu", onLongPress, true);
     // A press elsewhere puts a peeking pane back; on it, the click goes through to it (and makes it the active pane), and then it goes back.
     const onPress = (e: PointerEvent) => !peeked.some((p) => p.contains(e.target as Node)) && unpeek();
     const afterClick = () => peeked.length && requestAnimationFrame(unpeek);
@@ -894,13 +1054,14 @@ export function Panes() {
     window.addEventListener("keydown", onKey, true);
     window.addEventListener("click", onClick, true);
     return () => {
+      stopGlide(el);
       cancelAnimationFrame(frame.current);
       clearTimeout(later.current);
       clearTimeout(timer);
       clearTimeout(rest);
       el.removeEventListener("touchstart", onTouch);
-      el.removeEventListener("touchend", onTouch);
-      el.removeEventListener("touchcancel", onTouch);
+      window.removeEventListener("touchend", onTouch, { capture: true });
+      window.removeEventListener("touchcancel", onTouch, { capture: true });
       if (ends) el.removeEventListener("scrollend", settle);
       wrap.removeEventListener("scroll", onScroll, { capture: true });
       window.removeEventListener(GEOMETRY, schedule);
@@ -920,6 +1081,13 @@ export function Panes() {
       el.removeEventListener("pointercancel", onCancel);
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("click", onClick, true);
+      end(false);
+      handleMove = null;
+      el.removeEventListener("touchstart", onHoldStart);
+      el.removeEventListener("touchmove", onHoldMove);
+      el.removeEventListener("touchend", onHoldEnd);
+      el.removeEventListener("touchcancel", onHoldEnd);
+      window.removeEventListener("contextmenu", onLongPress, true);
     };
   }, []);
 
