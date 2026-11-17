@@ -222,5 +222,25 @@ export const curveFaults = (page: Page) =>
       });
       if (!near) faults.push(`${name}: starts at ${a.x},${a.y}, not at its source (${cands.length} candidates)`);
     }
+    // What peeks: its place left clear of every curve but its own; nothing left over once it is back.
+    const peeked = [...document.querySelectorAll<HTMLElement>("[data-peek]")];
+    const holes = [...document.querySelectorAll<SVGRectElement>("#ie-curve-holes rect.hole")].map((r) => ({ x: +r.getAttribute("x")! + box.left, y: +r.getAttribute("y")! + box.top, w: +r.getAttribute("width")!, h: +r.getAttribute("height")! }));
+    const under = document.querySelector<SVGGElement>(".curves g.under");
+    const over = [...document.querySelectorAll<SVGPathElement>(".curves g.over path")];
+    for (const p of peeked) {
+      const r = p.getBoundingClientRect();
+      if (!holes.some((h) => Math.abs(h.x - r.left) < 1.5 && Math.abs(h.y - r.top) < 1.5 && Math.abs(h.w - r.width) < 1.5 && Math.abs(h.h - r.height) < 1.5)) faults.push(`peeking ${p.className}: its place is not clear of the curves`);
+      if (under && under.getAttribute("mask") !== "url(#ie-curve-holes)") faults.push("peeking: the curves under it are not masked");
+    }
+    const owns = (id: string | undefined) => peeked.some((q) => q.contains(document.querySelector(`.pane[data-tid="${id}"]`)));
+    for (const p of document.querySelectorAll<SVGPathElement>(".curves g.under path")) if (owns(p.dataset.from) || owns(p.dataset.to)) faults.push(`${p.dataset.key}: belongs to what peeks, but is under it`);
+    for (const p of over) if (!owns(p.dataset.from) && !owns(p.dataset.to)) faults.push(`${p.dataset.key}: over what peeks, but not its own`);
+    const bar = document.querySelector<HTMLElement>(".pane > .selbar");
+    const barShown = !!bar && bar.style.visibility !== "hidden";
+    if (!peeked.length && holes.length > (barShown ? 1 : 0)) faults.push(`nothing peeks, but ${holes.length} holes are left in the curves`);
+    if (barShown) {
+      const r = bar!.getBoundingClientRect();
+      if (!holes.some((h) => Math.abs(h.x - r.left) < 1.5 && Math.abs(h.y - r.top) < 1.5)) faults.push("the selection bar's place is not clear of the curves");
+    }
     return faults;
   });

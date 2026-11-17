@@ -374,7 +374,7 @@ test("each fork has a colour, shared by its curve and the rule under its title; 
   expect((await curve("Simple cells")).stroke).not.toBe((await curve("Complex cells")).stroke);
   expect((await curve("Simple cells")).stroke).not.toBe((await curve("Eukaryote")).stroke);
   // The active pane's heavy ink rule is as it was.
-  expect(await page.locator(".pane.active").evaluate((el) => getComputedStyle(el, "::after").height)).toBe("3px");
+  expect(await page.locator(".pane.active").evaluate((el) => getComputedStyle(el, "::after").borderTopWidth)).toBe("3px");
   // Off: plain ink everywhere, as before colours.
   await page.keyboard.press(":");
   await page.keyboard.type("/colors off");
@@ -424,7 +424,8 @@ test("exactly one pane is active, under a heavy rule; the rest of the focused br
       [...document.querySelectorAll<HTMLElement>(".strip .pane")].map((p) => ({
         title: p.querySelector("h1, h2")?.textContent?.trim(),
         active: p.classList.contains("active"),
-        rule: getComputedStyle(p, "::after").height,
+        // The heavy rule is the top of the active pane's frame; another on the branch has a hairline.
+        rule: getComputedStyle(p, "::after").borderTopWidth !== "0px" ? getComputedStyle(p, "::after").borderTopWidth : getComputedStyle(p, "::after").height,
       })),
     );
   let m = await marks();

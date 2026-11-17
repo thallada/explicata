@@ -152,7 +152,8 @@ test("every pane of a crowded column shows at least its tab, above or below the 
     [...document.querySelectorAll<HTMLElement>(".strip .pane[data-covered], .strip .pane[data-scrolled]")].map((p) => {
       const r = p.getBoundingClientRect();
       const t = p.querySelector<HTMLElement>(".tabline .tabtitle")!.getBoundingClientRect();
-      const rule = parseFloat(getComputedStyle(p, "::after").height) || 0;
+      const a = getComputedStyle(p, "::after");
+      const rule = parseFloat(a.borderTopWidth) || parseFloat(a.height) || 0;
       return { active: p.classList.contains("active"), off: Math.abs((t.top + t.bottom) / 2 - (r.top + rule + r.top + 29) / 2) };
     }),
   );
