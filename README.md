@@ -93,7 +93,10 @@ Press `?` for every key. The short version:
   `undo`, `redo` when there is something to redo, and `menu` (libraries, jump, history, links,
   layout and settings); on its left, the library's name, which opens the libraries panel. Keys
   named in the status line or a panel's head are buttons. On a phone the selection bar sits at the
-  foot of the screen and menus rise from it, above an on-screen keyboard and the home indicator. Every item acts by pressing its key
+  foot of the screen in one row, its actions scrolling sideways (a fade at the end says there are
+  more) with its `⋯` and its × kept at the row's end, and menus rise from it, above an on-screen
+  keyboard and the home indicator. The hover preview of a link or a note is the mouse's: a tap on a
+  link only opens it, and a preview never outlives a move to another pane. Every item acts by pressing its key
   (`src/ui/press.ts`), so a click and a key cannot do different things. The first visit says, once,
   in the status line, that a click on a sentence offers actions and `?` lists the keys. Left to the
   keys: stepping by grain (`j` `k` `i`; a click or a drag goes straight there), `Tab` from mark to
@@ -121,16 +124,26 @@ Press `?` for every key. The short version:
   panes and the single column, `/view auto|column|panes` sets it: `auto` is panes side by side or
   pages by the width, `panes` side by side at any width, `column` the indented outline.
 - **On a phone: pages.** Each column of the panes view is a page as wide as the screen, its panes
-  stacked down it exactly as in a column on a wide screen (a pane not looked at folded to a tab, a
-  finger high; a pane scrolled past its title shows its tab at its top). A tap on a row, a link, a
-  "Linked from" or Related row opens its target and goes to it: the next page slides in. A swipe
+  stacked down it as in a column on a wide screen, except that the pane gone to always has the
+  page's height when a share of it would cut the pane short: the others fold to their tabs, a finger
+  high (panes short enough all to show whole stay so; a pane scrolled past its title shows its tab
+  at its top). A tap on a row, a link, a "Linked from" or Related row opens its target and goes to
+  it: the next page slides in, in about 140 ms, easing out (at once with reduced motion). A swipe
   sideways goes from page to page and makes the pane on that page the active one (the one on the
   focused branch there, else the one last visited); a swipe down a pane scrolls its text. The trail
   at the foot names the focused branch, a step per pane, each underlined in its pane's colour, the
-  one on screen in the text's ink, those opened beyond it fainter; a tap on a step goes there. Its
-  `map` button opens every open pane as an outline of the forest, indented by where each was opened
-  from: a tap goes to a pane, its pin pins it, its × closes it (Esc or a press outside puts the map
-  away). Each pane's ⋯, pin and × sit above its title, always shown. No curves are drawn (the panes
+  one on screen in the text's ink, those opened beyond it fainter; a step whose page holds more than
+  one pane has a small dot for each, top to bottom, its own filled in its colour (past four, their
+  number in a small box); a tap on a step goes there. Its `map` button opens every open pane as a
+  tree of the forest, indented by where each was opened from, a line from each pane's mark down and
+  across into each child's in the child's colour, stronger along the focused branch (an orphan has
+  none into it), the sheet scrolling when the forest is tall: a tap goes to a pane, its pin pins
+  it, its × closes it (Esc or a press outside puts the map away). Each pane's ⋯, pin and × sit
+  above its title, always shown. A press held still on a pane's tab, or on the band above its title
+  (two faint lines mark it), picks the pane up in a page it shares: it fades, its tab rides above
+  the finger, a line shows where it will go, a crowded page scrolls near its top and foot, and
+  lifting the finger puts it there (a second finger puts it back); a swipe or a scroll that starts
+  there is still a swipe or a scroll. The pane's ⋯ has Move this pane up and down too. No curves are drawn (the panes
   are never side by side): what each pane was opened from, its link's underline, a note's dotted
   rule or its row's edge and arrow, takes the pane's colour instead, the colour of the rule under the
   pane's title. Every step from pane to pane is a step in the browser's history, so Back, the button
@@ -165,8 +178,9 @@ Press `?` for every key. The short version:
   its neighbours, its column across and the pane down its column, as tall as its text needs, and
   stays out while the pointer is on it (the wheel scrolls it); a click makes it the active pane. A
   pane's grip (the band above its title, by the pin and x, shown when pointed at) or its tab drags
-  it up or down its column; Esc cancels; the column keeps that order, and a pane opened later goes in
-  just after the one before it in its own order.
+  it up or down its column; Esc cancels; `Alt+Shift+k` `Alt+Shift+j` (or the pane menu's Move this
+  pane up and down) move the active pane a place; the column keeps that order, and a pane opened
+  later goes in just after the one before it in its own order.
 - **Between panes, by keys.** `Alt+h` goes to the pane this one was opened from, `Alt+l` to one
   opened from it (the one opened from the focused row or link, if it is open, else the one last
   visited there), `Alt+k` and `Alt+j` (or `Alt+↑` `Alt+↓`, or `[` `]`) to the pane above and below
@@ -343,9 +357,11 @@ What is sent where:
   (`press.ts`); `Mouse.tsx` draws the one menu, the bar and the key hints; `Menu.tsx` the top bar
   and the libraries panel (its state in `libraries.ts`). The panes view's panes are a forest of forks (`forks.ts`, pure functions;
   the store's `trail` is its focused branch); `stack.ts` is the stacking shared by the strip and its
-  columns, `lanes.ts` orders the curves' lanes. The pages layout is the same panes (`Panes.tsx`) laid
-  out a column per page, with `Pages.tsx` (the trail and the map) and `pages.ts` (which pane a page
-  brings forward, and the history entries a pane per step, pure functions).
+  columns (and how a column shares or stacks its height), `lanes.ts` orders the curves' lanes. The
+  pages layout is the same panes (`Panes.tsx`, which also glides the strip and carries a pane held
+  by touch) laid out a column per page, with `Pages.tsx` (the trail and the map) and `pages.ts`
+  (which pane a page brings forward, the history entries a pane per step, and the map's tree lines,
+  pure functions).
 
 ## The libraries
 
