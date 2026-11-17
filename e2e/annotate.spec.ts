@@ -162,6 +162,8 @@ test("an article's annotations show wherever it is opened: from another link, fr
   await jump(page, "Recursion without names");
   await tabTo(page, "fixed-point combinator");
   await keys(page, "Enter");
+  // (Keys held while the article arrives act all at once: wait for it before Tab-ing through it.)
+  await expect(page.locator(".wiki-pane").last().locator(".wiki-text").first()).toBeVisible();
   await tabTo(page, "lambda calculus");
   await keys(page, "Enter");
   await expect(page.locator(".wiki-pane").last().locator(".wiki-head h2")).toHaveText("Lambda calculus");

@@ -326,7 +326,8 @@ test("a curve per open edge, from where each pane was opened to its title; it fo
   await nextFrames(page);
   cs = await curves(page);
   expect(edge("Eukaryote", "Bacteria")[0].cls).toContain("lost");
-  const top = (await pane(page, "Eukaryote").locator(".pane-scroll").boundingBox())!.y;
+  // (The pane, scrolled past its title, shows its tab: its edge is the tab's foot; the curve ends turned up toward the link.)
+  const top = (await pane(page, "Eukaryote").locator(".pane-scroll").boundingBox())!.y + 30;
   expect(Math.abs(edge("Eukaryote", "Bacteria")[0].a.y - top)).toBeLessThan(6);
   // Scroll the strip: the curves move with the panes.
   const was = edge("Two kinds of cell", "Simple cells")[0].b;

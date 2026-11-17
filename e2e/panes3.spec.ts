@@ -71,28 +71,33 @@ test("a click anywhere in a pane that is not text, a row or a link makes that pa
   await open(page, "Fixed points", "The idea itself");
   for (const t of ["Library", "Fixed points", "The idea itself", "Library", "The idea itself", "Fixed points"]) {
     const p = pane(page, t);
-    const b = (await p.boundingBox())!;
-    // A grid of points over the pane; those that fall on nothing that acts are clicked.
-    const spots = await p.evaluate((el) => {
-      const r = el.getBoundingClientRect();
-      const out: { x: number; y: number }[] = [];
-      for (let i = 1; i < 12; i++)
-        for (let j = 1; j < 12; j++) {
-          const x = r.left + (r.width * i) / 12;
-          const y = r.top + (r.height * j) / 12;
-          const hit = document.elementFromPoint(x, y) as HTMLElement | null;
-          if (!hit || !el.contains(hit) || hit.closest("[data-node], [data-row], a, button, [role=button], [data-more], [data-linking], [data-related], [data-target], [data-wrow], .pane-ctl, .grip, .tabline, .spine, [data-wtext], .lnk, .anchor")) continue;
-          out.push({ x, y });
-        }
-      return out;
-    });
-    expect(spots.length, t).toBeGreaterThan(3);
-    for (const s of spots.slice(0, 6)) {
-      // Away first, so each click is a change.
+    /** A grid of points over the pane; those that fall on nothing that acts. */
+    const spots = () =>
+      p.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const out: { x: number; y: number }[] = [];
+        for (let i = 1; i < 12; i++)
+          for (let j = 1; j < 12; j++) {
+            const x = r.left + (r.width * i) / 12;
+            const y = r.top + (r.height * j) / 12;
+            const hit = document.elementFromPoint(x, y) as HTMLElement | null;
+            if (!hit || !el.contains(hit) || hit.closest("[data-node], [data-row], a, button, [role=button], [data-more], [data-linking], [data-related], [data-target], [data-wrow], .pane-ctl, .grip, .tabline, .spine, [data-wtext], .lnk, .anchor")) continue;
+            out.push({ x: x - r.left, y: y - r.top });
+          }
+        return out;
+      });
+    const n = (await spots()).length;
+    expect(n, t).toBeGreaterThan(3);
+    for (let k = 0; k < Math.min(6, n); k++) {
+      // Away first, so each click is a change; then the point, measured where the pane is now.
       const other = t === "Library" ? "Fixed points" : "Library";
       await pane(page, other).locator(".pane-head h2, .top h1").first().dispatchEvent("click");
-      await page.mouse.click(s.x, s.y);
-      await expect.poll(() => activeTitle(page), `${t} at ${Math.round(s.x - b.x)},${Math.round(s.y - b.y)}`).toBe(t);
+      await still(page);
+      const s = (await spots())[k];
+      if (!s) continue;
+      const b = (await p.boundingBox())!;
+      await page.mouse.click(b.x + s.x, b.y + s.y);
+      await expect.poll(() => activeTitle(page), `${t} at ${Math.round(s.x)},${Math.round(s.y)}`).toBe(t);
     }
   }
   // A selection goes on a click elsewhere: in another pane's margin, on the top bar, and with Esc.
