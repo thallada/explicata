@@ -83,8 +83,7 @@ export class Jobs {
     };
     // First estimate: the uncached phrases in batches of 50, plus about one sense or search for every other node.
     const snap = this.o.snap();
-    const phrases = new Set(nodes.flatMap((id) => (snap.nodes[id] ? extract(snap.nodes[id].body).flatMap((c) => c.variants) : [])));
-    const uncached = wiki ? wiki.uncached([...phrases]) : 0;
+    const uncached = wiki ? wiki.uncached(phrasesOf(snap, nodes)) : 0;
     state.etaSec = Math.round(((Math.ceil(uncached / 50) + nodes.length * 0.5) * spacing) / 1000);
     this.current = state;
     const ac = (this.stop = new AbortController());
@@ -140,8 +139,7 @@ export class Jobs {
         const chunk = nodes.slice(i, i + CHUNK);
         const snap = this.o.snap();
         if (wiki) {
-          const phrases = [...new Set(chunk.flatMap((id) => (snap.nodes[id] ? extract(snap.nodes[id].body).flatMap((c) => c.variants) : [])))];
-          await wiki.lookup(phrases, { priority: "bulk", signal });
+          await wiki.lookup(phrasesOf(snap, chunk), { priority: "bulk", signal });
         }
         for (const id of chunk) {
           if (signal.aborted) return;
@@ -159,10 +157,8 @@ export class Jobs {
           state.requests = (wiki?.requests ?? 0) - r0;
           // What is left: the uncached phrases of the nodes not yet scanned, at the client's pace.
           const left = nodes.slice(state.done);
-          const snapNow = this.o.snap();
-          const phrases = new Set(left.slice(0, 200).flatMap((x) => (snapNow.nodes[x] ? extract(snapNow.nodes[x].body).flatMap((c) => c.variants) : [])));
           const scale = left.length > 200 ? left.length / 200 : 1;
-          state.etaSec = Math.round((((wiki ? Math.ceil(wiki.uncached([...phrases]) / 50) * scale : 0) + left.length * 0.5) * spacing) / 1000);
+          state.etaSec = Math.round((((wiki ? Math.ceil(wiki.uncached(phrasesOf(this.o.snap(), left.slice(0, 200))) / 50) * scale : 0) + left.length * 0.5) * spacing) / 1000);
           if (Date.now() - lastAnnounce > 500 || state.done === state.total) {
             lastAnnounce = Date.now();
             this.o.announce(state);
@@ -186,3 +182,6 @@ export class Jobs {
     }
   }
 }
+
+/** The phrases a scan of these nodes would look up, each once. */
+const phrasesOf = (snap: Snap, ids: NodeId[]) => [...new Set(ids.flatMap((id) => (snap.nodes[id] ? extract(snap.nodes[id].body).flatMap((c) => c.variants) : [])))];

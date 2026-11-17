@@ -12,7 +12,7 @@
  * model, as it does when the model writes.
  */
 import { ownerSection } from "../../src/core/links";
-import { ancestors, label, notesOf, sections, topOf, tops, type NodeId, type Snap } from "../../src/core/model";
+import { ancestors, descendants, label, notesOf, sections, topOf, tops, type NodeId, type Snap } from "../../src/core/model";
 import type { Ref } from "../../src/core/ref";
 import { clip, plain, sentences } from "../../src/core/text";
 import type { LinkVerdicts, LLM } from "../../src/llm/types";
@@ -159,7 +159,7 @@ export class Reviewer {
     const snap = this.o.snap();
     const order = new Map<NodeId, number>();
     let i = 0;
-    for (const d of tops(snap)) for (const id of [d, ...descendantsInOrder(snap, d)]) order.set(id, i++);
+    for (const d of tops(snap)) for (const id of [d, ...descendants(snap, d)]) order.set(id, i++);
     const sorted = [...list].sort((a, b) => (order.get(a.node) ?? 1e9) - (order.get(b.node) ?? 1e9) || a.range[0] - b.range[0]);
     for (let at = 0; at < sorted.length; at += BATCH) {
       if (budget.calls >= budget.max) return { ...report, fallback: `the reviewer's limit of ${budget.max} model call${budget.max === 1 ? "" : "s"} was reached` };
@@ -232,17 +232,4 @@ export class Reviewer {
       json: { task: "review-links", schema: "review" as const, system: REVIEW_SYSTEM, context: "Proposed links, grouped by tree and section.", prompt, vars: { proposals: JSON.stringify(proposals) }, effort: "low" as const, maxTokens: 8000 },
     };
   }
-}
-
-/** A node's sections and notes, depth first, in reading order. */
-function descendantsInOrder(snap: Snap, id: NodeId): NodeId[] {
-  const out: NodeId[] = [];
-  const visit = (x: NodeId) => {
-    for (const c of snap.nodes[x].children) {
-      out.push(c);
-      visit(c);
-    }
-  };
-  visit(id);
-  return out;
 }
