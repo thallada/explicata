@@ -6,12 +6,11 @@
  *                       short description, missing. 50 titles per request (the API's limit).
  *   senses(title)       the articles a disambiguation page lists, with their descriptions.
  *   suggest(prefix)     title autocomplete (REST search/title).
- *   search(query)       full-text search with snippets (REST search/page; CirrusSearch syntax).
  *   summary(title)      extract, description, thumbnail, canonical URL, revision (REST page/summary).
  *                       { cacheOnly: true } answers from the cache alone, never the network.
- *   article(title)      lead plus the section list; section(title, id) one section. The whole page
- *                       is fetched once (action=parse), split at its headings, sanitised (images
- *                       dropped), cached. { sections: true } returns every section's html too.
+ *   article(title)      lead plus the section list. The whole page is fetched once (action=parse),
+ *                       split at its headings, sanitised (images dropped), cached.
+ *                       { sections: true } returns every section's html too.
  *
  * Every request goes through one serial queue with a minimum spacing, priority for interactive
  * calls, Retry-After / 429 / 503 / maxlag handling, and a descriptive User-Agent. Results are
@@ -24,7 +23,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { dataDir, writeAtomic as write } from "./util";
-import { snippet, splitArticle } from "./wikiHtml";
+import { splitArticle } from "./wikiHtml";
 
 // ---- results ----
 
@@ -101,17 +100,6 @@ export interface TitleSuggestion {
   thumbnail: string | null;
   url: string;
 }
-export interface SearchHit {
-  title: string;
-  pageId: number;
-  description: string | null;
-  /** Plain text of the snippet. */
-  snippet: string;
-  /** The snippet with matches in <mark>, everything else escaped. */
-  snippetHtml: string;
-  thumbnail: string | null;
-  url: string;
-}
 export interface Attribution {
   title: string;
   url: string;
@@ -162,12 +150,6 @@ export interface Article {
 export interface FullArticle extends Article {
   sections: (SectionInfo & { html: string })[];
 }
-export interface Section extends SectionInfo {
-  title: string;
-  revisionId: number;
-  html: string;
-  attribution: Attribution;
-}
 
 // ---- configuration ----
 
@@ -182,7 +164,6 @@ const TTL = {
   summary: 14 * DAY,
   article: 7 * DAY,
   suggest: 1 * DAY,
-  search: 1 * DAY,
 };
 /** Spacing with a recognised contact in the User-Agent: 1 request/s, well under 200/min. */
 const SPACING_IDENTIFIED_MS = 1000;
@@ -731,37 +712,6 @@ export class WikiClient {
     });
   }
 
-  /**
-   * Full-text search (CirrusSearch). The query may use its syntax: "quoted phrases",
-   * intitle:, morelike:Title, -exclusions. Only the query is sent.
-   */
-  async search(query: string, limit = 10, o: CallOpts = {}): Promise<Result<SearchHit[]>> {
-    const q = query.replace(/\s+/g, " ").trim();
-    if (!q) return { ok: true, value: [], cached: true };
-    const n = clamp(limit, 1, 50);
-    return this.cachedSmall(`search:${n}:${q}`, TTL.search, async () => {
-      const r = await this.getJson(`${this.site}/w/rest.php/v1/search/page?${new URLSearchParams({ q, limit: String(n) })}`, o);
-      if (!r.ok) return r;
-      if (r.status !== 200 || !Array.isArray(r.json?.pages)) return unavailable("bad-response", `search/page answered ${r.status}`);
-      return {
-        ok: true,
-        cached: false,
-        value: r.json.pages.map((pg: any): SearchHit => {
-          const s = snippet(String(pg.excerpt ?? ""));
-          return {
-            title: String(pg.title),
-            pageId: Number(pg.id),
-            description: pg.description ?? null,
-            snippet: s.text,
-            snippetHtml: s.html,
-            thumbnail: absolute(pg.thumbnail?.url),
-            url: this.articleUrl(String(pg.title)),
-          };
-        }),
-      };
-    });
-  }
-
   // -- summary --
 
   /**
@@ -907,20 +857,6 @@ export class WikiClient {
           attribution: this.attribution(a.title, a.revisionId, MODIFIED),
         },
       };
-    } catch (e) {
-      return unavailable("bad-response", String(e));
-    }
-  }
-
-  /** One section, by the id from article(). */
-  async section(title: string, id: number, o: CallOpts = {}): Promise<Result<Section>> {
-    try {
-      const r = await this.loadArticle(title, o);
-      if (!r.ok) return r;
-      const a = r.value;
-      const s = id === 0 ? { id: 0, level: 1, heading: a.title, anchor: "", number: null, parent: 0, html: a.lead } : a.sections.find((x) => x.id === id);
-      if (!s) return { ok: false, reason: "missing", message: `“${a.title}” has no section ${id}` };
-      return { ...r, value: { ...s, title: a.title, revisionId: a.revisionId, attribution: this.attribution(a.title, a.revisionId, MODIFIED) } };
     } catch (e) {
       return unavailable("bad-response", String(e));
     }

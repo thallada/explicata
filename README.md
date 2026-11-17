@@ -512,7 +512,7 @@ Node ids are the library's, so one batch of ops can work anywhere in it.
 | `GET /api/l/<id>/nodes/<node>/tree[/<branch>]` | one node and everything under it, with their conflicts |
 | `GET /api/l/<id>/nodes/<node>/export[/<branch>]` | the same in the text format; header `x-skipped` counts what was left out |
 | `POST /api/l/<id>/nodes/<node>/import?name=file.md` | body: the file (2 MB at most), read in as the node's last child on main; 422 with `problems` if it does not parse |
-| `GET /api/wiki/…` | Wikipedia through the server's cache: `summary`, `article` (`&full=1` for every section), `section`, `senses`, `suggest`, `search`, `lookup` (server/wikiRoutes.ts) |
+| `GET /api/wiki/…` | Wikipedia through the server's cache: `summary`, `article` (`&full=1` for every section), `senses`, `suggest` (server/wikiRoutes.ts) |
 | `POST /api/l/<id>/links/scan` `{ node, review? }` | scan a node and record what is found as pending; with `review`, the model reviewer judges what is new, and the approved links are handed back to be made |
 | `GET /api/l/<id>/links/pending?node=<node>&subtree=1&tier=auto\|suggest&all=1&claim=1` | pending suggestions with the context a reviewer needs; `all` with every determination; `claim` hands out the approved links no page has made |
 | `POST /api/l/<id>/links/accept` / `reject` `{ ids, author? }` | link them in one commit, or record them as declined |

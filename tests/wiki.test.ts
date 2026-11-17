@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WikiClient, batches, parseRetryAfter, prepareTitle, userAgent, validContact } from "../server/wiki";
-import { sanitizeWikiHtml, snippet, splitArticle } from "../server/wikiHtml";
+import { sanitizeWikiHtml, splitArticle } from "../server/wikiHtml";
 
 // A tiny fake Wikipedia: pages, redirects, disambiguation pages.
 const PAGES: Record<string, { id: number; description?: string; disambiguation?: boolean }> = {
@@ -324,13 +324,6 @@ describe("sanitiser", () => {
     expect(sanitizeWikiHtml(html, o)).toBe("<p>t</p>");
   });
 
-  it("marks search matches and escapes the rest", () => {
-    expect(snippet(`a <span class="searchmatch">fixed</span> point &lt;b&gt;`)).toEqual({
-      text: "a fixed point <b>",
-      html: "a <mark>fixed</mark> point &lt;b&gt;",
-    });
-  });
-
   it("splits an article at its headings into a section tree", () => {
     const page =
       `<div class="mw-content-ltr mw-parser-output"><p>Lead.</p>` +
@@ -348,7 +341,7 @@ describe("sanitiser", () => {
   });
 });
 
-describe("article and section", () => {
+describe("article", () => {
   const page =
     `<div class="mw-parser-output"><p>Lead <a href="/wiki/Octopus">octopus</a>.</p>` +
     `<div class="mw-heading mw-heading2"><h2 id="A">A</h2></div><p>Alpha<script>x</script></p>` +
@@ -379,8 +372,8 @@ describe("article and section", () => {
     ]);
     expect(a.ok && a.value.attribution.text).toContain("CC BY-SA 4.0");
     expect(a.ok && a.value.attribution.revisionUrl).toBe("https://en.wikipedia.org/w/index.php?title=Thing&oldid=777");
-    const s = await w.section("thing", 1);
-    expect(s.ok && s.value.html).toBe("<p>Alpha</p>");
+    const full = await w.article("thing", { sections: true });
+    expect(full.ok && full.value.sections[0].html).toBe("<p>Alpha</p>");
     expect(calls.length).toBe(1);
     expect(calls[0].url.searchParams.get("prop")).toBe("text|tocdata|revid|displaytitle|properties");
   });

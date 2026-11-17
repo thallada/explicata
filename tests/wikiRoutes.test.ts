@@ -58,19 +58,10 @@ describe("/api/wiki", () => {
   it("validates input", async () => {
     expect((await fetch(`${base}/api/wiki/suggest`)).status).toBe(400);
     expect((await fetch(`${base}/api/wiki/suggest?q=a&limit=999`)).status).toBe(400);
-    expect((await fetch(`${base}/api/wiki/search?q=${"x".repeat(301)}`)).status).toBe(400);
-    const many = Array.from({ length: 201 }, (_, i) => `t${i}`);
-    expect((await fetch(`${base}/api/wiki/lookup`, { method: "POST", body: JSON.stringify({ titles: many }) })).status).toBe(400);
-    expect((await fetch(`${base}/api/wiki/lookup`, { method: "POST", body: "{nope" })).status).toBe(400);
+    expect((await fetch(`${base}/api/wiki/suggest?q=${"x".repeat(201)}`)).status).toBe(400);
+    expect((await fetch(`${base}/api/wiki/summary?title=${"x".repeat(256)}`)).status).toBe(400);
     expect((await fetch(`${base}/api/wiki/summary`, { method: "POST" })).status).toBe(405);
     expect((await fetch(`${base}/api/wiki/nothing`)).status).toBe(404);
-  });
-
-  it("answers lookups by GET and POST", async () => {
-    const g = await (await fetch(`${base}/api/wiki/lookup?titles=Foo|Bar`)).json();
-    expect(g.results.map((r: { status: string }) => r.status)).toEqual(["missing", "missing"]);
-    const p = await (await fetch(`${base}/api/wiki/lookup`, { method: "POST", body: JSON.stringify({ titles: ["Baz"] }) })).json();
-    expect(p).toMatchObject({ ok: true, results: [{ input: "Baz", status: "missing" }] });
   });
 
   it("serves suggestions, 404 for missing pages, 503 when offline", async () => {
@@ -78,7 +69,7 @@ describe("/api/wiki", () => {
     expect(s).toMatchObject({ ok: true, suggestions: [{ title: "Brouwer fixed-point theorem" }] });
     expect((await fetch(`${base}/api/wiki/summary?title=Nothing%20here`)).status).toBe(404);
     online = false;
-    const r = await fetch(`${base}/api/wiki/search?q=fixed`);
+    const r = await fetch(`${base}/api/wiki/suggest?q=fixed`);
     expect(r.status).toBe(503);
     expect(await r.json()).toMatchObject({ ok: false, reason: "offline" });
     online = true;
@@ -136,7 +127,7 @@ describe("/api/wiki over the mock provider", () => {
   });
 
   it("answers every route with 503 off when turned off, and leaves other paths alone", async () => {
-    for (const path of ["/api/wiki/summary?title=Octopus", "/api/wiki/lookup", "/api/wiki/anything"]) {
+    for (const path of ["/api/wiki/summary?title=Octopus", "/api/wiki/suggest?q=Oct", "/api/wiki/anything"]) {
       expect(await get(off.base, path)).toEqual({
         status: 503,
         body: { ok: false, reason: "off", message: "Wikipedia is turned off on this server (EX_WIKI=off)." },

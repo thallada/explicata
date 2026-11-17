@@ -73,7 +73,6 @@ user, so neither is used.
 | Batch title check | `GET /w/api.php?action=query&format=json&formatversion=2&redirects=1&prop=pageprops\|description&ppprop=disambiguation&titles=A\|B\|…` | "limited to 50 titles per query, or 500 for those with the `apihighlimits` right" ([API:Query](https://www.mediawiki.org/wiki/API:Query)). The answer has `normalized`, `redirects` (with `tofragment`), and `pages` with `missing`/`invalid`. A disambiguation page carries `pageprops.disambiguation`. The short description is in `description`. Pages are not returned in request order, so inputs are mapped back through normalized → redirects. |
 | Senses of a disambiguation page | same, with `generator=links&gplnamespace=0&gpllimit=max` on the one title | One request gives every linked article with its description. "Set" returned 73. |
 | Title autocomplete | `GET /w/rest.php/v1/search/title?q=…&limit=…` | Documented for this: "a typeahead search that automatically suggests relevant pages by title" ([REST reference](https://www.mediawiki.org/wiki/API:REST_API/Reference)). Returns title, description and thumbnail, limit 1–100. `action=opensearch` returns empty descriptions on Wikimedia wikis ([API:Opensearch](https://www.mediawiki.org/wiki/API:Opensearch)). `list=prefixsearch` gives titles only. The completion index is "updated once a day" ([Help:CirrusSearch](https://www.mediawiki.org/wiki/Help:CirrusSearch)). |
-| Full-text search | `GET /w/rest.php/v1/search/page?q=…&limit=…` | Excerpt with `<span class="searchmatch">`, plus description and thumbnail, in one call. `q` takes CirrusSearch syntax: `morelike:Title` (pipe for several), `intitle:`, quotes. There is no parameter for passing context, and no text can be sent other than the query. `list=search` is equivalent (`srlimit` ≤ 500). |
 | Preview | `GET /api/rest_v1/page/summary/{title}?redirect=true` | Extract, description, thumbnail, `revision`, `type: "disambiguation"`. Edge-cached (`s-maxage=1209600`), so it is cheap for Wikimedia. rest_v1 is RESTBase, which is being retired: there is no date for `page/summary` ([RESTBase/deprecation](https://www.mediawiki.org/wiki/RESTBase/deprecation)). The client falls back to `prop=extracts\|pageimages\|description\|info` if it disappears. |
 | Article by section | `GET /w/api.php?action=parse&page=…&redirects=1&prop=text\|tocdata\|revid\|displaytitle\|properties&disableeditsection=1&disablelimitreport=1&disabletoc=1` | One request for the whole page (Octopus: 480 KB raw, 69 KB after sanitising), split on the server at `div.mw-heading` boundaries and cached for 7 days. A section then costs nothing. `prop=sections` now warns "deprecated … use prop=tocdata". With `section=N`, both come back empty, so the section list cannot be had alongside one section's text. REST `/page/{title}/html` (Parsoid, with `<section>` wrappers) also works; the splitter flattens either. |
 
@@ -108,7 +107,7 @@ When text is shown in the app it must carry:
 - **Licence notice**: name the licence and link to it
   (https://creativecommons.org/licenses/by-sa/4.0/).
 - **Modifications**: one "must indicate in a reasonable fashion that the original work has been
-  modified". We remove references, boxes and images, so `article()` and `section()` return
+  modified". We remove references, boxes and images, so `article()` returns
   `attribution.modified` and an `attribution.text` that says so.
 - **Share-alike** applies to modified article text that is redistributed. If a node quotes or adapts
   article text and that text is exported or shared, that part is CC BY-SA. Linking to an
@@ -215,15 +214,15 @@ considered and set aside:
 ## 7. Caches
 
 `<EX_DATA>/wiki-cache/<lang>/titles.json` (found 30 d, missing 3 d), `small.json` (summaries 14 d,
-senses 14 d, suggest and search 1 d), `articles/` (7 d). Vectors, per library: `<EX_DATA>/libraries/<id>/vectors/<name>.json`
+senses 14 d, suggest 1 d), `articles/` (7 d). Vectors, per library: `<EX_DATA>/libraries/<id>/vectors/<name>.json`
 and `.f32`. An expired entry is still served, marked `stale`, when the network is down. The
 variables that configure all this are in the README.
 
 Notes on articles (src/core/article.ts) rely on this cache and add nothing to it: an article is
-re-read through `article?full=1`, whose answer always carries `revisionId` (and `pageId`), as
-every `section` answer does (a `summary` may not). A note records the revision it was made
-against; when the cached copy expires (7 d) and Wikipedia has a newer revision, the note is found
-again in it, or shown as detached with a link to the old revision. The browser keeps articles in
+re-read through `article?full=1`, whose answer always carries `revisionId` and `pageId` (a
+`summary` may not). A note records the revision it was made against; when the cached copy expires
+(7 d) and Wikipedia has a newer revision, the note is found again in it, or shown as detached with
+a link to the old revision. The browser keeps articles in
 memory for the page's life only, never in IndexedDB.
 
 ## 8. Link discovery as built

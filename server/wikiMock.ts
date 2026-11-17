@@ -224,7 +224,7 @@ const FIXTURES: Record<string, Fixture> = {
     ],
   },
   Eukaryote: {
-    id: 1_200_120,
+    id: 1_200_122,
     description: "Domain of life whose cells have nuclei",
     lead: [
       `The <b>eukaryotes</b> are organisms whose cells have a membrane-bound nucleus.[ref] They include all animals, plants, fungi and many single-celled organisms, the protists, and with the [[Bacteria|bacteria]] and the [[Archaea|archaea]] they make up the three domains of life. Eukaryotic cells also contain other membrane-bound compartments, such as [[Mitochondrion|mitochondria]] and the Golgi apparatus, and are typically much larger than those of prokaryotes.`,
@@ -732,24 +732,6 @@ function searchTitle(url: URL): Response {
   return json({ pages: pages.slice(0, limit) });
 }
 
-/** search/page: every word of the query in the title or text; the excerpt marks the matches. */
-function searchPage(url: URL): Response {
-  const q = (url.searchParams.get("q") ?? "").replace(/\bintitle:/gi, "").replace(/"/g, " ");
-  const limit = Number(url.searchParams.get("limit") ?? 10) || 10;
-  const words = q.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-  if (!words.length) return json({ pages: [] });
-  const pages = Object.entries(FIXTURES).flatMap(([title, f]) => {
-    const text = fullText(f);
-    const hay = `${title}\n${text}`.toLowerCase();
-    if (!words.every((w) => hay.includes(w))) return [];
-    const sentence = text.split(/(?<=\.)\s+/).find((s) => words.some((w) => s.toLowerCase().includes(w))) ?? text.slice(0, 150);
-    const re = new RegExp(`(${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "giu");
-    const excerpt = escape(sentence).replace(re, `<span class="searchmatch">$1</span>`);
-    return [{ id: f.id, key: dbKey(title), title, excerpt, matched_title: null, anchor: null, description: f.description, thumbnail: null }];
-  });
-  return json({ pages: pages.slice(0, limit) });
-}
-
 function wait(ms: number, signal?: AbortSignal | null) {
   return new Promise<void>((done, fail) => {
     const timer = setTimeout(done, ms);
@@ -777,7 +759,6 @@ export function makeMockWikiFetch(slowMs = SLOW_MS, bulkMs = 0): typeof fetch {
     const p = url.searchParams;
     if (url.pathname.startsWith("/api/rest_v1/page/summary/")) return summary(url);
     if (url.pathname === "/w/rest.php/v1/search/title") return searchTitle(url);
-    if (url.pathname === "/w/rest.php/v1/search/page") return searchPage(url);
     if (url.pathname === "/w/api.php" && p.get("action") === "parse") return parse(url);
     if (url.pathname === "/w/api.php" && p.get("action") === "query") return query(url);
     return json({ error: { code: "badrequest", info: `The mock does not answer ${url.pathname}` } }, 400);

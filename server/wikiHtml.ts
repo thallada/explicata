@@ -169,28 +169,6 @@ function tidy(html: string) {
   return html.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/** Search excerpts: keep the matches as <mark>, everything else as text. */
-export function snippet(excerpt: string): { text: string; html: string } {
-  let text = "";
-  let html = "";
-  const walk = (nodes: Node[], inMatch: boolean) => {
-    for (const n of nodes) {
-      if (n.nodeName === "#text") {
-        const v = (n as T.TextNode).value;
-        text += v;
-        html += escapeText(v);
-      } else if (isEl(n)) {
-        const m = !inMatch && classes(n).has("searchmatch");
-        if (m) html += "<mark>";
-        walk(n.childNodes, inMatch || m);
-        if (m) html += "</mark>";
-      }
-    }
-  };
-  walk(parseFragment(excerpt).childNodes, false);
-  return { text, html };
-}
-
 function headingOf(n: Node): El | null {
   if (!isEl(n)) return null;
   if (/^h[2-6]$/.test(n.tagName)) return n;

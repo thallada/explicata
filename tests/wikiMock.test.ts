@@ -61,7 +61,7 @@ describe("mock Wikipedia", () => {
     expect((await w.lookup(["No such page"]))[0]).toMatchObject({ status: "missing" });
   });
 
-  it("suggests case-insensitively by title or word prefix, and searches with marked excerpts", async () => {
+  it("suggests case-insensitively by title or word prefix", async () => {
     const w = client();
     const s = await w.suggest("LAMB");
     expect(s.ok && s.value.map((x) => x.title)).toEqual(["Lambda calculus"]);
@@ -70,9 +70,6 @@ describe("mock Wikipedia", () => {
     const merc = await w.suggest("mercury");
     expect(merc.ok && merc.value[0].title).toBe("Mercury");
     expect(merc.ok && merc.value.map((x) => x.title)).toContain("Freddie Mercury");
-    const q = await w.search("nervous system");
-    expect(q.ok && q.value.map((x) => x.title)).toEqual(["Octopus", "Cephalopod"]);
-    expect(q.ok && q.value[0].snippetHtml).toMatch(/<mark>nervous<\/mark> <mark>system<\/mark>/);
   });
 
   it("misbehaves on purpose for the offline and rate-limited titles, without poisoning later calls", async () => {
