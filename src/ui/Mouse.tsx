@@ -8,6 +8,7 @@
  * anything), then shows the menu for what is focused.
  */
 import { Fragment, type ComponentChildren } from "preact";
+import { createPortal } from "preact/compat";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { docOf, isLibraryRoot, label, staleness, type NodeId } from "../core/model";
 import { plain } from "../core/text";
@@ -404,10 +405,12 @@ function placeBar(el: HTMLElement | null, shown = false) {
   const below = first.top - h - 9 < bar + 4;
   const top = below ? last.bottom + 9 : first.top - h - 9;
   const mid = (left + right) / 2;
-  const x = Math.round(Math.max(8, Math.min(window.innerWidth - w - 8, mid - w / 2)));
+  // In the panes view it is set in its pane (so whatever covers the pane covers it), placed from the pane's box.
+  const host = el.parentElement?.classList.contains("pane") ? el.parentElement.getBoundingClientRect() : null;
+  const x = Math.round(Math.max((host?.left ?? 0) + 8, Math.min((host?.right ?? window.innerWidth) - w - 8, mid - w / 2)));
   el.classList.toggle("below", below);
-  el.style.left = `${x}px`;
-  el.style.top = `${Math.round(top)}px`;
+  el.style.left = `${x - (host?.left ?? 0)}px`;
+  el.style.top = `${Math.round(top - (host?.top ?? 0))}px`;
   el.style.setProperty("--tick", `${Math.round(Math.max(10, Math.min(w - 10, mid - x)))}px`);
   // Scrolled out of its pane or the window: out of sight with it.
   const clip = sels[0].closest(".pane-scroll")?.getBoundingClientRect();
@@ -449,11 +452,13 @@ export function SelBar() {
   if (!on) return null;
   const c = selCtx();
   const groups = barItems(c, act);
+  // In the panes view, inside the pane holding the selection: covered with it by what covers it.
+  const host = store.panes && !docked ? document.querySelector<HTMLElement>(`.strip .pane[data-tid="${store.branchNodes[store.paneAt]?.id}"]`) : null;
   const go = (it: Item) => () => {
     hideBar();
     it.run();
   };
-  return (
+  const bar = (
     <div class={`selbar${docked ? " docked" : ""}`} role="toolbar" aria-label="Ask about the selected words" ref={ref} style={docked ? undefined : { visibility: "hidden" }} onMouseDown={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()}>
       {groups.map((g, i) => (
         <Fragment key={i}>
@@ -485,6 +490,7 @@ export function SelBar() {
       )}
     </div>
   );
+  return host ? createPortal(bar, host) : bar;
 }
 
 // ---- key hints as buttons ----

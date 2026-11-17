@@ -535,6 +535,8 @@ export function App() {
   const click = (e: MouseEvent) => {
     if (store.mode === "edit") return;
     const target = e.target as HTMLElement;
+    // The selection bar sits in its pane in the panes view: its own buttons act.
+    if (target.closest(".selbar")) return;
     // A ⋯ (a row's, a pane's, the page's, a note's): its menu, for what it is on.
     const more = target.closest<HTMLElement>("[data-more]");
     if (more) return void menuAt(more, more);
