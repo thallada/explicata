@@ -172,7 +172,7 @@ async function linked(browser: Browser, dpr: number) {
   await ctx.route(/wikipedia\.org|wikimedia\.org|stanford\.edu|example\.org/, (r) => r.abort());
   const page = await ctx.newPage();
   await autoLayout(page);
-  await page.goto("/doc/the-eukaryotic-cell");
+  await page.goto("/doc/the-one-merger");
   await page.waitForSelector(".strip .pane");
   await page.evaluate(() => document.fonts.ready);
   await page.waitForFunction(() => (globalThis as any).__ie?.ready);
