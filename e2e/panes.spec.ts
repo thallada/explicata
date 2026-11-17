@@ -65,7 +65,7 @@ test("the library is the first pane, and any node of it opens in the next; reloa
   await expect.poll(() => state(page, (s) => s.focus.node)).toBe(amphidromes);
 });
 
-test("auto shows panes at 1920 px and on a laptop's 1366, one column on a phone or a narrow window; v and /view switch", async ({ page }) => {
+test("auto shows panes at 1920 px and on a laptop's 1366, the panes as pages on a phone or a narrow window; v and /view switch", async ({ page }) => {
   await open(page);
   await expect(page.locator(".app.view-panes .strip .pane")).toHaveCount(1);
   await expect(page.locator(".strip .pane.root h1")).toHaveText("Infinispand");
@@ -73,8 +73,8 @@ test("auto shows panes at 1920 px and on a laptop's 1366, one column on a phone 
   await expect(page.locator(".app.view-panes .strip .pane")).toHaveCount(1);
   for (const [width, height] of [[820, 900], [390, 800]]) {
     await page.setViewportSize({ width, height });
-    await expect(page.locator(".strip"), `${width}`).toHaveCount(0);
-    await expect(page.locator("article > .outline > .node").first()).toBeVisible();
+    await expect(page.locator(".app.view-pages .panes[data-layout=pages] .strip .pane"), `${width}`).toHaveCount(1);
+    await expect(page.locator(".trail .trail-step")).toHaveText(["Infinispand"]);
   }
   await page.setViewportSize({ width: 1920, height: 1080 });
   await expect(page.locator(".strip .pane")).toHaveCount(1);
