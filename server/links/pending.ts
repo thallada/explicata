@@ -9,8 +9,7 @@
  * one the scan no longer finds (it was linked, or rejected and so skipped) stays as a record.
  *
  * Entries are checked against the library whenever they are read, because the text moves on: one
- * whose words are gone is not listed, and one whose words moved is listed where they now are. The
- * file is the one earlier versions wrote; their entries carry no determinations and read as pending.
+ * whose words are gone is not listed, and one whose words moved is listed where they now are.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { targetKey } from "../../src/core/links";

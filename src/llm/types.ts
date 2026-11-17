@@ -9,7 +9,7 @@ export interface Req {
   task: string;
   /** Stable instructions. Cached. */
   system: string;
-  /** The document as context. Stable between edits, so cached. */
+  /** The outline as context. Stable between edits, so cached. */
   context: string;
   /** The request itself. Changes every time, so it comes last. */
   prompt: string;

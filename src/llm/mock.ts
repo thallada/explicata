@@ -18,7 +18,7 @@ function mockText(req: Req): string {
       if (v.form === "note") return `Mock note on “${q}” through the ${v.lens} lens. It is two sentences long.`;
       // Passages and new sections carry link marks ([[…]]), as a real model may: the reader never
       // sees them, and the app checks each before linking (the mock Wikipedia knows Octopus,
-      // Cephalopod and Lambda calculus; a nearby node comes with its handle).
+      // Cephalopod and Lambda calculus).
       return `Mock passage on “${q}” through the ${v.lens} lens. This is its first paragraph.\n\nThis is its second paragraph, which goes a level deeper, as far as the [[octopus]].`;
     }
     case "write":

@@ -5,7 +5,7 @@ import { defineConfig } from "@playwright/test";
 
 // IE_E2E_PORT lets two runs go side by side.
 const PORT = Number(process.env.IE_E2E_PORT ?? 4760);
-// Each run gets an empty data directory, so it starts from a freshly seeded document.
+// Each run gets an empty data directory, so it starts from a freshly seeded library.
 const data = process.env.IE_E2E_DATA ?? mkdtempSync(join(tmpdir(), "ie-e2e-"));
 process.env.IE_E2E_DATA = data;
 
