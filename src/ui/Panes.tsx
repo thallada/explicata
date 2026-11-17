@@ -1,7 +1,7 @@
 /**
  * The panes view: panes side by side, in the manner of Andy Matuschak's notes. It starts as the
  * path down from the top node; a link followed from a pane opens its target in the next pane
- * (another document's node, a Wikipedia article, a section of one), replacing what was to the
+ * (a node from anywhere in the library, a Wikipedia article, a section of one), replacing what was to the
  * right. Moving back left closes nothing: the panes stay until something else is opened from an
  * earlier pane, or q or a pane's × closes them. Earlier columns stay at the left as narrow spines
  * when later ones slide over them.
@@ -17,11 +17,11 @@
  */
 import { Component, type ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
-import { docOf, label, sections, staleness, type NodeId } from "../core/model";
+import { ancestors, label, sections, staleness, type NodeId } from "../core/model";
 import { LANES, LANE_FIRST, LANE_LAST, LANE_PITCH, laneOrder } from "./lanes";
 import { ACROSS, DOWN, mark, offsets, reveal, starts, stick, unmark, whole } from "./stack";
 import { NodeBacklinks, NodeRelated, PaneCtx, TargetRow } from "./Links";
-import { Flags, NodeBody, PendingSections, Row, TitleEditor, TopMatter } from "./Node";
+import { Abstract, Flags, NodeBody, PendingSections, Row, TitleEditor, TopMatter, isPrompt } from "./Node";
 import { kidClass, refKey, store, type Aux, type Pane as PaneNode, type PaneRef } from "./store";
 import { WikiView } from "./Wiki";
 import { article } from "./wiki";
@@ -170,9 +170,9 @@ function NodePane(props: PaneProps & { id: NodeId }) {
   const snap = store.snap;
   const n = snap.nodes[id];
   if (!n) return null;
+  // The first pane is the page, headed like the column's page (crumbs, byline, its ⋯); every other
+  // pane has a section's head, whatever node it shows.
   const top = props.root && id === store.top;
-  // A document's pane is a page of its own, headed like one.
-  const page = top || docOf(snap, id) === id;
   const kids = sections(snap, id);
   const focused = active && !store.aux && store.focus.node === id;
   const editing = store.edit?.node === id && store.edit.field === "title";
@@ -183,23 +183,24 @@ function NodePane(props: PaneProps & { id: NodeId }) {
   const forked = new Set(t.kids.flatMap((k, j) => (j !== t.pick && k.ref.kind === "node" && store.continuesFrom(k.ref, props.p) ? [k.ref.id] : [])));
   return (
     <article
-      class={`pane${top ? " root" : ""}${page && !top ? " doc" : ""}${jump ? " jumped" : ""}${n.kind === "note" ? " note-pane" : ""}${store.preview ? " preview" : ""}${paneClass(props)}`}
+      class={`pane${top ? " root" : ""}${jump ? " jumped" : ""}${n.kind === "note" ? " note-pane" : ""}${store.preview ? " preview" : ""}${paneClass(props)}`}
       {...paneAttrs(props, id)}
     >
       <Chrome props={props} title={label(snap, id)} />
       <div class="pane-scroll">
         <div class="pane-body">
           <Orphaned on={props.orphan} />
-          {page ? (
+          {top ? (
             <TopMatter id={id} />
           ) : (
             <>
-              {jump && <div class="pane-from">{docOf(snap, id) ? snap.nodes[docOf(snap, id)!].title : "the library"}</div>}
+              {/* A pane opened by a jump (a link, a search) says where its node is: the titles above it. */}
+              {jump && <div class="pane-from">{ancestors(snap, id).reverse().map((a) => label(snap, a)).join(" › ")}</div>}
               <header class={`pane-head${focused ? " focused" : ""}`} data-node={id}>
                 {editing ? <TitleEditor id={id} /> : <h2>{n.title || (n.kind === "note" ? label(snap, id) : <i class="untitled">untitled</i>)}</h2>}
                 <Flags id={id} />
               </header>
-              <NodeBody id={id} />
+              {isPrompt(snap, id) ? <Abstract id={id} /> : <NodeBody id={id} />}
             </>
           )}
           {kids.length > 0 && (

@@ -1,5 +1,5 @@
 /**
- * Scanning a document or the whole library in the background: one job at a time, a node at a
+ * Scanning a node and everything under it, or the whole library, in the background: one job at a time, a node at a
  * time, at bulk priority (a person's own requests to Wikipedia go first), with progress announced
  * and a cancel. Lookups are gathered across the next few nodes and asked together, 50 phrases a
  * request, which is most of what keeps a bulk pass affordable. A job started with `review` also has
@@ -18,9 +18,9 @@ import type { Linker, Suggestion } from "./scan";
 
 export interface JobState {
   id: string;
-  scope: "doc" | "library";
-  /** The document scanned, for a document job. */
-  doc?: NodeId;
+  scope: "node" | "library";
+  /** The node scanned (with everything under it), for a node job. */
+  node?: NodeId;
   title: string;
   state: "running" | "done" | "cancelled" | "failed";
   done: number;
@@ -61,14 +61,14 @@ export class Jobs {
   ) {}
 
   /** Start a job over these nodes (in reading order). A running job is cancelled first. */
-  start(scope: "doc" | "library", nodes: NodeId[], title: string, doc?: NodeId, review = false): JobState {
+  start(scope: "node" | "library", nodes: NodeId[], title: string, node?: NodeId, review = false): JobState {
     this.cancel();
     const wiki = this.o.wiki();
     const spacing = wiki?.spacingMs ?? 0;
     const state: JobState = {
       id: Math.random().toString(36).slice(2, 10),
       scope,
-      ...(doc ? { doc } : {}),
+      ...(node ? { node } : {}),
       title,
       state: "running",
       done: 0,

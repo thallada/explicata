@@ -16,7 +16,7 @@
  */
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { importDoc } from "../src/core/library";
+import { importTree } from "../src/core/seed";
 import { Doc, ancestorsBelowRoot, sections, type NodeId, type Snap } from "../src/core/model";
 import { embedder } from "../server/embed";
 import { extract } from "../server/links/extract";
@@ -35,7 +35,7 @@ const LABELS = resolve("tests/fixtures/link-labels.json");
 // The whole starter library, so that titles under other tops can be matched as they would be.
 const doc = Doc.library("eval");
 const byFile = new Map<string, NodeId>();
-for (const f of readdirSync("library").filter((x) => x.endsWith(".md")).sort()) byFile.set(f.replace(/\.md$/, ""), importDoc(doc, readFileSync(join("library", f), "utf8"), f, { creator: "eval" }));
+for (const f of readdirSync("library").filter((x) => x.endsWith(".md")).sort()) byFile.set(f.replace(/\.md$/, ""), importTree(doc, readFileSync(join("library", f), "utf8"), f, { creator: "eval" }));
 const snap = doc.snap();
 
 const words = (s: string) => s.split(/\s+/).filter(Boolean).length;

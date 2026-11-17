@@ -81,8 +81,8 @@ export interface SelCtx {
   note?: boolean;
   /** A suggested link on these words: what it would link to. */
   suggestion?: string;
-  /** The node's Related list, numbered 1–5. */
-  related?: { title: string; doc?: string }[];
+  /** The node's Related list, numbered 1–5, each with where it is. */
+  related?: { title: string; where?: string }[];
   panes: boolean;
 }
 
@@ -125,7 +125,7 @@ export function selectionEntries(c: SelCtx, act: Act): Entry[] {
     SEP,
     !c.article && !c.link && !c.note && key(act, "Link to…", "w"),
     related.length > 0 && head("Link to a related section"),
-    ...related.map((r, i) => key(act, r.title, String(i + 1), { sub: r.doc })),
+    ...related.map((r, i) => key(act, r.title, String(i + 1), { sub: r.where })),
     SEP,
     { t: "choices", label: "Select", options: [{ label: "less", key: "H", run: () => act.press("H") }, { label: "more", key: "L", run: () => act.press("L") }] },
   ]);
@@ -143,15 +143,19 @@ export interface NodeCtx {
   locked: boolean;
   /** It has a target of its own (L opens it). */
   target: boolean;
-  /** The library itself: nothing around it to add after, move among or delete it from. */
+  /** The library itself: nothing around it to add after, move among, copy or delete it from. */
   library: boolean;
-  /** A document's top. */
-  doc: boolean;
   generating: boolean;
 }
 
+/**
+ * A node's menu, the same for a row, a pane's head and a page's head. What acts on the node and
+ * everything under it (move under, copy, export, import under it, find links) acts on the
+ * section, so a note's menu leaves it out.
+ */
 export function nodeEntries(c: NodeCtx, act: Act): Entry[] {
   const fixed = c.library;
+  const tree = !c.note;
   return tidy([
     head(c.stale ? `${c.title} · ${c.stale === "parent" ? "its parent changed" : "its sections changed"}` : c.title),
     c.stale && key(act, "Bring it in line", "R", { sub: c.locked ? "locked: the model will not rewrite it" : "the model rewrites it to match", disabled: c.locked || !c.generating }),
@@ -162,8 +166,8 @@ export function nodeEntries(c: NodeCtx, act: Act): Entry[] {
     key(act, "Write more", "e"),
     key(act, "Edit text", "c"),
     key(act, "Rename", "r"),
-    key(act, c.library ? "Add a document" : "Add a section inside", "a"),
-    !fixed && !c.note && key(act, c.doc ? "Add a document after" : "Add a section after", "A"),
+    key(act, "Add a section inside", "a"),
+    !fixed && !c.note && key(act, "Add a section after", "A"),
     SEP,
     key(act, "Ask the editor…", ":"),
     c.generating && { t: "item", label: "Research on the web…", keyText: "/research", run: () => act.prompt("/research ") },
@@ -171,23 +175,19 @@ export function nodeEntries(c: NodeCtx, act: Act): Entry[] {
     c.target && key(act, "Open its target", "L"),
     SEP,
     !fixed && { t: "choices", label: "Move", options: [{ label: "up", key: "K", run: () => act.press("K") }, { label: "down", key: "J", run: () => act.press("J") }, { label: "in", key: ">", run: () => act.press(">") }, { label: "out", key: "<", run: () => act.press("<") }] },
+    !fixed && tree && key(act, "Move under…", "M", { sub: "any node in the library, with all under it" }),
     c.note && key(act, "Change its form", "f", { sub: "inline · margin · inset" }),
     key(act, "Open everything below", "o"),
     key(act, "Collapse everything", "O"),
     !fixed && key(act, "Lock", "p", { checked: c.locked, sub: "the model will not rewrite it" }),
     !c.library && key(act, "Show only this", "z", { sub: "hoist it: h or Esc at its top steps out" }),
     SEP,
-    !fixed && key(act, "Delete", "D", { sub: "u undoes" }),
-  ]);
-}
-
-/** A document's own head: the node's items, and the document's. */
-export function pageEntries(c: NodeCtx, act: Act): Entry[] {
-  return tidy([
-    ...nodeEntries(c, act),
+    tree && { t: "item", label: "Find links here", keyText: "/linkhere", sub: "in it and everything under it", run: () => act.command("/linkhere") },
+    tree && !fixed && { t: "item", label: "Save a copy", keyText: "/duplicate", sub: "just after it", run: () => act.command("/duplicate") },
+    tree && { t: "item", label: "Export as .md", keyText: "/export", run: () => act.command("/export") },
+    tree && { t: "item", label: "Import a .md file into it…", keyText: "/import", run: () => act.command("/import") },
     SEP,
-    c.doc && { t: "item", label: "Save a copy", keyText: "/duplicate", run: () => act.command("/duplicate") },
-    c.doc && { t: "item", label: "Export as .md", keyText: "/export", run: () => act.command("/export") },
+    !fixed && key(act, "Delete", "D", { sub: "u undoes" }),
   ]);
 }
 
@@ -202,7 +202,7 @@ export interface PaneCtx {
 }
 
 export function paneEntries(c: PaneCtx, act: Act): Entry[] {
-  const own = c.node ? (c.node.doc || c.node.library ? pageEntries(c.node, act) : nodeEntries(c.node, act)) : [head(c.article ?? "Wikipedia"), key(act, "Open on wikipedia.org", "W")];
+  const own = c.node ? nodeEntries(c.node, act) : [head(c.article ?? "Wikipedia"), key(act, "Open on wikipedia.org", "W")];
   return tidy([
     ...own,
     SEP,
@@ -243,8 +243,6 @@ export interface TopCtx {
   /** Where each fork's colour shows in the panes view (`/colors`). */
   colors: "line" | "top" | "edge" | "off";
   panes: boolean;
-  /** A document is open (its links can be looked for and reviewed). */
-  doc: boolean;
   canRedo: boolean;
 }
 
@@ -253,15 +251,15 @@ export function topEntries(c: TopCtx, act: Act): Entry[] {
   const auto = (v: TopCtx["autolink"], label: string): Choice => ({ label, on: c.autolink === v, run: () => act.command(`/autolink ${v}`) });
   const setting = (label: string, name: string, on: boolean, sub?: string): Item => ({ t: "item", label, sub, keyText: `/${name}`, checked: on, run: () => act.command(`/${name} ${on ? "off" : "on"}`) });
   return tidy([
-    key(act, "Documents…", "m"),
     key(act, "Jump to a section…", "/"),
     key(act, "History and branches", "g"),
     SEP,
     key(act, "Undo", "u"),
     key(act, "Redo", "U", { disabled: !c.canRedo }),
     SEP,
-    c.doc && key(act, "Links found: review and reverse", "S"),
-    c.doc && { t: "item", label: "Find links in this document", keyText: "/linkdoc", run: () => act.command("/linkdoc") },
+    key(act, "Links found: review and reverse", "S", { sub: "in the node you are on and under it; on the root, the library" }),
+    { t: "item", label: "Find links in the whole library", keyText: "/linkall", run: () => act.command("/linkall") },
+    { t: "item", label: "Find links here", keyText: "/linkhere", sub: "in the node you are on and everything under it", run: () => act.command("/linkhere") },
     SEP,
     { t: "choices", label: "Layout", options: [view("auto"), view("column"), view("panes")] },
     { t: "choices", label: "Links found", options: [auto("review", "review"), auto("suggest", "suggest"), auto("on", "link sure"), auto("off", "off")] },

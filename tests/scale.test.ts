@@ -86,7 +86,7 @@ describe("a large library", () => {
     writeFileSync(join(data, "library", "main.loro"), bytes);
     t = performance.now();
     const store = new LibraryStore(data, () => {}).open();
-    expect(store.list()).toHaveLength(100);
+    expect(store.titles()).toHaveLength(100);
     const serverStart = performance.now() - t;
 
     // The backlinks index follows every edit below; it is built once, here.

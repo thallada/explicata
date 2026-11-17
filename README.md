@@ -5,10 +5,11 @@ phrase and word can be opened further. The first levels are written ahead of tim
 instantly; past them, a model writes the expansion on request. Everything is editable, by you or
 by a model, and the tree is versioned like git.
 
-All documents live in one library: a single versioned tree whose root is the library and whose
-sections are the documents, so a node can move from one document to another and reading goes from
-one to the next without closing anything. The first document is this project describing itself,
-grown from the prompt that started it; a set of starter documents (`library/*.md`) comes with it.
+Everything is a node of one library: a single versioned tree whose root is the library itself.
+Any node, with everything under it, can be moved under any other, copied, saved to a file, or
+given a file's tree under it, and reading goes from one place to the next without closing
+anything. The first tree is this project describing itself, grown from the prompt that started it;
+a set of starter trees (`library/*.md`) comes with it.
 
 ## Run it
 
@@ -32,8 +33,8 @@ use on their own machine.
 | `CLAUDE_CODE_OAUTH_TOKEN` | unset | A subscription token, used when no API key is set. A token put in `ANTHROPIC_API_KEY` by mistake is moved here. |
 | `IE_MODEL` | `claude-opus-5-5` | Model for every call. |
 | `IE_LLM` | `claude` with a key, `subscription` with a token, else `off` | `mock`: a deterministic stand-in (the tests). |
-| `IE_DATA` | `.data` | Where the library and its caches are kept. Delete it to start again from the seed and the starter documents. |
-| `IE_LIBRARY` | `library` | Starter documents, each imported once. |
+| `IE_DATA` | `.data` | Where the library and its caches are kept. Delete it to start again from the seed and the starter trees. |
+| `IE_LIBRARY` | `library` | Starter trees (`.md` files in the text format), each imported once. |
 | `IE_USER` | your login name | The name on commits the server makes for you (the page lets you change yours with `/user`). |
 | `IE_WIKI` | `live` | `mock`: built-in test articles, no network (the browser tests); `off`: every `/api/wiki/*` route answers 503. |
 | `IE_HOSTS` | (none) | Extra host names the dev server answers to, comma-separated. `localhost` and `*.ts.net` (Tailscale) are always allowed. |
@@ -41,7 +42,7 @@ use on their own machine.
 | `IE_WIKI_CONTACT` | unset | An email address, an `https://` URL or `User:Name` for the User-Agent of Wikipedia requests. Without it requests are spaced 6.5 s apart (the page says so once, the first time it is slow); with it, 1 s. Nothing else about you is sent. |
 | `IE_WEB` | `on` when a model is configured | `off` takes web search and fetch away from the editor agent, whatever the page asks. |
 | `IE_WEB_SEARCHES`, `IE_WEB_FETCHES` | `5`, `5` | Searches and page reads one request to the editor may make. |
-| `IE_REVIEW_CALLS` | `50` | Model calls the link reviewer may make in one `/linkdoc` or `/linkall` (each call judges up to 60 links). What is left past the cap waits for you. |
+| `IE_REVIEW_CALLS` | `50` | Model calls the link reviewer may make in one `/linkhere` or `/linkall` (each call judges up to 60 links). What is left past the cap waits for you. |
 | `IE_EMBED` | on | Local embeddings for link discovery (bge-small, loaded on first use in a worker thread, about 560 MB of memory). `off`: links are found by text alone. `fake`: hashed words, no download (the tests). |
 | `IE_EMBED_MODEL` | `Xenova/bge-small-en-v1.5` | Downloaded once into `IE_DATA/models/`. `Snowflake/snowflake-arctic-embed-xs` is a drop-in alternative. |
 | `IE_EMBED_THREADS` | `4` | ONNX threads for the embedding model. |
@@ -66,15 +67,18 @@ Press `?` for every key. The short version:
 - `c` edits, `r` renames, `a` adds, `D` deletes, `u` undoes (the last edit made in this tab,
   wherever it was). `p` locks a node: the model never rewrites a locked node (your own edits lock
   it). Locking is not pinning: a pin (`P`) keeps a pane open in the panes view. On a node, `:` hands an instruction to the editor agent; `Esc` stops it.
-- `g` opens history: commits, branches, conflicts. `f` shows only what touched the current
-  document; `r` reverts the current document to a commit, leaving the rest of the library alone.
-- The library is the first page. `l` or `Enter` opens a document in place; `h` or `Esc` at its top
-  steps back out. `/` jumps to any section in any document.
-- `m` (or a click on the title) opens the documents menu: type to filter, `Enter` opens. `Esc`
-  moves to the list, where `n` makes a document, `r` renames, `s` duplicates, `D` deletes (`u`
-  brings it back), `x` saves it as a `.md` file and `i` imports one (dropping a file on the menu
-  works too). From the command bar: `/new`, `/open`, `/rename`, `/duplicate`, `/export`,
-  `/import`. All of these are ordinary edits of the library, made in the browser's replica.
+- `g` opens history: commits, branches, conflicts. `f` shows only what touched the node you are on
+  and what is under it; `r` reverts that node and what is under it to a commit, leaving the rest of
+  the library alone (on the library root, the whole library goes back).
+- The library root is the first page, a node like any other: `l` or `Enter` opens one of its
+  sections in place, `a` adds one, `z` makes a node the whole page and `h` or `Esc` at its top steps
+  out to its parent's page. `/` jumps to any section anywhere in the library.
+- What acts on a node and everything under it acts on the node you are on (the focused section,
+  or the one a focused note or selection is in), anywhere in the tree: `M` moves it under any other
+  node (a picker like the jump box; the library root is offered too), `/duplicate [title]` copies
+  it just after itself, `/export` saves it as a `.md` file, `/import` reads a `.md` file into it as
+  its last child, `/linkhere` looks for links in it. Each is in the `⋯` menu of any node, and each
+  is an ordinary edit of the library, made in the browser's replica (`u` undoes it).
 - Edits are saved as they are made; the top bar says `saved` once the server has them all.
 - **With a mouse or a finger.** Everything a reader needs is reachable without the keys, and each
   control names its key, so the mouse teaches the keyboard. A click on a sentence selects it and a
@@ -84,8 +88,8 @@ Press `?` for every key. The short version:
   on words, a row, a link, a note or a pane opens what can be done with it, Copy first (Shift+right-
   click is the browser's own menu); so does the `⋯` beside a row, a pane's pin, a page's byline or a
   note, shown only when pointed at, and a stale flag. The top bar, which stays at the top, has
-  `undo`, `redo` when there is something to redo, and `menu` (documents, jump, history, links,
-  layout and settings). Keys named in the status line or a panel's head are buttons. On a phone the
+  `undo`, `redo` when there is something to redo, and `menu` (jump, history, links, layout and
+  settings); on its left, the library's name. Keys named in the status line or a panel's head are buttons. On a phone the
   bar sits at the foot of the screen and menus rise from it. Every item acts by pressing its key
   (`src/ui/press.ts`), so a click and a key cannot do different things. The first visit says, once,
   in the status line, that a click on a sentence offers actions and `?` lists the keys. Left to the
@@ -94,15 +98,16 @@ Press `?` for every key. The short version:
   that no menu lists (`/branch`, `/switch`, `/merge`, `/user`, `/link`, …), which the menu's
   Command line… opens for typing.
 - On a window 900 px wide or more, a laptop's too, the page opens as panes side by side, after
-  Andy Matuschak's notes: the library, the open document, its open sections. `v` switches between
+  Andy Matuschak's notes: the library, then each open node in a pane of its own. `v` switches between
   panes and the single column, `/view auto|column|panes` sets it.
 - **Opening.** `Enter`, `l` or a click on a row, a link, a link in an article, or a "Linked from",
   "Mentioned in" or Related row opens its target in the next column, beside what is already open
   there (so do Ctrl-, Cmd- and middle clicks); `Shift+Enter` or a Shift-click opens it in place of
   the focused branch's pane there, closing that pane and what was opened from it. Opening what is
   open already focuses it; a second `Enter` on an open row keeps it (closing is `q`'s or the x's).
-  A document chosen in the menu, or by `/open`, opens in place of the one open. Moving back left
-  with `h` closes nothing.
+  The first pane is the page, headed with its crumbs and byline; every other pane has a section's
+  head, whatever node it shows, and one opened by a jump names the titles above it. Moving back
+  left with `h` closes nothing.
 - **Columns.** Column d holds every pane at depth d, top to bottom, in the order of what they were
   opened from: by where their parents stand, then by where in the parent each was opened from, so a
   pane opened from higher up stands higher (and curves cross as little as they can). A column divides
@@ -176,7 +181,7 @@ Press `?` for every key. The short version:
   write a note on the words, which is a note like any other (`Enter` steps into it; `c`, `D`, `f`,
   `u`, `:` the editor). Wikipedia's text itself cannot be edited: keys that would edit it say why not. The notes
   belong to the article, so they show wherever it is opened. The library keeps a node per annotated
-  article in a container that is not a document (not listed, never scanned for links, never
+  article in a container that is not one of the root's sections (not listed, never scanned for links, never
   reconciled); the article text stays in the server's cache. Each note records its section, its
   words, a little text either side and the revision; in a later revision it is found again (its
   section first, then anywhere, then ignoring case and punctuation), and if its words are gone it
@@ -185,13 +190,13 @@ Press `?` for every key. The short version:
 - To link by hand, select words (`i`, widen with `H` `L`) and press `w`: the picker offers library
   sections and notes, Wikipedia articles and, for a pasted address, the web page. `w` on a link
   retargets it, `D` removes it (for good: see below); `:/link target` and `:/unlink` do the same.
-- A link to a deleted node stays in the text, marked broken, with the document and section titles
-  it pointed to, so undoing the delete finds it again.
+- A link to a deleted node stays in the text, marked broken, with the titles down to it from the
+  library root, so undoing the delete finds it again.
 
 ### Links found for you
 
 - Whenever text is written (an edit saved, text a model wrote, a file imported) the server scans it
-  in the background: phrases that are another section's title, sections of other documents close in
+  in the background: phrases that are another section's title, sections in other top-level trees close in
   meaning, and Wikipedia articles, each checked against the text. These scans ask Wikipedia only
   after anything a person is waiting for.
 - What is found is **reviewed by the model** (`/autolink review`, the default when a model is
@@ -207,7 +212,8 @@ Press `?` for every key. The short version:
   declines it (remembered in the node, on every replica). `/autolink suggest` leaves every
   candidate to you; `/autolink on` makes the scanner's surest links unreviewed (they measured 0.84
   precision on unseen documents); `/autolink off` scans nothing by itself.
-- `S` opens the **links list** of the document, beside the text: every link found or made, what
+- `S` opens the **links list** of the node you are on and everything under it (on the library
+  root, of the whole library), beside the text: every link found or made, what
   was rejected and what waits, each with who decided (the reviewer or you) and the reviewer's
   reason. `1` `2` `3` (or a click) show or hide linked · rejected · pending, with their counts;
   rejected is hidden at first. `j` `k` move, and the row's words are selected in the text; `y`
@@ -219,9 +225,10 @@ Press `?` for every key. The short version:
   note that also links keeps the note's text).
 - In the body editor `[[` opens a completer (library titles, then Wikipedia). A bare `[[term]]`
   left in the text is looked up on save.
-- Under the node being read, **Related** lists sections of other documents close in meaning.
+- Under the node being read, **Related** lists sections elsewhere in the library close in meaning.
   `1`–`5` with words selected links them to that row; on the node, goes there.
-- `/linkdoc` and `/linkall` scan the document or the library in the background, with progress in
+- `/linkhere` and `/linkall` scan the node you are on with everything under it, or the whole
+  library (as `/linkhere` does on the library root), in the background, with progress in
   the status line, the reviewer's calls counted against the cap (`/linkcancel` stops; what was
   reviewed is kept, and what was approved is linked).
 - A model writing a note or sections is given a few nearby library nodes and may mark phrases
@@ -248,7 +255,7 @@ What is sent where:
 
 - **With an API key**, searches and fetches are Anthropic's server tools, run by Anthropic during
   the call (pages are fetched from Anthropic's servers). Fetch may only read addresses from the
-  request, the document sent with it, or an earlier search or fetch of the run; dynamic filtering
+  request, the outline sent with it, or an earlier search or fetch of the run; dynamic filtering
   (which runs code) is off.
 - **On a subscription**, Claude Code is given exactly WebSearch and WebFetch. WebFetch fetches the
   page **from this machine** and a small model summarises it. A guard in the server refuses every
@@ -266,7 +273,7 @@ What is sent where:
   parent text it was last reconciled with; a mismatch makes it stale in that direction. A person's
   edits lock a node: flagged when stale (LOCKED beside it), never rewritten. `p` locks or unlocks
   one by hand; the flag keeps its old name, `pinned`, in the data and the op API, so existing
-  libraries keep their locks. The library and its documents are not reconciled with each other.
+  libraries keep their locks. The library root and its sections are not reconciled with each other.
 - **Snapshots are patched, not rebuilt**: a change re-reads only the nodes it wrote, so an edit
   costs what it touches, whatever the size of the library.
 - **`src/core/repo.ts`** Every commit records the SHA-256 of the tree, so any checkout can be
@@ -274,14 +281,14 @@ What is sent where:
   node by node and what a character merge cannot see becomes a conflict record.
 - **`src/llm/`** Prompts and the tasks built on them: expand a selection, deepen a leaf, cascade
   after an edit (a resolver decides how far up), resolve conflicts, and the editor agent, which
-  works on a fork and merges back. A prompt carries the focused node's document only.
+  works on a fork and merges back. A prompt carries the outline of the focused node's top-level tree only.
 - **`src/core/ref.ts`, `src/core/links.ts`** Targets, the backlinks index, finding a node target
   again, `applyLinks`, which links a batch of spans in one commit, and the phrase key a decline
   records.
 - **`src/core/article.ts`, `src/ui/articleText.ts`** Notes on Wikipedia articles: the article
   nodes, anchors and finding them again in a new revision; an article's HTML as text to select in.
-- **`src/core/format.ts`, `seed.ts`, `library.ts`** The text format, writing a parsed tree into the
-  library, and the document operations and addresses.
+- **`src/core/format.ts`, `seed.ts`, `address.ts`** The text format, writing a parsed tree into the
+  library under any node (an import), and a node's address.
 - **`server/`** Relays updates between replicas and persists them (`library.ts`), proxies model
   calls (`claude.ts`, `subscription.ts`, `usage.ts`, `web.ts`), Wikipedia (`wiki.ts`, `wikiHtml.ts`,
   `wikiRoutes.ts`, `wikiMock.ts`), local embeddings (`embed.ts`), link discovery and its model reviewer (`links/`), and
@@ -299,28 +306,24 @@ On disk:
 
 ```
 IE_DATA/library/<branch>.loro      the library, one Loro snapshot per branch
-IE_DATA/library.json               starter documents already imported
+IE_DATA/library.json               starter files already imported
 IE_DATA/links/pending.json         link suggestions, the reviewer's verdicts and your decisions (derived)
 IE_DATA/vectors/nodes.*            the library's sections as vectors (derived)
 IE_DATA/wiki-cache/                Wikipedia answers (derived)
 IE_DATA/models/                    the embedding model
 ```
 
-A document is a section of the library root; nothing else marks it. Its name in an address is
-made from its title (so it changes with it); nothing of it is stored.
-
 | | |
 |---|---|
-| `/` | the library |
-| `/doc/<name>` | a document |
-| `/doc/<name>/<node id>` | a node in it (the id is what counts: a moved node is still found) |
-| `/n/<node id>` | any node |
+| `/` | the library root |
+| `/n/<node id>` | any other node (by its id alone, so a moved or renamed node is still found) |
 | `/w/<lang>/<title>` | a Wikipedia article as a page of its own (the column) |
 
-The address follows the focus; opening a document or jumping makes a history entry.
+The address follows the focus; changing the page (hoisting, stepping out) or jumping makes a
+history entry. An address that names nothing, or one from before (`/doc/…`), shows the library.
 
 On startup every `library/*.md` whose file name has not been imported before is
-imported at the end of the library, so a starter document you delete stays deleted. A file that
+imported at the end of the library, so a starter tree you delete stays deleted. A file that
 does not parse is logged and skipped.
 
 A data directory from an older layout (one database per document under `IE_DATA/docs/`, or a
@@ -334,7 +337,7 @@ saves each as a `.md` file.
 Used for the starter library and for export and import.
 
 ```
-# Document title
+# Title of the tree's top
 
 Root text: paragraphs separated by blank lines. Inline markup is only *emphasis* and `code`.
 
@@ -368,7 +371,8 @@ titles from the library root (`./Section` below the top of the file, `^"quote"` 
 or an `http(s)` address with an optional title. A target containing `: ` is quoted; in a path `\/`,
 `\^` and `\\` escape a slash, a caret and a backslash. Wrapped lines join with a space; a line
 ending in `\` keeps its break; a text line starting with `#`, `^` or `\` is written with a `\` in
-front. Imported documents are written as the model, all reconciled, so nothing starts stale.
+front. Imported trees are written as the model, all reconciled, so nothing starts stale; an import
+goes under any node, and a path below the file's top (`./…`) is stored from the library root.
 
 Export writes each note with the current text of its anchor; orphaned notes and sections under a
 note have no place in the format and are left out and counted. Export then import gives back the
@@ -376,38 +380,34 @@ same tree.
 
 ### HTTP API
 
-`<branch>` defaults to `main`. Node ids are the library's, so one batch of ops can span documents.
+`<branch>` defaults to `main`. Node ids are the library's, so one batch of ops can work anywhere in it.
 
 | | |
 |---|---|
 | `GET /api/tree[/<branch>]` | the whole library as JSON, with conflicts and recent history |
 | `POST /api/ops[/<branch>]` | `{ ops, message?, author?, actor? }`, applied as one commit. `create` and `update` take `ref`: `{ "kind": "wiki", "title", "lang" }`, `{ "kind": "node", "id", "doc", "path" }` or `{ "kind": "url", "url", "title" }`; `"ref": null` removes it |
-| `GET /api/docs` | the documents, in library order: `{ node, slug, title, excerpt }` (`slug`: the name made from the title) |
-| `POST /api/docs` `{ title }` | a new blank document |
-| `POST /api/docs/import?name=file.md` | body: the file (2 MB at most); 422 with `problems` if it does not parse |
-| `GET` / `PATCH {title}` / `DELETE /api/docs/<name or node id>` | read, rename, delete (undoable) |
-| `POST /api/docs/<name or node id>/duplicate` `{ title }` | a copy of the document |
-| `GET /api/docs/<name or node id>/export[/<branch>]` | the text format; header `x-skipped` counts what was left out |
-| `GET /api/docs/<name or node id>/tree[/<branch>]`, `POST /api/docs/<name or node id>/ops[/<branch>]` | one document's subtree with its conflicts; ops as above |
+| `GET /api/nodes/<id>/tree[/<branch>]` | one node and everything under it, with their conflicts |
+| `GET /api/nodes/<id>/export[/<branch>]` | the same in the text format; header `x-skipped` counts what was left out |
+| `POST /api/nodes/<id>/import?name=file.md` | body: the file (2 MB at most), read in as the node's last child on main; 422 with `problems` if it does not parse |
 | `GET /api/wiki/…` | Wikipedia through the server's cache: `summary`, `article` (`&full=1` for every section), `section`, `senses`, `suggest`, `search`, `lookup` (server/wikiRoutes.ts) |
 | `POST /api/links/scan` `{ node, review? }` | scan a node and record what is found as pending; with `review`, the model reviewer judges what is new, and the approved links are handed back to be made |
-| `GET /api/links/pending?doc=<name or node id>&tier=auto\|suggest&all=1&claim=1` | pending suggestions with the context a reviewer needs; `all` with every determination; `claim` hands out the approved links no page has made |
+| `GET /api/links/pending?node=<id>&subtree=1&tier=auto\|suggest&all=1&claim=1` | pending suggestions with the context a reviewer needs; `all` with every determination; `claim` hands out the approved links no page has made |
 | `POST /api/links/accept` / `reject` `{ ids, author? }` | link them in one commit, or record them as declined |
 | `POST /api/links/decide` `{ ids, link, by }` | record a person's decision made in their own replica |
-| `POST` / `GET` / `DELETE /api/links/jobs` `{ scope: "doc" \| "library", doc?, review? }` | a background scan (reviewed, with `review`): start, progress, cancel |
+| `POST` / `GET` / `DELETE /api/links/jobs` `{ scope: "node" \| "library", node?, review? }` | a background scan (reviewed, with `review`): start, progress, cancel |
 | `GET /api/links/related?node=`, `/nearby?node=`, `/status` | the Related list, the nearby list a model is given, the scanner's state |
 | `GET /api/state`, `/api/usage`, `/api/events`, `/api/branch/<b>`, `POST /api/sync/<b>`, `POST /api/llm/…` | what the page uses |
 
 An outside agent reads and writes with the same ops the keyboard uses:
 
 ```sh
-curl localhost:4747/api/docs/the-tides/tree
+curl localhost:4747/api/nodes/<node id>/tree
 curl localhost:4747/api/ops -H 'content-type: application/json' -d '{
   "author": "my-agent", "message": "Add a remark",
   "ops": [{ "op": "create", "parent": "<node id>", "title": "A remark", "body": "Text." }]
 }'
 curl localhost:4747/api/links/jobs -H 'content-type: application/json' -d '{"scope":"library"}'
-curl 'localhost:4747/api/links/pending?doc=tides'
+curl 'localhost:4747/api/links/pending?node=<node id>&subtree=1'
 curl localhost:4747/api/links/accept -H 'content-type: application/json' -d '{"ids":["…"],"author":"reviewer"}'
 ```
 
@@ -430,16 +430,15 @@ npm run fixtures render DIR && npm run fixtures check DIR
 - Undoing or reverting a deletion re-creates nodes under new ids: content, anchors and links that
   carry a path are restored; anything else that referred to the old ids is not.
 - Semantic conflicts are detected on every sync but resolved by a model only after an explicit
-  merge, and only within a document. Two replicas resolving one conflict at once conflict again.
+  merge, and only within one top-level tree. Two replicas resolving one conflict at once conflict again.
   Two replicas pointing one link at different targets is left to a person (`1` `2` in history).
 - Export cannot hold a note's title, sections under a note, or the prompt sentences the first
-  document's sections cite.
-- Two documents with the same title share a name; the first in the library has the short address.
-  Two replicas linking the same words both keep their link.
-- In history, the documents a commit touched are placed by where its nodes are now: a commit that
+  tree's sections cite.
+- Two replicas linking the same words both keep their link.
+- In history, the top-level nodes a commit touched are placed by where its nodes are now: a commit that
   only deleted names none.
 - Articles are shown without images, references or infoboxes.
-- Web research: that queries never carry the document's text rests on the agent's instructions,
+- Web research: that queries never carry the library's text rests on the agent's instructions,
   not a check, and a cited source is checked to have been retrieved, not to say what was written.
 
 ## Third-party material

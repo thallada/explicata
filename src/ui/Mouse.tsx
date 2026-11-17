@@ -10,9 +10,9 @@
 import { Fragment, type ComponentChildren } from "preact";
 import { createPortal } from "preact/compat";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { docOf, isLibraryRoot, label, staleness, type NodeId } from "../core/model";
+import { isLibraryRoot, label, staleness, topOf, type NodeId } from "../core/model";
 import { plain } from "../core/text";
-import { articleRowEntries, barItems, nodeEntries, pageAct, pageEntries, paneEntries, selectionEntries, topEntries, type Entry, type Item, type NodeCtx, type SelCtx } from "./actions";
+import { articleRowEntries, barItems, nodeEntries, pageAct, paneEntries, selectionEntries, topEntries, type Entry, type Item, type NodeCtx, type SelCtx } from "./actions";
 import { press } from "./press";
 import { store, type WRow } from "./store";
 
@@ -69,7 +69,6 @@ function nodeCtx(id: NodeId): NodeCtx {
     locked: n.pinned,
     target: !!store.targetOf(id),
     library: isLibraryRoot(s, id),
-    doc: docOf(s, id) === id,
     generating: store.generating,
   };
 }
@@ -88,7 +87,10 @@ function selCtx(): SelCtx {
     link: r?.kind,
     note: !!id && !!s.nodes[id].body.trim(),
     suggestion: store.focusedSuggestion()?.title,
-    related: store.relatedOf(f.node).map((x) => ({ title: x.title, doc: s.nodes[docOf(s, x.node) ?? x.node]?.title })),
+    related: store.relatedOf(f.node).map((x) => {
+      const t = s.nodes[x.node] ? topOf(s, x.node) : null;
+      return { title: x.title, where: t && t !== x.node ? s.nodes[t].title : undefined };
+    }),
     panes: store.panes,
   };
 }
@@ -112,7 +114,6 @@ export function menuHere(where: Where): Entry[] {
   const id = store.focus.node;
   if (!store.snap.nodes[id]) return [];
   if (where === "pane" && store.panes) return paneEntries({ node: nodeCtx(id), pinned }, act);
-  if (where === "page") return pageEntries(nodeCtx(id), act);
   return nodeEntries(nodeCtx(id), act);
 }
 
@@ -524,7 +525,7 @@ export function Key({ k, what, shift }: { k: string; what: ComponentChildren; sh
   return (
     <button type="button" class="key" data-key={k} title={`${keyText(k)}`} onMouseDown={(e) => e.preventDefault()} onClick={(e) => {
         e.stopPropagation();
-        // A box being typed in (the documents filter) gives the key back to the page.
+        // A box being typed in (the jump box, the command line) gives the key back to the page.
         if ((document.activeElement as HTMLElement | null)?.matches?.("input, textarea")) (document.activeElement as HTMLElement).blur();
         press(k, shift);
       }}

@@ -282,7 +282,7 @@ function Senses({ title, lang, at }: { title: string; lang: string; at: (r: WRow
   );
 }
 
-/** "Mentioned in": the library's nodes that link to this article, which is what makes an article a hub between documents. */
+/** "Mentioned in": the library's nodes that link to this article, which is what makes an article a hub between places in the library. */
 function Mentions({ title, lang, show, at }: { title: string; lang: string; show: boolean; at: (r: WRow) => boolean }) {
   if (!show) return null;
   return <Backlinks ids={store.mentionsOf(lang, title)} title="Mentioned in" focusedAt={(i) => at({ t: "back", i })} />;

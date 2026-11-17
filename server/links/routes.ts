@@ -7,8 +7,9 @@
  *                               stored for it, with determinations. review ("all", or "unmarked" to leave out [[marks]],
  *                               which a person typed) has the model reviewer judge what is undecided; `apply` is then the
  *                               approved links handed to the caller to make, and `review` the reviewer's report
- *   GET  /api/links/pending     ?doc=<top's id or name>&node=<id>&tier=auto|suggest&limit=&offset=&all=1&claim=1
- *                               → { total, suggestions: [{ …, nodeTitle, top, path, sentence }], apply? };
+ *   GET  /api/links/pending     ?node=<id>&subtree=1&tier=auto|suggest&limit=&offset=&all=1&claim=1
+ *                               → { total, suggestions: [{ …, nodeTitle, top, path, sentence }], apply? }; node alone is
+ *                               that node, with subtree=1 everything under it too, and without node the whole library;
  *                               all=1 lists every entry whatever was decided, with its determinations; claim=1 hands
  *                               out the approved links no page has made yet (in `apply`), to be made by the caller
  *   POST /api/links/accept      { ids, author? } → applied with applyLinks as one commit by "linker"
@@ -17,7 +18,8 @@
  *   GET  /api/links/related     ?node=<id> → { related, degraded }; or POST { node, text, title, top, topTitle, ancestors }
  *   GET  /api/links/nearby      ?node=<id>&k=5 → { nearby: [{ handle, title, top }] } (hybrid search on the node);
  *                               or POST { node, text, title, ancestors }
- *   POST /api/links/jobs        { scope: "doc" | "library", doc?, review? } → the job's state (doc: a top's id or name); it runs in the background
+ *   POST /api/links/jobs        { scope: "node" | "library", node?, review? } → the job's state (node: a node's id, scanned with
+ *                               everything under it; on the library root, the whole library); it runs in the background
  *                               (with review, the model reviewer judges what it finds, within IE_REVIEW_CALLS calls)
  *   GET  /api/links/jobs        → { job } (the current or last one)
  *   DELETE /api/links/jobs      → cancel the running job
@@ -27,8 +29,7 @@
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { applyLinks, type LinkSpec } from "../../src/core/links";
-import { findTop } from "../../src/core/library";
-import { descendants, isLibraryRoot, tops, type Doc, type NodeId, type Op, type Snap } from "../../src/core/model";
+import { descendants, isLibraryRoot, label, tops, type Doc, type NodeId, type Op, type Snap } from "../../src/core/model";
 import type { Embedder } from "../embed";
 import { HttpError, abortOnClose, readJson as readBody, sendJson as send } from "../util";
 import type { Jobs } from "./jobs";
@@ -57,12 +58,12 @@ class Bad extends HttpError {
 
 const readJson = <T>(req: IncomingMessage) => readBody<T>(req, 4 * 1024 * 1024);
 
-/** A child of the root by its node id or name (TEMPORARY: step 2 scopes by any node). */
-const docArg = (snap: Snap, v: string | null): NodeId | null => (v ? (findTop(snap, v) ?? null) : null);
-
-/** The nodes of a top's tree (or of the library), in reading order: sections and notes with text. */
-export function scopeNodes(snap: Snap, doc: NodeId | null): NodeId[] {
-  const roots = doc ? [doc] : tops(snap);
+/**
+ * A node and everything under it (or, for none or the library root, the whole library but the
+ * Wikipedia container), in reading order: the sections and notes with text.
+ */
+export function scopeNodes(snap: Snap, node: NodeId | null): NodeId[] {
+  const roots = node && !isLibraryRoot(snap, node) ? [node] : tops(snap);
   const out: NodeId[] = [];
   for (const r of roots) for (const id of [r, ...descendants(snap, r)]) if (snap.nodes[id].body.trim() && !isLibraryRoot(snap, id)) out.push(id);
   return out;
@@ -99,10 +100,10 @@ export function linkRoutes(deps: LinkDeps) {
         return send(res, 200, { ...r, entries: deps.pending.of(input.node), apply, review: report }), true;
       }
       if (route === "pending" && method === "GET") {
-        const docId = docArg(snap, url.searchParams.get("doc"));
-        if (url.searchParams.get("doc") && !docId) throw new Bad(`no document ${url.searchParams.get("doc")}`);
         const node = url.searchParams.get("node") as NodeId | null;
-        const scope = node ? new Set([node]) : docId ? new Set(scopeNodes(snap, docId)) : undefined;
+        const subtree = url.searchParams.get("subtree") === "1";
+        if (node && subtree && !snap.nodes[node]) throw new Bad(`no node ${node}`);
+        const scope = node ? new Set(subtree ? scopeNodes(snap, node) : [node]) : undefined;
         const tier = url.searchParams.get("tier");
         const all = url.searchParams.get("all") === "1";
         const apply = url.searchParams.get("claim") === "1" ? deps.pending.claim(snap, scope ?? scopeNodes(snap, null)) : undefined;
@@ -160,13 +161,15 @@ export function linkRoutes(deps: LinkDeps) {
         if (method === "GET") return send(res, 200, { job: deps.jobs.current }), true;
         if (method === "DELETE") return send(res, 200, { cancelled: deps.jobs.cancel(), job: deps.jobs.current }), true;
         if (method === "POST") {
-          const input = await readJson<{ scope?: string; doc?: string; review?: boolean }>(req);
-          if (input.scope !== "doc" && input.scope !== "library") throw new Bad('scope is "doc" or "library"');
-          const docId = input.scope === "doc" ? docArg(snap, input.doc ?? null) : null;
-          if (input.scope === "doc" && !docId) throw new Bad(`no document ${input.doc ?? ""}`);
-          const nodes = scopeNodes(snap, docId);
-          const title = docId ? snap.nodes[docId].title : "the library";
-          return send(res, 202, { job: deps.jobs.start(input.scope, nodes, title, docId ?? undefined, input.review === true) }), true;
+          const input = await readJson<{ scope?: string; node?: string; review?: boolean }>(req);
+          if (input.scope !== "node" && input.scope !== "library") throw new Bad('scope is "node" or "library"');
+          const id = input.scope === "node" ? ((input.node ?? "") as NodeId) : null;
+          if (id !== null && !snap.nodes[id]) throw new Bad(`no node ${input.node ?? ""}`);
+          // The library root is the whole library, as a library job.
+          const at = id && !isLibraryRoot(snap, id) ? id : null;
+          const nodes = scopeNodes(snap, at);
+          const title = at ? label(snap, at) : "the library";
+          return send(res, 202, { job: deps.jobs.start(at ? "node" : "library", nodes, title, at ?? undefined, input.review === true) }), true;
         }
       }
       if (route === "status" && method === "GET") {

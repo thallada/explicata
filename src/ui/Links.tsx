@@ -6,7 +6,7 @@
 import { Fragment, createContext } from "preact";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { ownerSection, resolveNode } from "../core/links";
-import { docOf, isLink, label, type NodeId } from "../core/model";
+import { isLibraryRoot, isLink, label, topOf, type NodeId, type Snap } from "../core/model";
 import { describeTarget, hostOf, parseTarget, validateRef, wikiTitle, type Ref } from "../core/ref";
 import { clip, plain } from "../core/text";
 import { kidClass, sameAux, store, type Aux } from "./store";
@@ -17,15 +17,21 @@ import { suggest, summary, wikiConfig, type Attribution as Attr, type Suggestion
 
 const MARK: Record<Ref["kind"], string> = { wiki: "W", node: "§", url: "↗" };
 
-/** The document a node target is in, for its mark's tooltip. */
+/** Where a node is, in a word: the title of the top-level node it is under, or for a top-level node itself, the library's. */
+export function whereIs(s: Snap, id: NodeId): string {
+  const t = topOf(s, id);
+  return t && t !== id ? s.nodes[t].title : label(s, s.root);
+}
+
+/** Where a node target is, for its mark's tooltip. */
 function where(r: Ref): string {
   if (r.kind === "wiki") return `Wikipedia: ${r.title}`;
   if (r.kind === "url") return hostOf(r.url);
   const s = store.snap;
   const id = resolveNode(store.snap, r);
   if (!id) return "a note that is gone";
-  const d = docOf(s, id);
-  return `${label(s, id)}${d && d !== id ? ` · in ${s.nodes[d].title}` : ""}`;
+  const t = topOf(s, id);
+  return `${label(s, id)}${t && t !== id ? ` · in ${s.nodes[t].title}` : ""}`;
 }
 
 /** The mark set after linked words. Not text of the body: it carries no offset and cannot be selected. */
@@ -56,7 +62,7 @@ export function Attribution({ a }: { a: Attr }) {
   );
 }
 
-/** What a target is, briefly: an article's summary, a node's title, document and first lines, a page's host. */
+/** What a target is, briefly: an article's summary, a node's title, where it is and first lines, a page's host. */
 export function LinkCard({ r, compact }: { r: Ref; compact?: boolean }) {
   if (r.kind === "url") {
     return (
@@ -80,13 +86,13 @@ export function LinkCard({ r, compact }: { r: Ref; compact?: boolean }) {
         </div>
       );
     }
-    const d = docOf(s, id);
+    const d = topOf(s, id);
     const n = s.nodes[id];
     const sec = ownerSection(s, id);
     return (
       <div class="lcard l-node">
         <div class="lhead">
-          <span class="lmark l-node">§</span> {d ? s.nodes[d].title : "the library"}
+          <span class="lmark l-node">§</span> {d ? s.nodes[d].title : label(s, s.root)}
           {sec !== d && n.kind === "note" ? ` › ${label(s, sec)}` : ""}
         </div>
         <div class="ltitle">{label(s, id)}</div>
@@ -163,7 +169,7 @@ export function useForkMark(): ((...keys: (string | undefined)[]) => string) | n
 }
 
 /**
- * "Linked from": the nodes that link here, each as its section's title and its document. Collapsed
+ * "Linked from": the nodes that link here, each as its section's title and where it is. Collapsed
  * to nothing when there are none. The same list, for an article, is "Mentioned in".
  */
 export function Backlinks({ ids, title, focusedAt }: { ids: NodeId[]; title: string; focusedAt: (i: number) => boolean }) {
@@ -176,12 +182,11 @@ export function Backlinks({ ids, title, focusedAt }: { ids: NodeId[]; title: str
       <ul>
         {ids.map((id, i) => {
           const sec = ownerSection(s, id);
-          const d = docOf(s, id);
           const n = s.nodes[id];
           return (
             <li key={id} class={[focusedAt(i) && "focused", forkMark?.(`n:${sec}`)].filter(Boolean).join(" ")} data-linking={id}>
               <span class="bl-title">{label(s, sec)}</span>
-              <span class="bl-doc">{d && d !== sec ? s.nodes[d].title : "document"}</span>
+              <span class="bl-doc">{whereIs(s, sec)}</span>
               {n.kind === "note" && <span class="bl-quote">“{clip(n.anchors[0]?.text ?? "", 60)}”</span>}
             </li>
           );
@@ -205,7 +210,7 @@ export function SuggestionCard({ sg }: { sg: Sugg }) {
 }
 
 /**
- * "Related": sections of other documents close in meaning to this one, derived and never stored.
+ * "Related": sections elsewhere in the library close in meaning to this one, derived and never stored.
  * Numbered: with words of this node selected, the number links them to that section; on the node,
  * it goes there.
  */
@@ -245,11 +250,10 @@ export interface Choice {
   ref: Ref;
 }
 
-/** A section of the library as a choice, with the document it is in. */
+/** A section of the library as a choice, with where it is. */
 export function sectionChoice(id: NodeId): Choice {
   const s = store.snap;
-  const d = docOf(s, id);
-  return { group: "Library", label: s.nodes[id].title || "(untitled)", sub: d && d !== id ? s.nodes[d].title : "document", ref: { kind: "node", id } };
+  return { group: "Library", label: s.nodes[id].title || "(untitled)", sub: whereIs(s, id), ref: { kind: "node", id } };
 }
 
 /** A Wikipedia title suggestion as a choice. */
@@ -307,8 +311,8 @@ function libraryChoices(q: string, spot: NodeId): Choice[] {
     if (n.kind !== "note" || isLink(n) || !n.anchors.length) continue;
     const text = (n.anchors[0].text || n.anchors[0].quote).toLowerCase();
     if (!terms.every((t) => text.includes(t))) continue;
-    const d = docOf(s, n.id);
-    out.push({ group: "Library", label: `“${clip(n.anchors[0].text, 50)}”`, sub: `note in ${d ? s.nodes[d].title : "the library"} › ${label(s, ownerSection(s, n.id))}`, ref: { kind: "node", id: n.id } });
+    const d = topOf(s, n.id);
+    out.push({ group: "Library", label: `“${clip(n.anchors[0].text, 50)}”`, sub: `note in ${d ? s.nodes[d].title : label(s, s.root)} › ${label(s, ownerSection(s, n.id))}`, ref: { kind: "node", id: n.id } });
   }
   return out;
 }
@@ -377,6 +381,9 @@ export function LinkPicker() {
 
 // ---- the links list (S) ----
 
+/** Rows of the links list drawn at once, around the selected one. */
+const WINDOW = 200;
+
 const FILTERS: [key: string, status: Status, label: string][] = [
   ["1", "linked", "linked"],
   ["2", "rejected", "rejected"],
@@ -397,7 +404,8 @@ function verdictLine(r: LinkRow): string {
 }
 
 /**
- * The links list (S): every link found or made in the current document, as it stands, with who
+ * The links list (S): every link found or made in a node and everything under it (on the library
+ * root, the whole library), as it stands, with who
  * decided and the reviewer's reason. Quiet toggles filter it by status; the selected row's words
  * are selected in the text, and every key it takes is a button in its head.
  */
@@ -412,12 +420,15 @@ export function LinksPanel() {
   const rows = all.filter((x) => r.show[x.status]);
   const sel = store.reviewRow();
   const s = store.snap;
-  const doc = store.currentDoc;
   const count = (st: Status) => all.filter((x) => x.status === st).length;
+  // A whole library's list can be long: the rows around the selected one are drawn, the rest counted.
+  const at = Math.max(0, rows.findIndex((x) => x.key === sel?.key));
+  const from = Math.max(0, Math.min(at - WINDOW / 2, rows.length - WINDOW));
+  const shown = rows.slice(from, from + WINDOW);
   return (
     <aside class="panel links" ref={ref} data-links-panel>
       <div class="panel-head">
-        <span>Links{doc ? ` · ${clip(s.nodes[doc]?.title ?? "", 30)}` : ""}</span>
+        <span>Links · {isLibraryRoot(s, r.node) ? "the library" : clip(label(s, r.node), 30)}</span>
         <span class="keys">
           <Hints hint={["j k", ...(sel?.status !== "linked" ? [["y", "link"] as [string, string]] : []), ...(sel?.status !== "rejected" ? [["n", sel?.status === "linked" ? "remove" : "decline"] as [string, string]] : []), ["Y", "link all"], ["Enter", "go"], ["Escape", "close"]]} />
         </span>
@@ -432,8 +443,9 @@ export function LinksPanel() {
           </Fragment>
         ))}
       </div>
-      {!rows.length && <p class="lempty">{all.length ? "Nothing shown: 1 2 3 show more." : "Nothing linked or found here yet. :/linkdoc looks for links in this document."}</p>}
-      {rows.map((x) => (
+      {!rows.length && <p class="lempty">{all.length ? "Nothing shown: 1 2 3 show more." : "Nothing linked or found yet. :/linkall looks for links in the whole library, :/linkhere in the node you are on."}</p>}
+      {from > 0 && <p class="lmore">{from} more above</p>}
+      {shown.map((x) => (
         <div key={x.key} class={`item lrow ${x.status}${x.key === sel?.key ? " selected" : ""}`} data-row={x.status} onClick={() => store.reviewSelect(x.key)}>
           <div class="line">
             <span class="lq">“{clip(x.quote, 48)}”</span>
@@ -449,6 +461,7 @@ export function LinksPanel() {
           </div>
         </div>
       ))}
+      {from + shown.length < rows.length && <p class="lmore">{rows.length - from - shown.length} more below</p>}
     </aside>
   );
 }

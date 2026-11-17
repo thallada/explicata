@@ -15,7 +15,7 @@ import type { Related as RelatedRow, Suggestion as Sugg } from "../../server/lin
 import { inArticles } from "../core/article";
 import { applyLinks, nodeRef, phraseKey } from "../core/links";
 import type { Mark } from "../core/marks";
-import { ancestors, isLink, topOf, label, notesOf, type Doc, type NodeId, type Op, type Snap } from "../core/model";
+import { ancestors, isLibraryRoot, isLink, label, notesOf, topOf, tops, type Doc, type NodeId, type Op, type Snap } from "../core/model";
 import { describeTarget, sameTarget, type Ref } from "../core/ref";
 import { clip, overlaps, type Range } from "../core/text";
 import type { Nearby } from "../llm/prompts";
@@ -145,7 +145,7 @@ export class Linker {
   private queue: Task[] = [];
   private running = false;
   job: JobState | null = null;
-  /** Documents whose pending list has been fetched since the page loaded. */
+  /** Subtrees whose pending list has been fetched since the page loaded (by the node at their top). */
   private fetched = new Set<NodeId>();
   /** Scans in flight or queued: the page waits on this in tests (`idle`). */
   busy = 0;
@@ -219,7 +219,7 @@ export class Linker {
   /** Queue a scan of a node that was just written. Off the keystroke: it runs after the write is saved. */
   scan(node: NodeId, origin: Origin, forced: Mark[] = []) {
     if (this.host.mode() === "off" && !(origin === "human" && forced.length)) return;
-    // Annotations on Wikipedia articles are not a document's text: nothing in them is linked.
+    // Annotations on Wikipedia articles are not the library's own text: nothing in them is linked.
     const snap = this.host.doc().snap();
     if (snap.nodes[node] && inArticles(snap, node)) return;
     const had = this.queue.find((t) => t.node === node);
@@ -342,21 +342,27 @@ export class Linker {
   }
 
   /**
-   * A document's stored suggestions from the server, with what was decided about each (what a
-   * background job found, and the reviewer's verdicts), once per page load or on demand. With
-   * `claim`, also the links the reviewer approved that no page has made yet, handed to this one.
+   * The stored suggestions of a node and everything under it, from the server, with what was
+   * decided about each (what a background job found, and the reviewer's verdicts), once per page
+   * load or on demand. On the library root, each top-level tree's, side by side. With `claim`, also
+   * the links the reviewer approved that no page has made yet, handed to this one.
    */
-  async loadDoc(docId: NodeId, force = false, claim = false): Promise<{ found: Sugg[]; apply: Sugg[] }> {
-    if (!force && this.fetched.has(docId)) return { found: [], apply: [] };
-    this.fetched.add(docId);
+  async loadSubtree(id: NodeId, force = false, claim = false): Promise<{ found: Sugg[]; apply: Sugg[] }> {
+    const snap = this.host.doc().snap();
+    if (isLibraryRoot(snap, id)) {
+      const got = await Promise.all(tops(snap).map((t) => this.loadSubtree(t, force, claim)));
+      return { found: got.flatMap((g) => g.found), apply: got.flatMap((g) => g.apply) };
+    }
+    if (!force && this.fetched.has(id)) return { found: [], apply: [] };
+    this.fetched.add(id);
     try {
-      const res = await fetch(`/api/links/pending?doc=${encodeURIComponent(docId)}&all=1${claim ? "&claim=1" : ""}`);
+      const res = await fetch(`/api/links/pending?node=${encodeURIComponent(id)}&subtree=1&all=1${claim ? "&claim=1" : ""}`);
       if (!res.ok) return { found: [], apply: [] };
       const r = (await res.json()) as { suggestions: Sugg[]; apply?: Sugg[] };
       const by = new Map<NodeId, Sugg[]>();
       for (const s of r.suggestions) by.set(s.node, [...(by.get(s.node) ?? []), s]);
       for (const [id, list] of by) this.byNode.set(id, list);
-      // Nothing to draw, nothing to redraw: a document opened is not repainted for an empty list.
+      // Nothing to draw, nothing to redraw: a tree reached is not repainted for an empty list.
       if (by.size) this.host.emit(...by.keys());
       return { found: r.suggestions, apply: r.apply ?? [] };
     } catch {
@@ -484,8 +490,8 @@ export class Linker {
 
   // ---- background jobs ----
 
-  async startJob(scope: "doc" | "library", doc?: NodeId): Promise<JobState | string> {
-    const res = await post("jobs", { scope, doc, review: this.effective() === "review" });
+  async startJob(scope: "node" | "library", node?: NodeId): Promise<JobState | string> {
+    const res = await post("jobs", { scope, node: scope === "node" ? node : undefined, review: this.effective() === "review" });
     const r = await res.json().catch(() => ({}));
     if (!res.ok) return r.error ?? `the server answered ${res.status}`;
     // A short job's end can be announced before this answer arrives: keep the later news.

@@ -1,14 +1,14 @@
-/** The library on disk: seeding and starter files; and (until step 2 removes them) the UI's document features: the root's children made, listed and addressed. */
+/** The library on disk (seeding and starter files), and a node with everything under it: imported, exported, copied, moved and addressed wherever it is. */
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { UndoManager } from "loro-crdt";
 import { describe, expect, it } from "vitest";
 import { LibraryStore } from "../server/library";
 import { FormatError, serializeDoc } from "../src/core/format";
-import { address, createDoc, deleteDoc, duplicateDoc, findTop, importDoc, listDocs, renameDoc, resolve } from "../src/core/library";
-import { Doc, SYSTEM_ORIGIN, descendants, sections } from "../src/core/model";
-import { SEED_TITLE, writeSeed } from "../src/core/seed";
+import { address, resolve } from "../src/core/address";
+import { resolveNode } from "../src/core/links";
+import { Doc, descendants, isStale, sections, staleness, tops } from "../src/core/model";
+import { SEED_TITLE, importTree, writeSeed } from "../src/core/seed";
 import { seed } from "../src/seed/tree";
 
 const prompt = readFileSync(new URL("../src/seed/prompt.txt", import.meta.url), "utf8");
@@ -21,7 +21,7 @@ describe("the library on disk", () => {
     const data = temp();
     const store = new LibraryStore(data, quiet).open();
     store.seedFirst((doc) => writeSeed(doc, prompt, seed));
-    expect(store.list().map((d) => d.title)).toEqual([SEED_TITLE]);
+    expect(store.titles()).toEqual([SEED_TITLE]);
     expect(store.main.snap().library).toBe(true);
     expect(JSON.parse(readFileSync(join(data, "library.json"), "utf8")).imported).toEqual(["infinite-expand"]);
     store.flush();
@@ -43,92 +43,97 @@ describe("the library on disk", () => {
     const logs: string[] = [];
     const store = new LibraryStore(data, (m) => logs.push(m)).open();
     store.importLibrary(lib);
-    expect(store.list().map((d) => d.title)).toEqual(["Second", "Good one"]); // file-name order: "S" sorts before "g"
+    expect(store.titles()).toEqual(["Second", "Good one"]); // file-name order: "S" sorts before "g"
     expect(logs.join("\n")).toMatch(/skipped broken\.md:\n {2}library\/broken\.md:9: in “One”: quote not found: "Missing"/);
 
-    deleteDoc(store.main, findTop(store.main.snap(), "good-one")!, "alice");
+    const good = tops(store.main.snap()).find((id) => store.main.snap().nodes[id].title === "Good one")!;
+    store.main.apply([{ op: "delete", id: good }], "Delete “Good one”");
     store.save("main");
     const again = new LibraryStore(data, quiet).open();
     again.importLibrary(lib);
-    expect(again.list().map((d) => d.title)).toEqual(["Second"]);
+    expect(again.titles()).toEqual(["Second"]);
     // Once fixed, the broken file is picked up.
     writeFileSync(join(lib, "broken.md"), MD("Broken"));
     again.importLibrary(lib);
-    expect(again.list().map((d) => d.title)).toEqual(["Second", "Broken"]);
+    expect(again.titles()).toEqual(["Second", "Broken"]);
   });
 });
 
-describe("the root's children (the UI's documents, until step 2)", () => {
-  it("are created, renamed, duplicated and deleted as ordinary commits, with names made from their titles", () => {
+describe("a node and everything under it, wherever it is", () => {
+  const LINKED = `# Imported\n\nA root body with a phrase.\n\n## One\n\nSection text.\n\n^ "Section" gloss: a note\n^ "text" link -> ./One\n`;
+
+  it("is imported under any node, its paths below the file's top stored from the library root, and exported back the same", () => {
     const lib = Doc.library("alice");
-    const a = createDoc(lib, "My notes", "alice");
-    const snap = () => lib.snap();
-    expect(snap().nodes[a]).toMatchObject({ parent: snap().root, title: "My notes", by: "human" });
-    const nameOf = (title: string) => {
-      const id = createDoc(lib, title, "alice");
-      return listDocs(snap()).find((d) => d.node === id)!.slug;
-    };
-    expect(nameOf("My notes")).toBe("my-notes");
-    expect(nameOf("../../etc/passwd")).toBe("etc-passwd");
-    // A name another child has too finds the first; the id finds each.
-    expect(findTop(snap(), "my-notes")).toBe(a);
-    expect(findTop(snap(), a)).toBe(a);
-    const [inner] = lib.apply([{ op: "create", parent: a, title: "Inside" }], "add").created;
-    expect(findTop(snap(), "inside")).toBeUndefined();
-
-    renameDoc(lib, a, "Renamed", "alice");
-    expect(listDocs(snap()).find((d) => d.node === a)).toMatchObject({ title: "Renamed", slug: "renamed" });
-    const copy = duplicateDoc(lib, a, "Renamed (copy)", "alice");
-    expect(listDocs(snap()).find((d) => d.node === copy)).toMatchObject({ title: "Renamed (copy)", slug: "renamed-copy" });
-    expect(snap().nodes[snap().root].children.indexOf(copy)).toBe(snap().nodes[snap().root].children.indexOf(a) + 1);
-    expect(sections(snap(), copy).map((id) => snap().nodes[id].title)).toEqual(["Inside"]);
-    expect(sections(snap(), copy)[0]).not.toBe(inner); // a copy, not the same nodes
-
-    // Delete is an ordinary delete: undo brings it back, content and all.
-    const undo = new UndoManager(lib.loro, { mergeInterval: 0, excludeOriginPrefixes: [SYSTEM_ORIGIN] });
-    lib.group = { start: () => undo.groupStart(), end: () => undo.groupEnd() };
-    deleteDoc(lib, copy, "alice");
-    expect(findTop(snap(), "renamed-copy")).toBeUndefined();
-    expect(undo.undo()).toBe(true);
-    lib.touch();
-    const back = findTop(snap(), "renamed-copy")!;
-    expect(snap().nodes[back].title).toBe("Renamed (copy)");
-    expect(sections(snap(), back).map((id) => snap().nodes[id].title)).toEqual(["Inside"]);
-  });
-
-  it("import and export one tree in the text format; a file with a bad quote writes nothing", () => {
-    const lib = Doc.library("alice");
-    createDoc(lib, "Something else", "alice");
-    const id = importDoc(lib, MD("Imported thing"), "thing.md");
-    const snap = lib.snap();
+    const tides = importTree(lib, MD("Tides"), "tides.md");
+    const one = sections(lib.snap(), tides)[0];
+    // Under a section two levels down, at the end of its children.
+    const id = importTree(lib, LINKED, "linked.md", { parent: one });
+    let snap = lib.snap();
+    expect(snap.nodes[id].parent).toBe(one);
+    expect(snap.nodes[one].children.at(-1)).toBe(id);
     expect([id, ...descendants(snap, id)].every((n) => snap.nodes[n].by === "llm")).toBe(true);
-    expect(serializeDoc(snap, id).text).toBe(MD("Imported thing"));
+    const inner = sections(snap, id)[0];
+    const link = snap.nodes[inner].children.map((c) => snap.nodes[c]).find((c) => c.ref)!;
+    expect(link.ref).toMatchObject({ kind: "node", id: inner, path: ["Tides", "One", "Imported", "One"] });
+    expect(resolveNode(snap, { kind: "node", path: ["Tides", "One", "Imported", "One"] })).toBe(inner);
+    // Nothing starts out stale under it; only the node it went under has a new section to summarise.
+    for (const n of [id, ...descendants(snap, id)]) expect(isStale(snap, n)).toBe(false);
+    expect(staleness(snap, one).up).toBe(true);
+    // Exported from where it is, its own paths are written relative to it again.
+    expect(serializeDoc(snap, id).text).toBe(LINKED);
+    // At a place among the children, when asked.
+    const first = importTree(lib, MD("First"), "first.md", { parent: tides, index: 0 });
+    snap = lib.snap();
+    expect(snap.nodes[tides].children[0]).toBe(first);
+    // A file with a bad quote writes nothing, wherever it was to go.
     const before = lib.stateHash();
-    expect(() => importDoc(lib, MD("Bad").replace('"Section"', '"Nowhere"'), "bad.md")).toThrow(FormatError);
+    expect(() => importTree(lib, MD("Bad").replace('"Section"', '"Nowhere"'), "bad.md", { parent: inner })).toThrow(FormatError);
     expect(lib.stateHash()).toBe(before);
-    expect(listDocs(lib.snap()).map((d) => d.slug)).toEqual(["something-else", "imported-thing"]);
   });
 
-  it("have addresses: /doc/<name> for one, /doc/<name>/<node> for a node under it, / for the library", () => {
+  it("is copied just after itself with everything under it, and the copy's links inside it still point into the original", () => {
     const lib = Doc.library("alice");
-    const a = importDoc(lib, MD("Tides"), "tides.md");
-    const b = importDoc(lib, MD("Codes"), "codes.md");
+    const tides = importTree(lib, MD("Tides"), "tides.md");
+    const id = importTree(lib, LINKED, "linked.md", { parent: sections(lib.snap(), tides)[0] });
+    const parent = lib.snap().nodes[id].parent!;
+    const [copy] = lib.apply([{ op: "copy", id, parent, index: lib.snap().nodes[parent].children.indexOf(id) + 1, title: "Imported (copy)" }], "Duplicate").created;
+    const snap = lib.snap();
+    expect(snap.nodes[parent].children.indexOf(copy)).toBe(snap.nodes[parent].children.indexOf(id) + 1);
+    expect(sections(snap, copy).map((c) => snap.nodes[c].title)).toEqual(["One"]);
+    expect(sections(snap, copy)[0]).not.toBe(sections(snap, id)[0]);
+    for (const n of [copy, ...descendants(snap, copy)]) expect(isStale(snap, n)).toBe(false);
+  });
+
+  it("is moved under any other node, never under itself", () => {
+    const lib = Doc.library("alice");
+    const a = importTree(lib, MD("Alpha"), "a.md");
+    const b = importTree(lib, MD("Beta"), "b.md");
+    const deep = sections(lib.snap(), b)[0];
+    lib.apply([{ op: "move", id: a, parent: deep }], "Move under");
+    expect(lib.snap().nodes[a].parent).toBe(deep);
+    expect(() => lib.apply([{ op: "move", id: b, parent: sections(lib.snap(), a)[0] }], "Move under itself")).toThrow(/inside itself/);
+    // And back to the top of the library.
+    lib.apply([{ op: "move", id: a, parent: lib.snap().root }], "Move to the top");
+    expect(tops(lib.snap())).toEqual([b, a]);
+  });
+
+  it("has an address made of its id alone: /n/<id>, and / for the library root", () => {
+    const lib = Doc.library("alice");
+    const a = importTree(lib, MD("Tides"), "tides.md");
+    const b = importTree(lib, MD("Codes"), "codes.md");
     const snap = lib.snap();
     const one = sections(snap, a)[0];
     expect(address(snap, snap.root)).toBe("/");
-    expect(address(snap, a)).toBe("/doc/tides");
-    expect(address(snap, one)).toBe(`/doc/tides/${encodeURIComponent(one)}`);
+    expect(address(snap, a)).toBe(`/n/${encodeURIComponent(a)}`);
+    expect(address(snap, one)).toBe(`/n/${encodeURIComponent(one)}`);
     for (const id of [snap.root, a, one]) expect(resolve(snap, address(snap, id))).toEqual({ node: id });
-    // The node id is what counts: a link whose node has moved to another document still finds it.
-    lib.apply([{ op: "move", id: one, parent: b }], "move");
-    expect(resolve(lib.snap(), `/doc/tides/${encodeURIComponent(one)}`)).toEqual({ node: one });
-    expect(address(lib.snap(), one)).toBe(`/doc/codes/${encodeURIComponent(one)}`);
+    // A moved node keeps its address; a renamed one too.
+    lib.apply([{ op: "move", id: one, parent: b }, { op: "update", id: one, title: "Renamed" }], "move and rename");
+    expect(address(lib.snap(), one)).toBe(`/n/${encodeURIComponent(one)}`);
     expect(resolve(lib.snap(), `/n/${encodeURIComponent(one)}`)).toEqual({ node: one });
-    expect(resolve(lib.snap(), "/doc/nothing")).toEqual({ missing: "nothing called “nothing”" });
-    // A child of the root whose name another has too is addressed by its id as well.
-    const twin = importDoc(lib, MD("Tides"), "tides-2.md");
-    expect(address(lib.snap(), twin)).toBe(`/doc/tides/${encodeURIComponent(twin)}`);
-    expect(resolve(lib.snap(), address(lib.snap(), twin))).toEqual({ node: twin });
-    expect(address(lib.snap(), a)).toBe("/doc/tides");
+    // What names nothing says so (the page then shows the library): a gone node, an old document address, anything else.
+    expect(resolve(lib.snap(), "/n/999%40999")).toEqual({ missing: "no node 999@999" });
+    expect(resolve(lib.snap(), "/doc/tides")).toEqual({ missing: "no page /doc/tides" });
+    expect(resolve(lib.snap(), "/n/%E0%A4%A")).toMatchObject({ missing: expect.any(String) });
   });
 });

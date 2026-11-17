@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "preact/hooks";
-import { ancestors, ancestorsBelowRoot, docOf, label, sections, staleness, type Conflict, type NodeId } from "../core/model";
+import { ancestors, isLibraryRoot, label, sections, staleness, type Conflict, type NodeId } from "../core/model";
 import { verifyHistory, type Commit } from "../core/repo";
 import { clip, plain } from "../core/text";
 import { hostOf } from "../core/ref";
 import { nodeRef } from "../core/links";
 import { HELP, handleKey } from "./keys";
-import { DocBar, DocsPanel } from "./Menu";
+import { DocBar } from "./Menu";
 import { LinkCard, LinkPicker, LinksPanel, NodeBacklinks, NodeRelated, TargetRow } from "./Links";
 import { NodeBody, Outline, PendingSections, TopMatter } from "./Node";
 import { Panes } from "./Panes";
@@ -18,15 +18,14 @@ import { press } from "./press";
 function Page() {
   if (store.colWiki) return <WikiPage />;
   const kids = sections(store.snap, store.top);
-  const listing = store.snap.library && store.top === store.snap.root;
   return (
     <article class={store.preview ? "preview" : ""}>
       <TopMatter id={store.top} />
       {kids.length > 0 && <Outline ids={kids} />}
       <PendingSections id={store.top} />
-      {!listing && (store.articleUnder(store.top) ? <WikiView host={`n${store.top}`} /> : <TargetRow id={store.top} />)}
-      {!listing && <NodeBacklinks id={store.top} />}
-      {!listing && <NodeRelated id={store.top} />}
+      {store.articleUnder(store.top) ? <WikiView host={`n${store.top}`} /> : <TargetRow id={store.top} />}
+      <NodeBacklinks id={store.top} />
+      <NodeRelated id={store.top} />
     </article>
   );
 }
@@ -96,12 +95,15 @@ function HistoryPanel({ verdict }: { verdict: string }) {
   });
   const heads = new Set<string>();
   let lastType = "";
+  const live = store.doc.snap();
+  const filter = store.historyFilter && live.nodes[store.historyFilter] ? store.historyFilter : null;
+  const onRoot = isLibraryRoot(live, store.activeNode);
   return (
     <aside class="panel" ref={ref}>
       <div class="panel-head">
-        <span>History{store.historyFilter && store.currentDoc ? ` · ${clip(store.snap.nodes[store.currentDoc]?.title ?? "", 30)}` : " · the library"}</span>
+        <span>History{filter ? ` · ${clip(label(store.doc.snap(), filter), 30)}` : " · the library"}</span>
         <span class="keys">
-          <Hints hint={["j k", ["Enter", "view"], ["r", `revert${store.currentDoc ? " this document" : ""}`], ["n", "branch"], ["m", "merge"], ["f", store.historyFilter ? "everything" : "this document"], ["v", "verify"], ["Escape", "close"]]} />
+          <Hints hint={["j k", ["Enter", "view"], ["r", `revert ${onRoot ? "the library" : "this node"}`], ["n", "branch"], ["m", "merge"], ["f", filter ? "everything" : "this node"], ["v", "verify"], ["Escape", "close"]]} />
         </span>
       </div>
       {verdict && <div class="verdict">{verdict}</div>}
@@ -138,7 +140,7 @@ function HistoryPanel({ verdict }: { verdict: string }) {
 function CommitRow({ c, selected }: { c: Commit; selected: boolean }) {
   const viewing = store.preview?.commit.id === c.id;
   const snap = store.doc.snap();
-  const docs = store.touchedDocs(c).map((d) => snap.nodes[d]?.title ?? "");
+  const under = store.touchedTops(c).map((d) => snap.nodes[d]?.title ?? "");
   return (
     <div class={`item commit${selected ? " selected" : ""}${viewing ? " viewing" : ""}`}>
       <div class="line">
@@ -152,9 +154,9 @@ function CommitRow({ c, selected }: { c: Commit; selected: boolean }) {
         {c.tag ? ` · ${c.tag}` : ""}
         {viewing ? " · viewing" : ""}
       </div>
-      {docs.length > 0 && (
-        <div class="docs" title={docs.join(", ")}>
-          {docs.length > 3 ? `${docs.slice(0, 3).map((t) => clip(t, 24)).join(" · ")} · and ${docs.length - 3} more` : docs.map((t) => clip(t, 30)).join(" · ")}
+      {under.length > 0 && (
+        <div class="under" title={under.join(", ")}>
+          under: {under.length > 3 ? `${under.slice(0, 3).map((t) => clip(t, 24)).join(" · ")} · and ${under.length - 3} more` : under.map((t) => clip(t, 30)).join(" · ")}
         </div>
       )}
     </div>
@@ -193,19 +195,26 @@ function Help() {
   );
 }
 
-function Jump() {
+/**
+ * The jump box (/): sections anywhere in the library, by title and text. The same box is the
+ * picker of Move under… (M), where it offers the library root too and never the node being moved.
+ */
+function Jump({ move }: { move?: boolean }) {
   const [q, setQ] = useState("");
   const [i, setI] = useState(0);
-  const hits = store.search(q);
+  const hits = move ? store.moveTargets(q) : store.search(q);
   const snap = store.snap;
-  const close = () => store.setMode("normal");
+  const close = () => (move ? store.cancelMove() : store.setMode("normal"));
+  const pick = (id: NodeId) => (move ? store.moveUnder(id) : store.jumpTo(id));
+  const moving = move && store.moving && snap.nodes[store.moving] ? label(snap, store.moving) : "";
   return (
     <div class="overlay" onClick={close}>
-      <div class="jump" onClick={(e) => e.stopPropagation()}>
+      <div class={`jump${move ? " move" : ""}`} onClick={(e) => e.stopPropagation()}>
+        {move && <div class="jump-head">Move “{clip(moving, 50)}” and everything under it under…</div>}
         <input
           autoFocus
           ref={(el) => el?.focus()}
-          placeholder="Jump to a section, in any document…"
+          placeholder={move ? "The node to move it under…" : "Jump to a section, anywhere in the library…"}
           value={q}
           onInput={(e) => (setQ((e.target as HTMLInputElement).value), setI(0))}
           onKeyDown={(e) => {
@@ -213,19 +222,27 @@ function Jump() {
             if (e.key === "Escape") close();
             else if (e.key === "ArrowDown" || (e.ctrlKey && e.key === "n")) (e.preventDefault(), setI(Math.min(hits.length - 1, i + 1)));
             else if (e.key === "ArrowUp" || (e.ctrlKey && e.key === "p")) (e.preventDefault(), setI(Math.max(0, i - 1)));
-            else if (e.key === "Enter" && hits[i]) store.jumpTo(hits[i]);
+            else if (e.key === "Enter" && hits[i]) pick(hits[i]);
           }}
         />
         <ul>
           {hits.map((id, k) => {
-            const d = docOf(snap, id);
-            const within = ancestorsBelowRoot(snap, id).reverse().slice(1);
+            // Where it is: the titles down to it from the library root, the first of them bold.
+            const path = ancestors(snap, id).reverse().slice(1);
             return (
-              <li key={id} class={k === i ? "selected" : ""} onClick={() => store.jumpTo(id)}>
+              <li key={id} class={k === i ? "selected" : ""} data-hit={id} onClick={() => pick(id)}>
                 <span class="t">{label(snap, id)}</span>
                 <span class="p">
-                  {d && d !== id ? <b class="in">{snap.nodes[d].title}</b> : <b class="in">document</b>}
-                  {within.length ? ` › ${within.map((a) => snap.nodes[a].title).join(" › ")}` : ""}
+                  {isLibraryRoot(snap, id) ? (
+                    <b class="in">the library root</b>
+                  ) : path.length ? (
+                    <>
+                      <b class="in">{snap.nodes[path[0]].title}</b>
+                      {path.length > 1 ? ` › ${path.slice(1).map((a) => snap.nodes[a].title).join(" › ")}` : ""}
+                    </>
+                  ) : (
+                    <b class="in">{label(snap, snap.root)}</b>
+                  )}
                 </span>
               </li>
             );
@@ -438,6 +455,8 @@ function StatusLine() {
 // ---- the app ----
 
 let hover: ReturnType<typeof setTimeout> | undefined;
+/** The focus last scrolled into view (App's layout effect). */
+let shownFocus = "";
 
 export function App() {
   const [, tick] = useReducer((x: number) => x + 1, 0);
@@ -508,8 +527,14 @@ export function App() {
   useLayoutEffect(() => {
     if (!store.ready) return;
     const f = store.focus;
-    // The panes keep their own focus in view (Panes.tsx).
+    // Only when the focus, the page or the mode has changed: a render for something that arrived
+    // in the background (a list fetched, a scan's suggestions) leaves the page where the reader
+    // scrolled it. The panes keep their own focus in view (Panes.tsx).
+    const key = JSON.stringify([f, store.aux, store.mode, store.panes, store.top, store.colWiki?.title]);
+    const moved = key !== shownFocus;
+    shownFocus = key;
     const el =
+      moved &&
       !store.panes &&
       ((f.grain !== "node" && document.querySelector(".sel")) ||
         document.querySelector(`[data-row="${CSS.escape(f.node)}"]`) ||
@@ -705,7 +730,7 @@ export function App() {
   };
 
   return (
-    <div class={`app mode-${store.mode}${store.mode === "history" || store.mode === "docs" || store.mode === "review" ? " with-panel" : ""}${panes ? " view-panes" : ""}`} onMouseOver={onOver} onContextMenu={onContext}>
+    <div class={`app mode-${store.mode}${store.mode === "history" || store.mode === "review" ? " with-panel" : ""}${panes ? " view-panes" : ""}`} onMouseOver={onOver} onContextMenu={onContext}>
       <main
         class="page"
         onClick={onClick}
@@ -722,10 +747,10 @@ export function App() {
         {panes ? <Panes /> : <Page />}
       </main>
       {store.mode === "history" && <HistoryPanel verdict={verdict} />}
-      {store.mode === "docs" && <DocsPanel />}
       {store.mode === "review" && <LinksPanel />}
       {store.mode === "help" && <Help />}
       {store.mode === "jump" && <Jump />}
+      {store.mode === "move" && <Jump move />}
       {store.mode === "command" && <CommandBar prefill={prefill} />}
       {store.mode === "link" && store.picker && <LinkPicker />}
       <Popup />

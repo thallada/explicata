@@ -12,8 +12,8 @@ export const HELP: [string, [string, string][]][] = [
       ["i", "narrow the grain: node → sentence → word"],
       ["Esc", "widen the grain; leave a note; close a panel; stop the editor while it works"],
       ["Tab", "jump between spans that carry a note or a link; in an article, between its links and the notes on it"],
-      ["/", "jump to a section by name, in any document"],
-      ["z", "hoist: make this node the whole page (again, or h or Esc at its top, to step out)"],
+      ["/", "jump to a section by name, anywhere in the library"],
+      ["z", "hoist: make this node the whole page (again, or h or Esc at its top, to step out to its parent's page)"],
       ["v", "view: one column ↔ panes side by side (in panes, j k move among siblings)"],
       ["q", "in panes: close the active pane (the one under the heavy rule, whatever it shows) and every pane opened from it, except pinned ones; the focus goes back to where it was opened from. A pane's x does the same. Moving left never closes anything"],
       ["P", "in panes: pin or unpin the active pane (or its pin, top right). A pinned pane stays where it is when a pane it came from closes, is never replaced by a Shift open, and is never covered, in its column or along the strip"],
@@ -29,7 +29,7 @@ export const HELP: [string, [string, string][]][] = [
       ["", "a click on a sentence selects it, and a bar over it offers expand · define · why · example · challenge · ask · link, each with its key (on a phone, at the foot of the screen, × puts it away); a drag selects words, a double click a word"],
       ["", "right-click (a long press on a phone) on words, a row, a link, a note or a pane: what can be done with it, Copy first. Shift+right-click is the browser's own menu"],
       ["", "⋯ by a row, a pane's pin, a page's byline or a note (shown when pointed at): the same menu. A stale flag, clicked, offers what to do about it"],
-      ["", "the top bar: undo, redo, and menu: documents, jump, history, links, layout and settings. A key named in the status line or a panel's head is a button that presses it"],
+      ["", "the top bar: the library's name, undo, redo, and menu: jump, history, links, layout and settings. A key named in the status line or a panel's head is a button that presses it"],
     ],
   ],
   [
@@ -42,8 +42,8 @@ export const HELP: [string, [string, string][]][] = [
       ["W", "open the focused article on wikipedia.org, in a new tab"],
       ["D", "on a link: remove it, and decline its words in that node so it is not made again (u undoes). Also in the right-click menu: Remove the link"],
       ["y n", "on a suggested link (a faint dashed underline; Tab reaches it): link it / decline it (a declined phrase is not suggested again in that node)"],
-      ["S", "the links list of this document: every link found or made, with who decided and the reviewer's reason. 1 2 3 show or hide linked · rejected · pending (rejected is hidden at first); j k move (the words are selected in the text); y links (also a rejected one: you overrule); n declines, or on a link removes it for good; Y links all the pending shown; Enter goes to the words; Esc closes"],
-      ["1–5", "the node's Related list (sections of other documents close in meaning, numbered under its text): with words selected, link them to that one; on the node, go there"],
+      ["S", "the links list of the node you are on and everything under it (on the library root, the whole library): every link found or made, with who decided and the reviewer's reason. 1 2 3 show or hide linked · rejected · pending (rejected is hidden at first); j k move (the words are selected in the text); y links (also a rejected one: you overrule); n declines, or on a link removes it for good; Y links all the pending shown; Enter goes to the words; Esc closes"],
+      ["1–5", "the node's Related list (sections elsewhere in the library close in meaning, numbered under its text): with words selected, link them to that one; on the node, go there"],
       ["l h j k", "in an article: sections are rows, as in a node; l opens one, h goes back"],
       ["i e d y x c :", "in an article: select words of its text as in a node, and write a note on them; the note belongs to the article and shows wherever it is opened (one whose words are gone from a newer revision is listed as detached)"],
     ],
@@ -64,14 +64,15 @@ export const HELP: [string, [string, string][]][] = [
     [
       ["c", "edit the body (Esc saves). In it, [[ links a phrase: library titles first, then Wikipedia; a bare [[term]] left in the text is looked up when saved"],
       ["r", "rename"],
-      ["a A", "add a section inside / after (on the library: a document)"],
+      ["a A", "add a section inside / after (on the library root: a new top-level node)"],
       ["D", "delete (no confirmation; u undoes)"],
       ["J K", "move down / up among siblings"],
-      ["> <", "indent / outdent (a document's sections can be moved into another this way, or over HTTP)"],
+      ["> <", "indent / outdent"],
+      ["M", "move under…: pick any node in the library (or the library root) and this node, with everything under it, becomes its last child (u undoes)"],
       ["p", "lock or unlock: a locked node is never rewritten by the model (your own edits lock it). Not the same as P, which pins a pane"],
       ["f", "on a note: cycle its form (inline · margin · inset)"],
       [":", "on a node: tell the editor agent what to change"],
-      ["u U", "undo / redo: the last edit made in this tab, in whichever document it was"],
+      ["u U", "undo / redo: the last edit made in this tab, wherever in the library it was"],
     ],
   ],
   [
@@ -84,19 +85,9 @@ export const HELP: [string, [string, string][]][] = [
     ],
   ],
   [
-    "Documents (m)",
+    "The library",
     [
-      ["", "every document is a section of one library: the library is the first page (h or Esc steps out to it), and a document opens in place"],
-      ["m", "the documents menu (or click the title in the top bar). Type to filter; ↑ ↓ select; Enter opens"],
-      ["Esc", "in the filter: go to the list, where single keys act. In the list: close"],
-      ["j k Enter", "in the list: select / open"],
-      ["n", "new blank document (asks for a title)"],
-      ["r", "rename the selected document"],
-      ["s", "duplicate it: save as a copy under a new title, and open the copy"],
-      ["D", "delete it (asks first; u brings it back)"],
-      ["x", "export it: save to a .md file"],
-      ["i", "import a .md file as a new document (or drop the file on the menu)"],
-      ["/", "back to the filter"],
+      ["", "everything is a node of one tree, whose root is the library: the first page. Any node can be moved under any other (M, > <), copied (/duplicate), saved to a file (/export) or given a file's tree under it (/import); each acts on the node you are on, with everything under it. The ⋯ menu of any node offers the same"],
     ],
   ],
   [
@@ -109,9 +100,9 @@ export const HELP: [string, [string, string][]][] = [
       ["m", "merge the selected branch into this one"],
       ["1 2 3", "conflict: take side A / side B / the mechanical merge"],
       ["x", "conflict: reopen a resolution"],
-      ["f", "show only what touched the current document, or everything"],
+      ["f", "show only what touched the node you are on and what is under it, or everything"],
       ["v", "verify: check every commit reproduces its recorded hash"],
-      ["", "each commit names the documents it touched; r reverts only the current document, the rest of the library stays as it is"],
+      ["", "each commit names the top-level nodes it touched. r reverts only the node you are on and what is under it, the rest of the library stays as it is; on the library root, the whole library"],
     ],
   ],
   [
@@ -127,18 +118,15 @@ export const HELP: [string, [string, string][]][] = [
       ["/curves on|off", "in panes: the faint curves from where each pane was opened to it"],
       ["/colors line|top|edge|off", "in panes: each fork's own colour, on its curves and the rule under its panes' titles (line, the default), across their tops, down their left edges, or none"],
       ["/user name", "set the name on your commits"],
-      ["/new title", "new blank document"],
-      ["/open name", "open a document by title or id"],
-      ["/rename title", "rename this document"],
-      ["/duplicate title", "save this document as a copy, and open the copy"],
-      ["/export", "save this document to a .md file"],
-      ["/import", "open a .md file as a new document"],
+      ["/duplicate title", "save the node you are on, with everything under it, as a copy just after it (titled \"… (copy)\" unless given one); the copy has the focus"],
+      ["/export", "save the node you are on, with everything under it, to a .md file (on the library root, the whole library)"],
+      ["/import", "read a .md file into the node you are on, as its last child (on the library root, a new top-level node)"],
       ["/recover", "save edits this browser made before the library existed, and never sent, as .md files"],
-      ["/link target", "link the selection (or the node): w:Title, /document/Section, an address, or a Wikipedia title"],
+      ["/link target", "link the selection (or the node): w:Title, /Top title/Section (titles from the library root), an address, or a Wikipedia title"],
       ["/unlink", "remove the link on the selection (for good: its words are declined; a note that also links keeps its text), or the node's own target"],
       ["/autolink review|suggest|on|off", "after an edit: the model reviews what was found and links what it approves (review, the default with a model; u undoes, S lists every decision), suggest everything for you to decide (suggest; what review does without a model, or when the model fails or its limit is reached), link the scanner's sure ones unreviewed (on), or look for nothing (off)"],
-      ["/linkdoc", "look for links in the whole document, in the background (reviewed, in review mode); progress and the reviewer's model calls in the status line"],
-      ["/linkall", "look for links in the whole library, in the background"],
+      ["/linkhere", "look for links in the node you are on and everything under it, in the background (reviewed, in review mode); progress and the reviewer's model calls in the status line"],
+      ["/linkall", "look for links in the whole library, in the background (so does /linkhere on the library root)"],
       ["/linkcancel", "stop looking (what was found and reviewed is kept, and what was approved is linked)"],
       ["/research question", "the editor searches the web, reads a few pages and writes what it finds into the focused node, each claim linked to its page (within the server's limits, by default 5 searches and 5 pages read per request; Esc stops)"],
       ["", "an ordinary request to the editor may use the web too when it says so: \"look up…\", \"find sources for…\", \"search the web…\", \"cite sources\", \"fact-check\""],
@@ -251,75 +239,6 @@ export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
         break;
       case ":":
         hooks.openCommand();
-        break;
-      case "?":
-        store.setMode("help");
-        break;
-      default:
-        return;
-    }
-    return done();
-  }
-
-  if (store.mode === "docs") {
-    // The filter and title boxes take their own keys (Menu.tsx); these are the list's.
-    const m = store.menu;
-    const d = store.menuSelected();
-    if (m.focus === "filter" && !m.prompt && !m.confirm) {
-      // The filter box is not focused (a key typed before it took focus, or after a click
-      // elsewhere in the panel): keys still mean what they would there.
-      if (k === "Escape" || k === "Tab") m.focus = "list";
-      else if (k === "Enter") return d && (e.preventDefault(), store.openDoc(d.node, true));
-      else if (k === "ArrowDown" || k === "ArrowUp") return e.preventDefault(), store.menuMove(k === "ArrowDown" ? 1 : -1);
-      else if (k.length === 1) return e.preventDefault(), store.menuFilter(m.filter + k);
-      else return;
-      store.emit();
-      return done();
-    }
-    if (m.confirm) {
-      if (k === "y") store.deleteDocument(m.confirm);
-      else if (k === "n" || k === "Escape" || k === "q") (m.confirm = null), store.emit();
-      else return;
-      return done();
-    }
-    switch (k) {
-      case "Escape":
-      case "q":
-      case "m":
-        store.closeMenu();
-        break;
-      case "j":
-      case "ArrowDown":
-        store.menuMove(1);
-        break;
-      case "k":
-      case "ArrowUp":
-        store.menuMove(-1);
-        break;
-      case "Enter":
-        if (d) store.openDoc(d.node, true);
-        break;
-      case "/":
-        m.focus = "filter";
-        store.emit();
-        break;
-      case "n":
-        store.menuPrompt("new");
-        break;
-      case "r":
-        store.menuPrompt("rename");
-        break;
-      case "s":
-        store.menuPrompt("duplicate");
-        break;
-      case "D":
-        if (d) (m.confirm = d.node), store.emit();
-        break;
-      case "x":
-        if (d) store.exportDocument(d.node);
-        break;
-      case "i":
-        store.pickFile();
         break;
       case "?":
         store.setMode("help");
@@ -528,6 +447,9 @@ export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
     case "z":
       store.setHoist(store.focus.node);
       break;
+    case "M":
+      if (!selecting) store.startMove();
+      break;
     default:
       return;
   }
@@ -561,9 +483,6 @@ function commonKey(k: string, hooks: KeyHooks): boolean {
       return true;
     case "g":
       store.openHistory();
-      return true;
-    case "m":
-      store.openMenu();
       return true;
     case "/":
       store.setMode("jump");

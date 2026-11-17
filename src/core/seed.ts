@@ -1,9 +1,9 @@
 /**
- * Writes a hand-written tree into the library as a new child of the root: the first one (the
- * project describing itself, grown from the verbatim prompt), and every file read from the text
- * format (src/core/format.ts).
+ * Writes a hand-written tree into the library: the first one (the project describing itself, grown
+ * from the verbatim prompt) as a child of the root, and every file read from the text format
+ * (src/core/format.ts), under the root or under any node (an import).
  */
-import { healLinks } from "./links";
+import { healLinks, nodeRef } from "./links";
 import { Doc, type Actor, type NodeId, type Op } from "./model";
 import type { Ref } from "./ref";
 import type { SeedNode, SeedNote } from "../seed/types";
@@ -19,21 +19,30 @@ export interface BuildOptions {
   rootActor?: Actor;
   /** First word of each commit message: "Pre-generate “Section”". */
   verb?: string;
+  /** The node the tree goes under (the library root by default), and where among its children (the end by default). */
+  parent?: NodeId;
+  index?: number;
 }
 
 /**
- * Write a tree into a library as a new child of the root, at its end, through the op API: one
- * commit for the tree's top, one for its notes and one per section under it. Everything was
- * written together, so everything is blessed and nothing starts out stale; below the top it is
- * authored as the model, so a model may later rewrite it. Returns the top's node.
+ * Write a tree into a library through the op API, as a new child of the root at its end, or of
+ * `opts.parent` at `opts.index`: one commit for the tree's top, one for its notes and one per
+ * section under it. Everything was written together, so everything is blessed and nothing starts
+ * out stale; below the top it is authored as the model, so a model may later rewrite it. Returns
+ * the top's node.
  */
 export function writeTree(doc: Doc, top: SeedNode, opts: BuildOptions = {}): NodeId {
   const verb = opts.verb ?? "Pre-generate";
-  // A path written relative to the file's top ("./Section") is stored from the library root.
-  const place = (r: Ref | undefined): Ref | undefined => (r?.kind === "node" && r.rel ? { kind: "node", path: [top.title, ...(r.path ?? [])], ...(r.quote !== undefined ? { quote: r.quote } : {}) } : r);
+  const snap = doc.snap();
+  const parent = opts.parent ?? snap.root;
+  if (!snap.nodes[parent]) throw new Error(`no node ${parent} to write the tree under`);
+  // A path written relative to the file's top ("./Section") is stored from the library root: the
+  // titles down to where the tree goes, then the tree's own.
+  const above = nodeRef(snap, parent).path ?? [];
+  const place = (r: Ref | undefined): Ref | undefined => (r?.kind === "node" && r.rel ? { kind: "node", path: [...above, top.title, ...(r.path ?? [])], ...(r.quote !== undefined ? { quote: r.quote } : {}) } : r);
   const [root] = doc.as(opts.creator ?? "seed", () =>
     doc.apply(
-      [{ op: "create", parent: doc.snap().root, title: top.title, body: top.body, ref: place(top.target) }],
+      [{ op: "create", parent, index: opts.index, title: top.title, body: top.body, ref: place(top.target) }],
       `${verb} “${clip(top.title, 60)}”`,
       { actor: opts.rootActor ?? "llm", tag: "seed" },
     ).created,
@@ -94,4 +103,15 @@ export function writeSeed(doc: Doc, prompt: string, tree: SeedNode[]): NodeId {
 /** A tree from the text format. Throws FormatError listing every problem in the file, writing nothing. */
 export function writeText(doc: Doc, text: string, name: string, opts: BuildOptions = {}): NodeId {
   return writeTree(doc, parseDoc(text, name), opts);
+}
+
+/** Largest .md file an import accepts. */
+export const IMPORT_MAX = 2 * 1024 * 1024;
+
+/**
+ * A file in the text format, imported as a model-authored tree under `opts.parent` (the library
+ * root by default), at its end unless `opts.index` says where. Throws FormatError, writing nothing.
+ */
+export function importTree(doc: Doc, text: string, name: string, opts: BuildOptions = {}): NodeId {
+  return writeText(doc, text, name, { verb: "Import", ...opts });
 }

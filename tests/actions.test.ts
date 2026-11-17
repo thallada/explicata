@@ -1,7 +1,7 @@
 /** What the mouse offers (src/ui/actions.ts): every item does what its key does, and the bar, the ⋯ menus and the right-click menu are built from one place. */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { articleRowEntries, barItems, nodeEntries, pageEntries, paneEntries, selectionEntries, tidy, topEntries, type Act, type Entry, type Item, type NodeCtx, type SelCtx, type TopCtx } from "../src/ui/actions";
+import { articleRowEntries, barItems, nodeEntries, paneEntries, selectionEntries, tidy, topEntries, type Act, type Entry, type Item, type NodeCtx, type SelCtx, type TopCtx } from "../src/ui/actions";
 
 /** An Act that records what was asked of it. */
 function recorder() {
@@ -19,9 +19,9 @@ const items = (es: Entry[]): Item[] => es.filter((e): e is Item => e.t === "item
 const labels = (es: Entry[]) => es.map((e) => (e.t === "item" ? e.label : e.t === "head" ? `# ${e.text}` : e.t === "choices" ? `[${e.label}: ${e.options.map((o) => o.label).join(" ")}]` : "--"));
 const find = (es: Entry[], label: string) => items(es).find((i) => i.label === label)!;
 
-const node = (more: Partial<NodeCtx> = {}): NodeCtx => ({ title: "Training", text: "Training\n\nIt is trained.", note: false, locked: false, target: false, library: false, doc: false, generating: true, ...more });
+const node = (more: Partial<NodeCtx> = {}): NodeCtx => ({ title: "Training", text: "Training\n\nIt is trained.", note: false, locked: false, target: false, library: false, generating: true, ...more });
 const sel = (more: Partial<SelCtx> = {}): SelCtx => ({ text: "a probability for each possible next piece", article: false, panes: false, ...more });
-const top = (more: Partial<TopCtx> = {}): TopCtx => ({ view: "auto", autolink: "suggest", auto: true, speculate: false, curves: true, colors: "line", panes: false, doc: true, canRedo: false, ...more });
+const top = (more: Partial<TopCtx> = {}): TopCtx => ({ view: "auto", autolink: "suggest", auto: true, speculate: false, curves: true, colors: "line", panes: false, canRedo: false, ...more });
 
 /** Every key the page's handler takes, read from keys.ts: an item's key must be one of them. */
 const handled = new Set([...readFileSync(new URL("../src/ui/keys.ts", import.meta.url), "utf8").matchAll(/case "([^"]+)":/g)].map((m) => m[1]));
@@ -33,7 +33,7 @@ describe("actions", () => {
       ...barItems(sel(), act).flat(),
       ...items(selectionEntries(sel({ link: "wiki", note: true, suggestion: "Hoyle state", related: [{ title: "Nodes" }], panes: true }), act)),
       ...items(nodeEntries(node({ stale: "parent", target: true, note: true }), act)),
-      ...items(pageEntries(node({ doc: true }), act)),
+      ...items(nodeEntries(node({ library: true }), act)),
       ...items(paneEntries({ node: node(), pinned: false }, act)),
       ...items(paneEntries({ article: "Octopus", pinned: true }, act)),
       ...items(articleRowEntries("Octopus", true, act)),
@@ -57,7 +57,7 @@ describe("actions", () => {
 
   it("the selection menu puts Copy first, then what the words carry, then the lenses, linking and Related", () => {
     const { act, calls } = recorder();
-    const plain = selectionEntries(sel({ related: [{ title: "Expansion by depth", doc: "Infinispand" }, { title: "Nodes" }] }), act);
+    const plain = selectionEntries(sel({ related: [{ title: "Expansion by depth", where: "Infinispand" }, { title: "Nodes" }] }), act);
     expect(labels(plain)).toEqual([
       "# “a probability for each possible next piece”",
       "Copy",
@@ -108,20 +108,28 @@ describe("actions", () => {
     expect(find(nodeEntries(node(), act), "Lock").checked).toBe(false);
     expect(labels(nodeEntries(node(), act)).join("|")).not.toMatch(/pin/i);
     const lib = labels(nodeEntries(node({ library: true }), act));
-    for (const l of ["Delete", "Lock", "Add a section after", "[Move: up down in out]", "Show only this"]) expect(lib).not.toContain(l);
-    expect(lib).toContain("Add a document");
+    for (const l of ["Delete", "Lock", "Add a section after", "[Move: up down in out]", "Move under…", "Show only this", "Save a copy"]) expect(lib).not.toContain(l);
+    // The library root is a node like any other: it takes a section, and is exported, imported into and scanned like one.
+    for (const l of ["Add a section inside", "Export as .md", "Import a .md file into it…", "Find links here"]) expect(lib).toContain(l);
     expect(labels(nodeEntries(node({ note: true }), act))).toContain("Change its form");
     find(nodeEntries(node(), act), "Research on the web…").run();
     expect(calls).toEqual(["prompt /research "]);
     expect(labels(nodeEntries(node({ generating: false }), act))).not.toContain("Research on the web…");
   });
 
-  it("a page adds the document's own items; a pane adds pin, close and the column", () => {
+  it("every node offers what acts on it and everything under it, a note none of it; a pane adds pin, close and the column", () => {
     const { act, calls } = recorder();
-    const page = pageEntries(node({ doc: true }), act);
-    expect(labels(page).slice(-2)).toEqual(["Save a copy", "Export as .md"]);
-    find(page, "Export as .md").run();
-    expect(calls).toEqual(["command /export"]);
+    const any = nodeEntries(node(), act);
+    expect(labels(any).slice(-7)).toEqual(["--", "Find links here", "Save a copy", "Export as .md", "Import a .md file into it…", "--", "Delete"]);
+    expect(find(any, "Move under…")).toMatchObject({ key: "M" });
+    for (const [label, cmd] of [["Find links here", "/linkhere"], ["Save a copy", "/duplicate"], ["Export as .md", "/export"], ["Import a .md file into it…", "/import"]]) {
+      calls.length = 0;
+      find(any, label).run();
+      expect(calls).toEqual([`command ${cmd}`]);
+    }
+    const note = labels(nodeEntries(node({ note: true }), act));
+    for (const l of ["Move under…", "Save a copy", "Export as .md", "Import a .md file into it…", "Find links here"]) expect(note).not.toContain(l);
+    calls.length = 0;
     const pane = paneEntries({ node: node(), pinned: true }, act);
     expect(labels(pane).slice(-3)).toEqual(["Pin this pane", "Close this pane", "Show as one column"]);
     expect(find(pane, "Pin this pane").checked).toBe(true);
@@ -131,7 +139,7 @@ describe("actions", () => {
     expect(go.options.map((o) => `${o.label} ${o.key}`)).toEqual(["left A-h", "right A-l", "above A-k", "below A-j"]);
   });
 
-  it("the top menu: documents, history, undo and redo, links, the layout and settings as commands", () => {
+  it("the top menu: jump, history, undo and redo, links, the layout and settings as commands", () => {
     const { act, calls } = recorder();
     const es = topEntries(top(), act);
     expect(find(es, "Redo").disabled).toBe(true);
@@ -148,8 +156,12 @@ describe("actions", () => {
     expect(colors.options.map((o) => `${o.label}${o.on ? "*" : ""}`)).toEqual(["line*", "top", "edge", "off"]);
     colors.options[3].run();
     expect(calls.at(-1)).toBe("command /colors off");
-    expect(labels(topEntries(top({ doc: false }), act))).not.toContain("Links found: review and reverse");
-    expect(labels(topEntries(top(), act))).toContain("Links found: review and reverse");
+    expect(labels(es)).not.toContain("Documents…");
+    expect(find(es, "Links found: review and reverse")).toMatchObject({ key: "S" });
+    calls.length = 0;
+    find(es, "Find links in the whole library").run();
+    find(es, "Find links here").run();
+    expect(calls).toEqual(["command /linkall", "command /linkhere"]);
   });
 
   it("tidy leaves no separator at an end or next to another", () => {

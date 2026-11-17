@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { annotationsOf, articleNodes, articleParent, containers, fold, inArticles, makeAnchor, reanchor, type ArticleKey, type SectionText } from "../src/core/article";
 import { Doc, isStale, staleness, tops, type NodeId, type Op } from "../src/core/model";
 import { mergeUpdate, verifyHistory } from "../src/core/repo";
-import { listDocs } from "../src/core/library";
 import type { Range } from "../src/core/text";
 
 // ---- re-anchoring ----
@@ -138,9 +137,9 @@ const sync = (a: Doc, b: Doc) => {
 };
 
 describe("article nodes", () => {
-  it("are made on the first annotation, once; the container is not a document and nothing in it goes stale", () => {
+  it("are made on the first annotation, once; the container is not one of the root's sections and nothing in it goes stale", () => {
     const doc = library();
-    const before = listDocs(doc.snap());
+    const before = tops(doc.snap());
     expect(containers(doc.snap())).toEqual([]);
     const first = annotate(doc, OCTOPUS, "arms");
     const second = annotate(doc, { lang: "en", title: "octopus" }, "suckers");
@@ -152,7 +151,7 @@ describe("article nodes", () => {
     expect(articleNodes(snap, { lang: "en", title: "Octopodes", pageId: 1200106 })).toHaveLength(1);
     expect(articleNodes(snap, { lang: "fr", title: "Octopus" })).toHaveLength(0);
     // Not one of the root's sections: not listed, no count.
-    expect(listDocs(snap)).toEqual(before);
+    expect(tops(snap)).toEqual(before);
     expect(tops(snap)).toHaveLength(1);
     const box = containers(snap)[0];
     expect(inArticles(snap, first) && inArticles(snap, box) && !inArticles(snap, tops(snap)[0])).toBe(true);

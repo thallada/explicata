@@ -344,7 +344,7 @@ sense or the wrong person of the same name, a library section matched on its tit
 document's own quoted prompt. That reviewer is now built in (`server/links/review.ts`), and
 **`/autolink review`** is the default whenever a model is configured.
 
-**Flow.** After a scan (an edit saved, `/linkdoc`, `/linkall`) the candidates nobody has judged
+**Flow.** After a scan (an edit saved, `/linkhere`, `/linkall`) the candidates nobody has judged
 go to the configured model in batches of up to 60, grouped by document and section. Each proposal
 carries its sentence, the section's title and path, the target's title and short description (and
 the first sentence of its summary when the cache has one, never a new request), and for a library

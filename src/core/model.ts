@@ -900,11 +900,6 @@ export function topOf(snap: Snap, id: NodeId): NodeId | null {
   return n.id;
 }
 
-/** @deprecated Temporary, for UI files untouched in step 1 (Panes.tsx, Mouse.tsx and others): step 2 removes it. */
-export const docOf = topOf;
-/** @deprecated Temporary, for the UI's document features: step 2 removes it. */
-export const documents = tops;
-
 // ---- staleness: computed, never stored ----
 
 /** A node's sections, in order. The Wikipedia container (article.ts) is nobody's section. */

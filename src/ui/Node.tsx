@@ -1,7 +1,7 @@
 /** Rendering shared by both page layouts: a node's body with its notes, the outline rows, and the top of the page. */
 import { Component, type ComponentChildren } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
-import { anchorLost, ancestors, descendants, docOf, isLibraryRoot, label, notesOf, sections, staleness, type NodeId, type Snap } from "../core/model";
+import { anchorLost, ancestors, descendants, isLibraryRoot, label, notesOf, sections, staleness, type NodeId, type Snap } from "../core/model";
 import type { Ref } from "../core/ref";
 import { clip, overlaps, paragraphs, plain, type Form, type Range } from "../core/text";
 import { streamView } from "../core/marks";
@@ -11,7 +11,7 @@ import { store, type Pending } from "./store";
 
 // ---- inline text ----
 
-/** A note as the renderer sees it: one in the document, or one still being written. */
+/** A note as the renderer sees it: one in the library, or one still being written. */
 export interface VNote {
   key: string;
   id?: NodeId;
@@ -286,7 +286,7 @@ export function NodeBody({ id, inline, inNote }: { id: NodeId; inline?: boolean;
       ))}
       {!paras.length && !inline && (
         <p class="para first empty">
-          {isLibraryRoot(snap, id) ? "Every document is a section of this library. l or Enter opens one, a adds one, m lists them; c writes a note about the library here." : `No text yet. c to write it${store.generating ? ", e to have it written" : ""}.`}
+          {isLibraryRoot(snap, id) ? "This is the library, the root of everything in it. a adds a section, / jumps anywhere, :/import reads a .md file into it; c writes a note about the library here." : `No text yet. c to write it${store.generating ? ", e to have it written" : ""}.`}
         </p>
       )}
       {orphans.map((o) => (
@@ -403,7 +403,7 @@ function SectionView({ id }: { id: NodeId }) {
       <Row id={id} open={open} leaf={leaf} editing={editing} />
       {open && (
         <div class="content">
-          <NodeBody id={id} />
+          {isPrompt(snap, id) ? <Abstract id={id} /> : <NodeBody id={id} />}
           {kids.length > 0 && <Outline ids={kids} />}
           <PendingSections id={id} />
           <TargetRow id={id} />
@@ -426,9 +426,31 @@ export function Outline({ ids }: { ids: NodeId[] }) {
 }
 
 /**
- * The head of a page or of a pane that is a page of its own: the top node, or a document. Crumbs
- * (on the top only), title, byline, and the node's own text, folded if it is a prompt. The
- * library's byline counts documents; a document's counts its own sections and nodes.
+ * Whether a node's text is a prompt: its sections cite its sentences (the first tree's top is one).
+ * A prompt is long, and the page should open on the outline, so it is folded until asked for.
+ */
+export function isPrompt(snap: Snap, id: NodeId): boolean {
+  return !isLibraryRoot(snap, id) && sections(snap, id).some((k) => snap.nodes[k].anchors.length > 0);
+}
+
+/** A node's own text under its head: plain, or a prompt, set apart and folded until asked for. */
+export function Abstract({ id }: { id: NodeId }) {
+  const snap = store.snap;
+  const prompt = isPrompt(snap, id);
+  const folded = prompt && !store.unfolded.has(id) && !(store.focus.node === id && store.focus.grain !== "node") && store.edit?.node !== id;
+  return (
+    <>
+      <div class={`abstract${prompt ? " seed" : ""}${folded ? " folded" : ""}`} onClick={folded ? () => store.toggleFold(id) : undefined}>
+        <NodeBody id={id} />
+      </div>
+      {folded && <div class="unfold">{id === store.top ? "Enter" : "A click"} to read the whole prompt · every sentence of it is traced to a section below</div>}
+    </>
+  );
+}
+
+/**
+ * The head of a page, the same for every node: crumbs (the titles above it, from the library's
+ * own), title, byline (its sections and nodes, the branch, its flags and its ⋯), and its own text.
  */
 export function TopMatter({ id }: { id: NodeId }) {
   const snap = store.snap;
@@ -439,10 +461,7 @@ export function TopMatter({ id }: { id: NodeId }) {
   const focused = store.focus.node === id;
   const editing = store.edit?.node === id && store.edit.field === "title";
   const library = isLibraryRoot(snap, id);
-  // A document whose sections cite its sentences is a prompt (the first document's is): long, and
-  // the page should open on the outline, so it is folded until asked for. Other text is plain.
-  const prompt = !library && docOf(snap, id) === id && kids.some((k) => snap.nodes[k].anchors.length > 0);
-  const folded = prompt && !store.unfolded.has(id) && !(focused && store.focus.grain !== "node") && store.edit?.node !== id;
+  // The library root's count leaves out the Wikipedia container, which is nobody's section.
   const count = library ? kids.reduce((n, d) => n + 1 + descendants(snap, d).length, 0) : descendants(snap, id).length;
   return (
     <>
@@ -460,16 +479,13 @@ export function TopMatter({ id }: { id: NodeId }) {
         <div class="byline">
           {n.kind === "note"
             ? `a note in ${clip(label(snap, ownerSection(snap, id)), 40)}${n.by === "llm" ? ", written by the model" : ""}`
-            : `${library ? `${kids.length} document${kids.length === 1 ? "" : "s"}` : `${kids.length} section${kids.length === 1 ? "" : "s"}`} · ${count} nodes`}{" "}
+            : `${library ? "library · " : ""}${kids.length} section${kids.length === 1 ? "" : "s"} · ${count} nodes`}{" "}
           · branch {store.repo.current}
           <Flags id={id} />
           <button type="button" class="more" data-more="page" tabIndex={-1} aria-haspopup="menu" title="More for this page (right-click works too)">⋯</button>
         </div>
       </header>
-      <div class={`abstract${prompt ? " seed" : ""}${folded ? " folded" : ""}`} onClick={folded ? () => store.toggleFold(id) : undefined}>
-        <NodeBody id={id} />
-      </div>
-      {folded && <div class="unfold">Enter to read the whole prompt · every sentence of it is traced to a section below</div>}
+      <Abstract id={id} />
     </>
   );
 }

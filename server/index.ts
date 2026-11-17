@@ -6,18 +6,18 @@
  * In development it also hosts Vite; in production it serves the built files.
  *
  * The whole library is one database: /api/tree, /api/ops, /api/sync… act on all of it, and
- * /api/docs lists the root's children, with a few routes scoped to one. See README.md for the list.
+ * /api/nodes/<id>/… on one node and what is under it. See README.md for the list.
  */
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { userInfo } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { VersionVector } from "loro-crdt";
-import { IMPORT_MAX, createDoc, deleteDoc, duplicateDoc, findTop, importDoc, listDocs, renameDoc, topName } from "../src/core/library";
-import { Doc, OpError, descendants, topOf, type NodeId, type Op, type Snap } from "../src/core/model";
+import { Doc, OpError, descendants, type NodeId, type Op } from "../src/core/model";
 import { encodeVV, history } from "../src/core/repo";
 import { FormatError, serializeDoc } from "../src/core/format";
-import { writeSeed } from "../src/core/seed";
+import { IMPORT_MAX, importTree, writeSeed } from "../src/core/seed";
+import { slugify } from "../src/core/text";
 import { mockLLM } from "../src/llm/mock";
 import { LLMUnavailable, type JsonReq, type LLM, type Req, type TurnReq } from "../src/llm/types";
 import { seed } from "../src/seed/tree";
@@ -159,21 +159,11 @@ function needLLM(): LLM {
   if (!llm) throw new LLMUnavailable();
   return llm;
 }
-const titleOf = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, 200) : "");
 
 /** A server-side write to a branch: saved shortly and announced to every replica. */
 function wrote(branch: string) {
   store.saveSoon(branch);
   announce({ branch, from: "api" });
-}
-
-/** One document's entry in the listing. */
-const entry = (snap: Snap, id: NodeId) => listDocs(snap).find((d) => d.node === id)!;
-
-/** A subtree on its own, as the tree route returns the library. */
-function subtree(snap: Snap, id: NodeId) {
-  const ids = new Set([id, ...descendants(snap, id)]);
-  return { root: id, nodes: Object.fromEntries([...ids].map((x) => [x, snap.nodes[x]])) };
 }
 
 async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
@@ -188,7 +178,6 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
       model: llm?.model ?? null,
       library: store.id,
       branches: [...store.branches].map(([name, doc]) => ({ name, vv: vvHeader(doc) })),
-      docs: store.list(),
       migrated: store.migrated(),
       wiki: wikiState,
       embed: embed ? (process.env.IE_EMBED === "fake" ? "fake" : "on") : "off",
@@ -238,7 +227,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
     }
   }
 
-  if (a === "docs") return docsApi(req, res, url, parts.slice(1));
+  if (a === "nodes") return nodeApi(req, res, url, parts.slice(1));
   if (["events", "branch", "sync", "tree", "ops"].includes(a)) return libraryApi(req, res, url, a, b);
   if (await handleWiki(req, res, url)) return;
   if (url.pathname.startsWith("/api/links/")) nodeIndex.activate();
@@ -331,27 +320,38 @@ async function opsApi(req: IncomingMessage, res: ServerResponse, name: string) {
 }
 
 /**
- * /api/docs: the root's children, by node id or name (TEMPORARY: step 3 removes it). Creating,
- * renaming, copying and deleting one are ordinary commits on main; the browser makes the
- * same commits in its own replica.
+ * One node and everything under it, by its id: the subtree as JSON with its conflicts, the text
+ * format as a download, or a file in the text format imported under it. An import is an ordinary
+ * commit on main; the browser makes the same commits in its own replica.
  */
-async function docsApi(req: IncomingMessage, res: ServerResponse, url: URL, parts: string[]) {
+async function nodeApi(req: IncomingMessage, res: ServerResponse, url: URL, parts: string[]) {
   const method = req.method ?? "GET";
-  const [slug, action, branch] = parts;
-  const main = store.main;
-  if (!slug) {
-    if (method === "GET") return json(res, 200, store.list());
-    if (method === "POST") {
-      const title = titleOf((await readJson<{ title?: string }>(req)).title);
-      if (!title) return json(res, 400, { error: "a new document needs a title" });
-      const id = createDoc(main, title, USER);
-      wrote("main");
-      return json(res, 201, entry(main.snap(), id));
-    }
+  const [id, action, branch] = parts as [NodeId, string | undefined, string | undefined];
+  const name = branch || "main";
+  if (!validBranch(name)) return json(res, 400, { error: "not a branch name" });
+  const doc = store.branches.get(name);
+  if (!doc) return json(res, 404, { error: `no such branch: ${name}` });
+  const snap = doc.snap();
+  if (!id || !snap.nodes[id]) return json(res, 404, { error: `no such node: ${id ?? ""}` });
+
+  // GET /api/nodes/<id>/tree[/<branch>]: the subtree, as /api/tree returns the library.
+  if (action === "tree" && method === "GET") {
+    const ids = new Set([id, ...descendants(snap, id)]);
+    return json(res, 200, { root: id, nodes: Object.fromEntries([...ids].map((x) => [x, snap.nodes[x]])), conflicts: doc.conflicts().filter((c) => [c.node, c.parent].some((x) => x && ids.has(x))) });
   }
-  // POST /api/docs/import?name=file.md, with the file as the body.
-  if (slug === "import" && !action && method === "POST") {
-    const name = (url.searchParams.get("name") ?? "").replace(/^.*[\\/]/, "").slice(0, 200) || "import.md";
+  // GET /api/nodes/<id>/export[/<branch>]: the text format, as a download.
+  if (action === "export" && method === "GET") {
+    const { text, skipped } = serializeDoc(snap, id);
+    res.writeHead(200, {
+      "content-type": "text/markdown; charset=utf-8",
+      "content-disposition": `attachment; filename="${slugify(snap.nodes[id].title) || "untitled"}${name === "main" ? "" : `-${encodeURIComponent(name)}`}.md"`,
+      "x-skipped": JSON.stringify(skipped),
+    });
+    return res.end(text);
+  }
+  // POST /api/nodes/<id>/import?name=file.md, with the file as the body: a new last child of the node (on main).
+  if (action === "import" && !branch && method === "POST") {
+    const file = (url.searchParams.get("name") ?? "").replace(/^.*[\\/]/, "").slice(0, 200) || "import.md";
     let text: string;
     try {
       text = (await readBody(req, IMPORT_MAX)).toString("utf8");
@@ -359,58 +359,17 @@ async function docsApi(req: IncomingMessage, res: ServerResponse, url: URL, part
       if (err instanceof HttpError && err.status === 413) return json(res, 413, { error: `the file is too large to import (the limit is ${IMPORT_MAX / 1024 / 1024} MB)` });
       throw err;
     }
+    const main = store.main;
+    if (!main.snap().nodes[id]) return json(res, 404, { error: `no such node on main: ${id}` });
     try {
-      const id = importDoc(main, text, name, { creator: USER });
+      const top = importTree(main, text, file, { creator: USER, parent: id });
       wrote("main");
-      return json(res, 201, entry(main.snap(), id));
+      return json(res, 201, { node: top, title: main.snap().nodes[top].title });
     } catch (err) {
       if (err instanceof FormatError) return json(res, 422, { error: err.message, problems: err.problems });
       throw err;
     }
   }
-  const name = branch || "main";
-  if (!validBranch(name)) return json(res, 400, { error: "not a branch name" });
-  const doc = store.branches.get(name);
-  if (!doc) return json(res, 404, { error: `no such branch: ${name}` });
-  const id = findTop(doc.snap(), slug);
-  if (!id) return json(res, 404, { error: `no such document: ${slug}`, missing: "document" });
-
-  if (!action) {
-    if (method === "GET") return json(res, 200, entry(doc.snap(), id));
-    if (method === "PATCH") {
-      const title = titleOf((await readJson<{ title?: string }>(req)).title);
-      if (!title) return json(res, 400, { error: "a title is needed" });
-      renameDoc(main, id, title, USER);
-      wrote("main");
-      return json(res, 200, entry(main.snap(), id));
-    }
-    if (method === "DELETE") {
-      deleteDoc(main, id, USER);
-      wrote("main");
-      return json(res, 200, { deleted: slug });
-    }
-  }
-  if (action === "duplicate" && method === "POST") {
-    const title = titleOf((await readJson<{ title?: string }>(req)).title) || `${main.snap().nodes[id].title} (copy)`;
-    const copy = duplicateDoc(main, id, title, USER);
-    wrote("main");
-    return json(res, 201, entry(main.snap(), copy));
-  }
-  // GET /api/docs/<slug>/export[/<branch>]: the text format, as a download.
-  if (action === "export" && method === "GET") {
-    const { text, skipped } = serializeDoc(doc.snap(), id);
-    res.writeHead(200, {
-      "content-type": "text/markdown; charset=utf-8",
-      "content-disposition": `attachment; filename="${topName(doc.snap().nodes[id].title)}${name === "main" ? "" : `-${encodeURIComponent(name)}`}.md"`,
-      "x-skipped": JSON.stringify(skipped),
-    });
-    return res.end(text);
-  }
-  if (action === "tree" && method === "GET") {
-    const snap = doc.snap();
-    return json(res, 200, { ...subtree(snap, id), conflicts: doc.conflicts().filter((c) => [c.node, c.parent].some((x) => x && snap.nodes[x] && topOf(snap, x) === id)) });
-  }
-  if (action === "ops" && method === "POST") return opsApi(req, res, name);
   json(res, 404, { error: "not found" });
 }
 
@@ -481,7 +440,7 @@ createServer(async (req, res) => {
 }).listen(PORT, "127.0.0.1", () => {
   const nodes = Object.keys(store.main.snap().nodes).length;
   console.log(`Infinispand  http://localhost:${PORT}   model: ${llm ? `${llm.kind}${llm.model ? `: ${llm.model}` : ""}` : "off (set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN to generate)"}   data: ${DATA}`);
-  console.log(`library: ${store.list().length} top-level sections, ${nodes} nodes, opened in ${startMs} ms`);
+  console.log(`library: ${store.titles().length} top-level sections, ${nodes} nodes, opened in ${startMs} ms`);
   console.log(`web research: ${web.on ? `on (at most ${web.searches} searches and ${web.fetches} pages read per request)` : `off${web.why ? ` (${web.why})` : ""}`}`);
   console.log(
     `wikipedia: ${wikiMode === "live" ? `live (${wikiState.lang}.wikipedia.org, ${wikiState.contact ? "with" : "without"} a contact)` : wikiMode === "mock" ? "mock (fixtures, no network)" : "off"}`,

@@ -1,7 +1,7 @@
 import { UndoManager } from "loro-crdt";
 import { describe, expect, it } from "vitest";
 import { Doc, SYSTEM_ORIGIN, ancestorsBelowRoot, isStale, retitleOps, staleness, sections, notesOf, topOf, tops, type NodeId } from "../src/core/model";
-import { healAnchors, history, verifyHistory, revertTo, revertDocTo, mergeBranch, mergeUpdate, resolveConflict, reopenConflict, at, touched, Repo } from "../src/core/repo";
+import { healAnchors, history, verifyHistory, revertTo, revertSubtreeTo, mergeBranch, mergeUpdate, resolveConflict, reopenConflict, at, touched, Repo } from "../src/core/repo";
 import { formFor, paragraphs, sentences, sha256, words } from "../src/core/text";
 
 function fixture() {
@@ -375,7 +375,7 @@ describe("library", () => {
     doc.apply([{ op: "create", parent: a, title: "Added later" }], "Add a section");
     doc.apply([{ op: "update", id: bLeaf, body: "Beta changed later too." }], "Change the other document");
     const beta = doc.shape(doc.snap(), b);
-    revertDocTo(doc, mark, a);
+    revertSubtreeTo(doc, mark, a);
     const snap = doc.snap();
     expect(doc.shape(snap, a)).toBe(doc.shape(at(doc, mark).snap(), a));
     expect(doc.shape(snap, b)).toBe(beta);

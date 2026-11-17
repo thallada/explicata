@@ -2,20 +2,21 @@
  * Application state for the browser: the library's replicas, sync with the server, the focus
  * model, and every action the keyboard, the mouse or the command bar can take.
  *
- * There is one library and everything in it is reachable from anywhere: a document is a section
- * of the library root, opened by hoisting to it (the column) or by showing it in the next pane.
- * Nothing is closed to open something else, so model work carries on wherever the reader goes,
- * and writes into the node it was asked about.
+ * There is one library, a tree of nodes, and every node in it is reachable from anywhere: the
+ * library root is the first page, and any node can be made the whole page (hoisted, in the column)
+ * or shown in the next pane. Nothing is closed to open something else, so model work carries on
+ * wherever the reader goes, and writes into the node it was asked about.
  */
 import { UndoManager } from "loro-crdt";
 import {
-  Doc, OpError, SYSTEM_ORIGIN, ancestors, descendants, docOf, documents, isLibraryRoot, isLink, isStale, label, notesOf, sections,
-  staleness, type NodeId, type Op, type Snap,
+  Doc, OpError, SYSTEM_ORIGIN, ancestors, descendants, isLibraryRoot, isLink, isStale, label, notesOf, sections,
+  staleness, topOf, tops, type NodeId, type Op, type Snap,
 } from "../core/model";
 import { FormatError, serializeDoc } from "../core/format";
-import { IMPORT_MAX, address, createDoc, deleteDoc, duplicateDoc, importDoc, listDocs, renameDoc, resolve, type DocInfo } from "../core/library";
+import { address, resolve } from "../core/address";
+import { IMPORT_MAX, importTree } from "../core/seed";
 import {
-  Repo, at, decodeVV, healAnchors, history, reopenConflict, resolveConflict, revertDocTo, revertTo, touched, vvIncludes, type Commit,
+  Repo, at, decodeVV, healAnchors, history, reopenConflict, resolveConflict, revertSubtreeTo, revertTo, touched, vvIncludes, type Commit,
   type MergeReport,
 } from "../core/repo";
 import { clip, formFor, plain, rangeAt, sentences, slugify, words, type Form, type Range } from "../core/text";
@@ -45,12 +46,12 @@ export interface Focus {
   grain: Grain;
   range?: Range;
 }
-export type Mode = "normal" | "edit" | "command" | "history" | "help" | "jump" | "docs" | "link" | "review";
+export type Mode = "normal" | "edit" | "command" | "history" | "help" | "jump" | "move" | "link" | "review";
 
 /**
  * A pane of the panes view. The panes are a tree of forks (forks.ts) whose focused branch is the
  * trail: it starts with the path down from the top node, and a link followed from a pane opens its
- * target in the next pane, so it may hold another document's node, a Wikipedia article or a section
+ * target in the next pane, so it may hold a node from anywhere in the library, a Wikipedia article or a section
  * of one. `from` is where a jump was made from, which h returns to.
  */
 export type PaneRef =
@@ -111,18 +112,6 @@ export interface Picker {
 }
 
 export const sameAux = (a: Aux | null, b: Aux | null): boolean => JSON.stringify(a) === JSON.stringify(b);
-/** The documents menu: its filter, selection, and any title being typed or deletion being confirmed. */
-export interface Menu {
-  filter: string;
-  /** The selected document's node (kept by id, so a changed list does not move the selection). */
-  selected: NodeId | null;
-  /** Where the keys go: the filter box, or the list (single-key actions). */
-  focus: "filter" | "list";
-  prompt: { kind: "new" | "rename" | "duplicate"; id?: NodeId; value: string } | null;
-  confirm: NodeId | null;
-  /** Problems from the last import, shown until the menu closes. */
-  problems: string[] | null;
-}
 /** Page layout: one column with a margin, or panes side by side. Auto picks panes on wide windows. */
 export type View = "auto" | "column" | "panes";
 /** Where a fork's colour shows in the panes view: along its curves and title rules, across its panes' tops, down their left edges, or nowhere. */
@@ -131,7 +120,7 @@ const COLORS: Colors[] = ["line", "top", "edge", "off"];
 /** The narrowest window, in CSS px, on which `auto` chooses panes. */
 export const PANES_MIN_WIDTH = 900;
 
-/** Text being generated that is not in the document yet. */
+/** Text being generated that is not in the library yet. */
 export interface Pending {
   key: string;
   node: NodeId;
@@ -217,7 +206,6 @@ class Store {
   fatal: string | null = null;
   /** The library's replicas and their sync. */
   session!: Session;
-  menu: Menu = { filter: "", selected: null, focus: "filter", prompt: null, confirm: null, problems: null };
   user = "you";
   llm: LLM = remoteLLM("off");
   online = false;
@@ -226,7 +214,7 @@ class Store {
   focus!: Focus;
   open = new Set<NodeId>();
   hoist: NodeId | null = null;
-  /** Documents whose own text is unfolded, where it is a prompt that is folded by default. */
+  /** Nodes whose own text is unfolded, where it is a prompt that is folded by default. */
   unfolded = new Set<NodeId>();
   /** A past commit being looked at, read-only. */
   preview: { commit: Commit; doc: Doc } | null = null;
@@ -236,10 +224,12 @@ class Store {
   busy = 0;
   log: { at: number; text: string }[] = [];
   historyIndex = 0;
-  /** The history panel shows only what touched the current document. */
-  historyFilter = false;
-  /** The commit before the editor agent's last run, while `u` can still take it back. */
-  agentUndo: { commit: Commit; doc: NodeId | null } | null = null;
+  /** The history panel shows only what touched this node and what is under it (f). */
+  historyFilter: NodeId | null = null;
+  /** The commit before the editor agent's last run, while `u` can still take it back, and the top of the tree it worked in. */
+  agentUndo: { commit: Commit; top: NodeId | null } | null = null;
+  /** The node being moved while the reader picks where it goes (M). */
+  moving: NodeId | null = null;
   /** Set by "new branch from this commit" until the name has been typed. */
   branchFrom: Commit | null = null;
   /** A note being previewed on hover, and where to draw it. */
@@ -256,10 +246,11 @@ class Store {
     rendered: (id) => this.rendered(id),
   });
   /**
-   * The links list (S): every link found or made in the current document, as it stands, under
+   * The links list (S): every link found or made in a node and everything under it (on the library
+   * root, the whole library), as it stands, under
    * filters by status; the selected row's words are focused in the text.
    */
-  review: { ids: NodeId[]; show: Record<Status, boolean>; key: string | null } | null = null;
+  review: { node: NodeId; ids: NodeId[]; show: Record<Status, boolean>; key: string | null } | null = null;
 
   /** Whether the window is wide enough for `auto` to mean panes. Kept current by the page. */
   wide = typeof window !== "undefined" && window.innerWidth >= PANES_MIN_WIDTH;
@@ -455,19 +446,16 @@ class Store {
   }
 
   /**
-   * The document the reader is in: the one the focus is in. On the column's library page, where
-   * documents are rows to be opened, none.
+   * The node the reader is on, for what acts on a node and everything under it (export, duplicate,
+   * import under it, move under, /linkhere, history's f and r): the focused section, or the section
+   * a focused note or selection is in. From an annotation (its article is not in the outline), the
+   * page's top.
    */
-  get currentDoc(): NodeId | null {
+  get activeNode(): NodeId {
     const s = this.snap;
-    if (!this.panes && isLibraryRoot(s, this.top)) return null;
-    return docOf(s, this.focus.node);
-  }
-
-  /** The library page in the column: documents are opened by hoisting to them, never unfolded in the list. */
-  private listing(id: NodeId): boolean {
-    const s = this.snap;
-    return !this.panes && isLibraryRoot(s, this.top) && s.nodes[id]?.parent === s.root;
+    const f = this.focus.node;
+    if (!s.nodes[f] || inArticles(s, f)) return this.top;
+    return ownerSection(s, f);
   }
 
   /**
@@ -847,7 +835,7 @@ class Store {
     return id === this.focus.node || id === this.top;
   }
 
-  /** A node's Related list: sections of other documents close in meaning (fetched when it is drawn). */
+  /** A node's Related list: sections elsewhere in the library close in meaning (fetched when it is drawn). */
   relatedOf(id: NodeId) {
     if (this.preview || !this.snap.nodes[id] || isLibraryRoot(this.snap, id)) return [];
     return this.links.relatedOf(id, this.snap) ?? [];
@@ -858,12 +846,11 @@ class Store {
     if (this.colWiki) return this.wikiRows("col").map((row) => ({ aux: { kind: "wiki", host: "col", row } }));
     const s = this.snap;
     const out: Row[] = [];
-    const listing = isLibraryRoot(s, this.top);
     const visit = (id: NodeId) => {
       out.push({ node: id });
       if (!this.isOpen(id)) return;
       sections(s, id).forEach(visit);
-      if (!(listing && id === this.top)) out.push(...this.auxRows(id));
+      out.push(...this.auxRows(id));
     };
     visit(this.top);
     return out;
@@ -1003,8 +990,8 @@ class Store {
   private inOrder(ids: NodeId[]): NodeId[] {
     if (ids.length < 2) return ids;
     const s = this.snap;
-    const docs = documents(s);
-    const key = (id: NodeId) => [docs.indexOf(docOf(s, id) ?? s.root), label(s, ownerSection(s, id))] as const;
+    const order = tops(s);
+    const key = (id: NodeId) => [order.indexOf(topOf(s, id) ?? s.root), label(s, ownerSection(s, id))] as const;
     return [...ids].sort((a, b) => {
       const [da, la] = key(a);
       const [db, lb] = key(b);
@@ -1082,7 +1069,7 @@ class Store {
   }
 
   isOpen(id: NodeId) {
-    return id === this.top || (this.open.has(id) && !this.listing(id));
+    return id === this.top || this.open.has(id);
   }
 
   /** On screen right now: every ancestor up to the top is open. */
@@ -1175,6 +1162,7 @@ class Store {
       this.undoManager();
       this.navigate(location.pathname, "replace");
       this.ready = true;
+      this.prefetchLinks(this.focus.node);
       this.emit();
       // The first commit hashes the whole library once (later ones only the path to what they
       // changed); do that while the page is idle rather than on the reader's first edit.
@@ -1198,10 +1186,10 @@ class Store {
   }
 
   /**
-   * The version that kept each document separately stored its replicas under `doc:<uid>:…` (and
-   * the single-document version under bare `branch:<name>` keys). They are never loaded into the
-   * library, but one may hold edits made offline that never reached the server: compare each with
-   * what the server had when it built the library, and say so if it is ahead.
+   * The version that kept each document separately stored its replicas under `doc:<uid>:…`. They
+   * are never loaded into the library, but one may hold edits made offline that never reached the
+   * server: compare each with what the server had when it built the library, and say so if it is
+   * ahead.
    */
   private async checkOldReplicas(migrated: Migrated) {
     const flag = `lib:${this.session.library}:old-checked`;
@@ -1219,12 +1207,6 @@ class Store {
       const m = /^doc:([0-9a-f]+):branch:(.+)$/.exec(key);
       if (m) await check(key, migrated.docs.find((d) => d.uid === m[1]), m[2]);
     }
-    if (!(await idbGet("adopted"))) {
-      for (const key of keys) {
-        const m = /^branch:(.+)$/.exec(key);
-        if (m) await check(key, migrated.docs.find((d) => d.slug === "infinite-expand"), m[1]);
-      }
-    }
     this.oldReplicas = found;
     if (!found.length) return void idbSet(flag, true);
     const names = found.map((r) => `“${clip(r.title, 30)}”${r.branch === "main" ? "" : ` (${r.branch})`}`).join(", ");
@@ -1238,21 +1220,14 @@ class Store {
       const { text } = serializeDoc(Doc.load(r.bytes, this.user).snap());
       download(`${r.slug}${r.branch === "main" ? "" : `-${r.branch.replace(/[^\w-]+/g, "-")}`}-unsent.md`, text);
     }
-    this.say(`Saved ${this.oldReplicas.length} file${this.oldReplicas.length > 1 ? "s" : ""}; m then i imports one as a document.`);
+    this.say(`Saved ${this.oldReplicas.length} file${this.oldReplicas.length > 1 ? "s" : ""}; :/import brings one in under the node you are on.`);
     this.oldReplicas = [];
     void idbSet(`lib:${this.session.library}:old-checked`, true);
   }
 
-  /** The current document's title, or the library's. */
-  docTitle(): string {
-    const s = this.snap;
-    const d = this.currentDoc;
-    return d ? s.nodes[d].title : s.nodes[s.root].title;
-  }
-
-  /** The window's title: the article on the column's article page, else the document. */
+  /** The window's title: the article on the column's article page, else the node the reader is on. */
   private setTitle() {
-    document.title = this.colWiki ? `${this.colWiki.title} · Wikipedia` : this.docTitle() || "Infinispand";
+    document.title = this.colWiki ? `${this.colWiki.title} · Wikipedia` : label(this.snap, this.activeNode) || "Infinispand";
   }
 
   /** Every edit is saved as it is made; this says whether the server has it yet. */
@@ -1303,14 +1278,10 @@ class Store {
 
   // ---- addresses ----
 
-  /**
-   * The address of what is on screen. On the column's library page it is the library; otherwise
-   * it is the focused node, so a reload, a link or Back lands on it again.
-   */
+  /** The address of what is on screen: the focused node, so a reload, a link or Back lands on it again. */
   here(): string {
     if (!this.panes && this.colWiki) return `/w/${this.colWiki.lang}/${encodeURIComponent(this.colWiki.title.replace(/ /g, "_"))}`;
     const s = this.snap;
-    if (!this.panes && isLibraryRoot(s, this.top)) return "/";
     // An annotation has no address of its own: the address stays on what shows its article.
     if (inArticles(s, this.focus.node)) return location.pathname;
     return address(s, this.focus.node);
@@ -1318,8 +1289,8 @@ class Store {
 
   /**
    * Put the address in the bar. Moving the focus replaces the entry (after a pause: browsers
-   * throttle a page that rewrites its address on every keystroke); opening a document or
-   * jumping makes a new one, so Back returns to where the reader was.
+   * throttle a page that rewrites its address on every keystroke); changing the page (hoisting,
+   * stepping out) or jumping makes a new one, so Back returns to where the reader was.
    */
   private remember(push = false) {
     clearTimeout(this.addressTimer);
@@ -1363,13 +1334,9 @@ class Store {
       this.hoist = null;
       this.focus = { node: s.root, grain: "node" };
     } else if (isLibraryRoot(s, found.node)) {
-      // The library page: in the column, on the row of the document the reader was in; in
-      // panes, the library alone.
-      const from = docOf(s, this.focus.node);
       this.hoist = null;
-      this.focus = { node: (!this.panes && from) || s.root, grain: "node" };
+      this.focus = { node: s.root, grain: "node" };
     } else {
-      if (!this.panes && found.node === docOf(s, found.node)) this.hoist = found.node;
       this.reveal(found.node);
       // In panes, the node an address names is shown in its own pane: the trail keeps it if it
       // already shows it (Back to a pane of the trail), and is made again as the path to it if not.
@@ -1387,9 +1354,22 @@ class Store {
     }
     this.repairView();
     this.saveView();
+    this.prefetchLinks(this.focus.node);
     if (history === "replace") window.history.replaceState(null, "", this.here());
     this.setTitle();
     this.emit();
+  }
+
+  /**
+   * What the server stored about links in the top-level tree the reader has reached (what a
+   * background job found, the reviewer's verdicts), fetched once a page load, so its suggestions
+   * show in the text.
+   */
+  private prefetchLinks(id: NodeId) {
+    if (this.preview || !this.ready) return;
+    const s = this.doc.snap();
+    const t = s.nodes[id] ? topOf(s, id) : null;
+    if (t) void this.links.loadSubtree(t);
   }
 
   // ---- navigation ----
@@ -1398,6 +1378,7 @@ class Store {
     const was = this.focus.node;
     this.focus = f;
     this.aux = aux;
+    this.prefetchLinks(f.node);
     this.syncTrail();
     this.saveView();
     this.scheduleSpeculation();
@@ -1407,20 +1388,15 @@ class Store {
   }
 
   /**
-   * Open whatever needs opening for a node to be on screen. The column shows one document at a
-   * time, so a node in another one is shown by hoisting to its document; a document itself is a
-   * row of the library page until it is opened.
+   * Open whatever needs opening for a node to be on screen: everything above it, and the page
+   * itself if the node is not on it (outside the hoisted node, the page goes back to the library).
    */
   reveal(id: NodeId) {
     const s = this.snap;
     // An annotation is shown with its article, wherever that is; the Wikipedia container is never a page.
     if (!s.nodes[id] || inArticles(s, id)) return;
     const chain = ancestors(s, id);
-    const under = this.hoist && (id === this.hoist || chain.includes(this.hoist));
-    if (!this.panes) {
-      if (isLibraryRoot(s, id)) this.hoist = null;
-      else if (!under && !(this.hoist === null && s.nodes[id].parent === s.root)) this.hoist = s.library ? docOf(s, id) : null;
-    } else if (this.hoist && !under) this.hoist = null;
+    if (this.hoist && id !== this.hoist && !chain.includes(this.hoist)) this.hoist = null;
     for (const a of chain) this.open.add(a);
     if (s.nodes[id].kind === "note") this.open.add(id);
   }
@@ -1432,40 +1408,17 @@ class Store {
     if (this.hoist !== hoist) this.remember(true);
   }
 
-  /** Open a document: hoist to it in the column, show it in the next pane in panes. */
-  /** Open a document: from its row in the library, beside what is open; from the menu, a command or an address (`nav`), in place of it. */
-  openDoc(id: NodeId, nav = false) {
-    const s = this.doc.snap();
-    if (!s.nodes[id]) return;
-    void this.links.loadDoc(id);
-    this.preview = null;
-    this.mode = "normal";
-    this.aux = null;
-    this.colWiki = null;
-    if (this.panes) {
-      if (this.hoist && this.hoist !== id && !ancestors(s, this.hoist).includes(id)) this.hoist = null;
-      this.open.add(id);
-      this.focus = { node: id, grain: "node" };
-      this.syncTrail();
-      if (s.nodes[id].parent === this.top) this.withReplace(nav || this.replacing, () => this.openPane(this.paneAt, { kind: "node", id }));
-    } else this.hoist = id;
-    this.focus = { node: id, grain: "node" };
-    this.saveView();
-    this.remember(true);
-    this.emit();
-  }
-
   /**
-   * Step out of the hoisted node: to its document if it is deeper, else to the library. The
-   * focus stays on what was the top, now a row of the page it opened from.
+   * Step out of the hoisted node, to its parent's page (from a child of the root, the library).
+   * The focus stays on what was the top, now a row of the page it opened from.
    */
   stepOut() {
     this.aux = null;
     const s = this.snap;
     const was = this.hoist;
     if (!was) return;
-    const d = docOf(s, was);
-    this.hoist = d && d !== was ? d : null;
+    const p = s.nodes[was].parent;
+    this.hoist = p && !isLibraryRoot(s, p) ? p : null;
     // A note opened as a page steps back out to its words.
     const a = s.nodes[was].kind === "note" ? s.nodes[was].anchors[0] : undefined;
     this.focus = a ? { node: s.nodes[was].parent!, grain: "word", range: [a.start, a.end] } : { node: was, grain: "node" };
@@ -1526,7 +1479,6 @@ class Store {
     const s = this.snap;
     const f = this.focus;
     if (f.grain !== "node" || this.inArticleText) return this.move(1);
-    if (this.listing(f.node)) return this.openDoc(f.node);
     if (this.panes && (s.nodes[f.node].kind === "section" || this.paneHead(f.node))) {
       this.syncTrail();
       const i = this.paneAt;
@@ -1631,7 +1583,6 @@ class Store {
 
   toggle(id = this.focus.node) {
     if (id === this.top) return this.toggleFold(id);
-    if (this.listing(id)) return this.openDoc(id);
     // The head of a pane other than the first: Enter steps into its rows, as l does.
     if (this.panes && this.paneAt > 0 && this.paneHead(id)) return this.into();
     // In panes a row opens its pane, or focuses it where it is open already: closing is q's, or the pane's x.
@@ -1642,7 +1593,7 @@ class Store {
     this.setOpen(id, !this.isOpen(id));
   }
 
-  /** Unfold or fold a document's own text where it is a prompt. */
+  /** Unfold or fold a node's own text where it is a prompt. */
   toggleFold(id: NodeId) {
     if (this.unfolded.has(id)) this.unfolded.delete(id);
     else this.unfolded.add(id);
@@ -1683,7 +1634,7 @@ class Store {
       return;
     }
     if (f.grain === "node") {
-      if (!this.isOpen(f.node) && n.kind === "section" && !this.listing(f.node)) this.open.add(f.node);
+      if (!this.isOpen(f.node) && n.kind === "section") this.open.add(f.node);
       if (n.kind === "section") this.rowPane(f.node, true);
       const first = sentences(n.body)[0];
       if (first) this.setFocus({ node: f.node, grain: "sentence", range: first });
@@ -1746,8 +1697,8 @@ class Store {
 
   expandAll(id = this.focus.node) {
     const s = this.snap;
-    // On the library, opening everything would mean every document; open the documents only.
-    const under = isLibraryRoot(s, id) ? documents(s) : descendants(s, id);
+    // On the library root, opening everything would open the whole library: its top-level nodes only.
+    const under = isLibraryRoot(s, id) ? tops(s) : descendants(s, id);
     this.open.add(id);
     for (const d of under) if (s.nodes[d].kind === "section") this.open.add(d);
     this.saveView();
@@ -1842,7 +1793,7 @@ class Store {
   startEdit(field: "title" | "body", fresh = false) {
     if (!this.writable()) return;
     const n = this.snap.nodes[this.focus.node];
-    if (field === "body" && !this.isOpen(n.id) && !this.listing(n.id)) this.open.add(n.id);
+    if (field === "body" && !this.isOpen(n.id)) this.open.add(n.id);
     if (field === "body") this.rowPane(n.id, true);
     this.edit = { node: n.id, field, value: n[field], fresh };
     this.mode = "edit";
@@ -1899,7 +1850,7 @@ class Store {
     return ops;
   }
 
-  /** a: a new section inside the focused node. A: a new section after it. On the library, a section is a document. */
+  /** a: a new section inside the focused node. A: a new section after it. */
   add(where: "child" | "after") {
     if (!this.writable()) return;
     const s = this.snap;
@@ -1907,9 +1858,9 @@ class Store {
     const asChild = where === "child" || !n.parent || n.id === this.top || n.kind === "note";
     const parent = asChild ? n.id : n.parent!;
     const index = asChild ? undefined : s.nodes[parent].children.indexOf(n.id) + 1;
-    const [id] = this.apply([{ op: "create", parent, index, kind: "section", title: "", body: "" }], isLibraryRoot(s, parent) ? "Add document" : "Add section");
+    const [id] = this.apply([{ op: "create", parent, index, kind: "section", title: "", body: "" }], "Add section");
     if (!id) return;
-    if (!this.listing(id)) this.open.add(parent);
+    this.open.add(parent);
     this.focus = { node: id, grain: "node" };
     this.startEdit("title", true);
   }
@@ -1951,7 +1902,7 @@ class Store {
         : this.panes ? sibs[j + 1] ?? sibs[j - 1] ?? n.parent
         : order[i + 1 + descendants(s, n.id).filter((d) => order.includes(d)).length] ?? order[i - 1] ?? n.parent;
     this.apply([{ op: "delete", id: n.id }], `Delete “${clip(label(s, n.id), 40)}”`);
-    if (this.hoist === n.id || (this.hoist && ancestors(s, this.hoist).includes(n.id))) this.hoist = docOf(s, n.parent) === n.parent ? n.parent : null;
+    if (this.hoist === n.id || (this.hoist && ancestors(s, this.hoist).includes(n.id))) this.hoist = isLibraryRoot(s, n.parent) ? null : n.parent;
     this.focus = { node: this.snap.nodes[next] ? next : n.parent, grain: "node" };
     this.remember();
     this.say(`Deleted “${clip(label(s, n.id), 40)}”. u to undo.`);
@@ -1971,7 +1922,7 @@ class Store {
     this.afterEdit(n.parent, `the subsections were reordered`);
   }
 
-  /** >: make it a child of the section above. <: lift it out beside its parent. Either may carry it into another document. */
+  /** >: make it a child of the section above. <: lift it out beside its parent. M moves it under any node. */
   indent(delta: number) {
     if (!this.writable()) return;
     const s = this.snap;
@@ -2054,9 +2005,9 @@ class Store {
     // The agent's work arrives by merge, which the undo stack does not see. If it was the last
     // thing to happen, undo means going back to the commit before it.
     if (!redo && this.agentUndo) {
-      const { commit, doc } = this.agentUndo;
+      const { commit, top } = this.agentUndo;
       this.agentUndo = null;
-      this.attempt(() => (doc ? revertDocTo(this.doc, commit, doc) : revertTo(this.doc, commit)));
+      this.attempt(() => (top ? revertSubtreeTo(this.doc, commit, top) : revertTo(this.doc, commit)));
       this.repairView();
       return this.say("Undid the editor's changes (as a revert commit).");
     }
@@ -2080,11 +2031,10 @@ class Store {
     const f = this.focus;
     const n = s.nodes[f.node];
     if (f.grain === "node") {
-      if (this.listing(n.id)) return this.openDoc(n.id);
       if (!this.isOpen(n.id)) return this.setOpen(n.id, true);
       const kids = sections(s, n.id);
       const closed = kids.filter((k) => !this.open.has(k));
-      if (closed.length && !isLibraryRoot(s, n.id)) {
+      if (closed.length) {
         closed.forEach((k) => this.open.add(k));
         this.saveView();
         // In panes a child's pane only shows once it is focused, so say what changed.
@@ -2225,8 +2175,6 @@ class Store {
     if (!text) return;
     const [verb, ...rest] = text.split(/\s+/);
     const arg = rest.join(" ");
-    const here = this.currentDoc;
-    const needDoc = (fn: (id: NodeId) => void) => () => (here ? fn(here) : this.say("Open a document first (m), or name it in the menu."));
     const builtin: Record<string, () => void> = {
       branch: () => {
         this.newBranch(arg, this.branchFrom ?? undefined);
@@ -2245,18 +2193,15 @@ class Store {
       colors: () => this.setColors(arg),
       view: () => (["auto", "column", "panes"].includes(arg) ? this.setView(arg as View) : this.say(`/view auto, column or panes (now ${this.settings.view}, showing ${this.panes ? "panes" : "column"})`)),
       resolve: () => this.resolveAll(),
-      new: () => (arg ? this.newDoc(arg) : this.openMenu("new")),
-      open: () => this.openByName(arg),
-      rename: needDoc((id) => (arg ? this.renameDocument(id, arg) : this.say("Give the new title: /rename <title>"))),
-      duplicate: needDoc((id) => this.duplicateDocument(id, arg || `${this.snap.nodes[id].title} (copy)`)),
-      export: needDoc((id) => this.exportDocument(id)),
+      duplicate: () => this.duplicateNode(arg),
+      export: () => this.exportNode(),
       import: () => this.pickFile(),
       recover: () => this.recover(),
       link: () => this.linkTo(arg),
       unlink: () => this.unlink(),
       autolink: () => this.setAutolink(arg),
-      linkdoc: needDoc((id) => void this.linkJob("doc", id)),
-      linkall: () => void this.linkJob("library"),
+      linkhere: () => void this.linkJob(this.activeNode),
+      linkall: () => void this.linkJob(this.snap.root),
       linkcancel: () => void this.cancelLinkJob(),
       research: () => this.agent(arg, { research: true }),
     };
@@ -2800,7 +2745,7 @@ class Store {
     if (typeof parsed === "string") return this.say(parsed);
     let ref: Ref = parsed;
     if (ref.kind === "node") {
-      const id = resolveNode(this.snap, ref, docOf(this.snap, spot.node) ?? undefined);
+      const id = resolveNode(this.snap, ref, spot.node);
       if (!id) return this.say(`No node at ${text}.`);
       ref = nodeRef(this.snap, id);
     }
@@ -2898,7 +2843,7 @@ class Store {
         const sources = result.sources.length ? ` · sources: ${result.sources.map((s) => (s.title ? `${clip(s.title, 40)} (${hostOf(s.url)})` : hostOf(s.url))).join(", ")}` : "";
         this.say(`editor: ${clip(run.summary, 160)}${result.commits ? ` (${result.commits} change${result.commits > 1 ? "s" : ""}; u undoes, g reviews)` : ""}${sources}`);
         if (result.commits) {
-          this.agentUndo = { commit: before, doc: docOf(doc.snap(), focus) };
+          this.agentUndo = { commit: before, top: topOf(doc.snap(), focus) };
           await this.afterMerge(result.report);
         }
       } catch (err) {
@@ -2962,16 +2907,19 @@ class Store {
     this.say(`Removed the link on “${clip(quote, 40)}”; it will not be made again here · u undoes`);
   }
 
-  /** S: the links list of the current document (or, on the library, of the focused node). It opens at once; what the server has is fetched fresh behind it. */
+  /**
+   * S: the links list of the node the reader is on and everything under it; on the library root,
+   * of the whole library. It opens at once, on the first row waiting for a decision, else the
+   * first shown; what the server has is fetched fresh behind it.
+   */
   startReview() {
     if (!this.writable()) return;
     const s = this.snap;
-    const d = this.currentDoc;
-    const ids = d ? [d, ...descendants(s, d)] : [this.focus.node];
-    const review = { ids, show: { linked: true, pending: true, rejected: false } as Record<Status, boolean>, key: null as string | null };
+    const node = this.activeNode;
+    const ids = isLibraryRoot(s, node) ? [s.root, ...tops(s).flatMap((t) => [t, ...descendants(s, t)])] : [node, ...descendants(s, node)];
+    const review = { node, ids, show: { linked: true, pending: true, rejected: false } as Record<Status, boolean>, key: null as string | null };
     this.review = review;
     this.mode = "review";
-    // The first row waiting for a decision, else the first shown.
     const first = () => {
       if (this.review !== review || review.key) return;
       const rows = this.reviewRows();
@@ -2980,7 +2928,7 @@ class Store {
     };
     first();
     this.emit();
-    if (d) void this.links.loadDoc(d, true).then(() => (first(), this.emit()));
+    void this.links.loadSubtree(node, true).then(() => (first(), this.emit()));
   }
 
   /** Every row of the links list, whatever the filters. */
@@ -3145,9 +3093,12 @@ class Store {
     this.say(c === "off" ? "colors off: forks in plain ink" : `colors ${c}`);
   }
 
-  /** /linkdoc, /linkall: scan in the background on the server; progress shows in the status line. */
-  async linkJob(scope: "doc" | "library", doc?: NodeId, quiet = false) {
-    const r = await this.links.startJob(scope, doc);
+  /**
+   * /linkhere, /linkall: scan a node and everything under it (on the library root, the whole
+   * library) in the background on the server; progress shows in the status line.
+   */
+  async linkJob(node: NodeId, quiet = false) {
+    const r = await this.links.startJob(isLibraryRoot(this.doc.snap(), node) ? "library" : "node", node);
     if (typeof r === "string") return this.say(`Could not start looking for links: ${r}`);
     // Already over (a short job announced its end first): that has been said.
     if (r.state === "running" && (!quiet || r.slow)) this.say(this.jobText(r));
@@ -3188,9 +3139,9 @@ class Store {
     }
     if (before?.id === j.id && before.state !== "running") return;
     void (async () => {
-      const docs = j.doc ? [j.doc] : documents(this.doc.snap());
+      const scope = j.node ? [j.node] : tops(this.doc.snap());
       const claim = !!j.review && this.links.effective() === "review";
-      const got = await Promise.all(docs.map((d) => this.links.loadDoc(d, true, claim)));
+      const got = await Promise.all(scope.map((id) => this.links.loadSubtree(id, true, claim)));
       let made: number | undefined;
       if (claim) made = this.links.applyAuto(got.flatMap((g) => g.apply), this.doc, "reviewer").length;
       else if (j.state === "done" && this.settings.autolink === "on") {
@@ -3208,127 +3159,33 @@ class Store {
     while (!this.session.synced() && Date.now() < until) await new Promise((r) => setTimeout(r, 100));
   }
 
-  // ---- documents: the menu (m) and what it does ----
+  // ---- a node and everything under it: copy, export, import, move ----
 
-  openMenu(prompt?: "new") {
-    const items = this.menuItems("");
-    const here = this.currentDoc;
-    this.menu = { filter: "", selected: items.find((d) => d.node === here)?.node ?? items[0]?.node ?? null, focus: "filter", prompt: null, confirm: null, problems: null };
-    this.mode = "docs";
-    if (prompt) this.menuPrompt(prompt);
-    this.emit();
-  }
-
-  closeMenu() {
-    this.mode = "normal";
-    this.emit();
-  }
-
-  /** The menu's rows: the documents matching the filter, in library order. */
-  menuItems(filter = this.menu.filter): DocInfo[] {
-    const terms = filter.toLowerCase().split(/\s+/).filter(Boolean);
-    const rows = listDocs(this.doc.snap());
-    return terms.length ? rows.filter((d) => terms.every((t) => `${d.title} ${d.slug} ${d.excerpt}`.toLowerCase().includes(t))) : rows;
-  }
-
-  menuSelected(): DocInfo | undefined {
-    const items = this.menuItems();
-    return items.find((d) => d.node === this.menu.selected) ?? items[0];
-  }
-
-  menuMove(delta: number) {
-    const items = this.menuItems();
-    if (!items.length) return;
-    const i = items.findIndex((d) => d.node === this.menuSelected()?.node);
-    this.menu.selected = items[Math.max(0, Math.min(items.length - 1, i + delta))].node;
-    this.emit();
-  }
-
-  menuFilter(text: string) {
-    this.menu.filter = text;
-    this.menu.selected = this.menuItems()[0]?.node ?? null;
-    this.emit();
-  }
-
-  /** Ask for a title in the menu: for a new document, or to rename or duplicate the selected one. */
-  menuPrompt(kind: "new" | "rename" | "duplicate") {
-    const d = this.menuSelected();
-    if (kind !== "new" && !d) return;
-    this.menu.prompt = { kind, id: d?.node, value: kind === "new" ? "" : kind === "rename" ? d!.title : `${d!.title} (copy)` };
-    this.menu.confirm = null;
-    this.emit();
-  }
-
-  menuSubmit(value: string) {
-    const p = this.menu.prompt;
-    this.menu.prompt = null;
-    this.menu.focus = "list";
-    this.emit();
-    if (!p) return;
-    if (p.kind === "new") this.newDoc(value);
-    else if (p.kind === "rename") this.renameDocument(p.id!, value);
-    else this.duplicateDocument(p.id!, value);
-  }
-
-  /** A document command on the replica on screen: refused while viewing history, reported if refused. */
-  private docWrite(fn: () => void) {
+  /** A write on the replica on screen: refused while viewing history, reported if refused. */
+  private nodeWrite(fn: () => void) {
     if (!this.writable()) return;
     this.agentUndo = null;
     this.attempt(fn);
   }
 
-  newDoc(title: string) {
-    title = title.replace(/\s+/g, " ").trim();
-    if (!title) return this.say("A new document needs a title: /new <title>");
-    this.docWrite(() => {
-      const id = createDoc(this.doc, title, this.user);
-      this.openDoc(id, true);
-      this.say(`Created “${clip(title, 60)}”: c writes its opening text, a adds a section.`);
+  /** /duplicate [title]: a copy of the active node and everything under it, placed just after it, which then has the focus. */
+  duplicateNode(title = "") {
+    const s = this.snap;
+    const id = this.activeNode;
+    if (isLibraryRoot(s, id)) return this.say("The library itself is not copied: /export saves it to a file.");
+    const name = title.replace(/\s+/g, " ").trim() || `${s.nodes[id].title} (copy)`;
+    this.nodeWrite(() => {
+      const parent = s.nodes[id].parent!;
+      const index = s.nodes[parent].children.indexOf(id) + 1;
+      const [copy] = this.doc.as(this.user, () => this.doc.apply([{ op: "copy", id, parent, index, title: name }], `Duplicate “${clip(s.nodes[id].title, 40)}” as “${clip(name, 40)}”`).created);
+      this.go(copy);
+      this.remember(true);
+      this.say(`Saved a copy as “${clip(name, 60)}”, just after the original; this is the copy.`);
     });
   }
 
-  /** Links keep working (they go by node id); on this branch, and u undoes it. */
-  renameDocument(id: NodeId, title: string) {
-    title = title.replace(/\s+/g, " ").trim();
-    if (!title) return this.say("A document needs a title.");
-    this.docWrite(() => {
-      renameDoc(this.doc, id, title, this.user);
-      this.remember();
-      this.say(`Renamed to “${clip(title, 60)}”.`);
-    });
-  }
-
-  /** Save as: a copy of the whole document, placed after it, which then opens. */
-  duplicateDocument(id: NodeId, title: string) {
-    title = title.replace(/\s+/g, " ").trim();
-    if (!title) return this.say("The copy needs a title.");
-    this.docWrite(() => {
-      const copy = duplicateDoc(this.doc, id, title, this.user);
-      this.openDoc(copy, true);
-      this.say(`Saved a copy as “${clip(title, 60)}”; this is the copy.`);
-    });
-  }
-
-  /** Delete (after the menu has asked): an ordinary delete, which u undoes. */
-  deleteDocument(id: NodeId) {
-    this.menu.confirm = null;
-    const s = this.doc.snap();
-    const title = s.nodes[id]?.title ?? "";
-    this.docWrite(() => {
-      const leaving = this.currentDoc === id || (this.hoist && docOf(s, this.hoist) === id);
-      deleteDoc(this.doc, id, this.user);
-      if (leaving) {
-        this.hoist = null;
-        this.focus = { node: s.root, grain: "node" };
-        this.remember(true);
-      }
-      this.repairView();
-      this.say(`Deleted “${clip(title, 50)}”. u brings it back.`);
-    });
-  }
-
-  /** Save to a file: the text format, written from this replica, so unsynced edits are included. */
-  exportDocument(id: NodeId) {
+  /** /export: the active node and everything under it, to a file in the text format, written from this replica, so unsynced edits are included. */
+  exportNode(id = this.activeNode) {
     const s = this.doc.snap();
     const n = s.nodes[id];
     if (!n) return;
@@ -3337,11 +3194,13 @@ class Store {
     const name = this.repo.current === "main" ? `${base}.md` : `${base}-${this.repo.current.replace(/[^\w-]+/g, "-")}.md`;
     download(name, text);
     const left = [skipped.orphans && `${skipped.orphans} orphaned note${skipped.orphans > 1 ? "s" : ""}`, skipped.inNotes && `${skipped.inNotes} section${skipped.inNotes > 1 ? "s" : ""} inside notes`].filter(Boolean);
-    this.say(`Saved “${clip(n.title, 50)}” to ${name}${left.length ? `. Left out: ${left.join(" and ")} (the format has no place for them)` : ""}.`);
+    this.say(`Saved “${clip(label(s, id), 50)}” to ${name}${left.length ? `. Left out: ${left.join(" and ")} (the format has no place for them)` : ""}.`);
   }
 
-  /** Open a file: a file picker, whose choice is imported. */
+  /** /import: a file picker, whose choice is imported under the active node. */
   pickFile() {
+    if (!this.writable()) return;
+    const parent = this.activeNode;
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".md,.markdown,.txt,text/markdown,text/plain";
@@ -3349,42 +3208,81 @@ class Store {
     input.onchange = () => {
       const file = input.files?.[0];
       input.remove();
-      if (file) void this.importFile(file);
+      if (file) void this.importFile(file, parent);
     };
     document.body.append(input);
     input.click();
   }
 
-  /** A .md file as a new document at the end of the library. */
-  async importFile(file: File) {
+  /** A .md file as a new last child of a node (the active one by default; on the library root, a new top-level node). */
+  async importFile(file: File, parent = this.activeNode) {
     if (file.size > IMPORT_MAX) return this.say(`${file.name} is too large to import (the limit is ${IMPORT_MAX / 1024 / 1024} MB).`);
     if (!this.writable()) return;
     const text = await file.text();
+    if (!this.doc.snap().nodes[parent]) return this.say(`Could not import ${file.name}: the node it was to go under is gone.`);
     try {
-      const id = importDoc(this.doc, text, file.name, { creator: this.user });
-      this.openDoc(id, true);
-      this.say(`Imported ${file.name} as “${clip(this.doc.snap().nodes[id].title, 60)}”.`);
+      const id = importTree(this.doc, text, file.name, { creator: this.user, parent });
+      this.agentUndo = null;
+      this.go(id);
+      this.remember(true);
+      const s = this.doc.snap();
+      this.say(`Imported ${file.name} as “${clip(s.nodes[id].title, 60)}”${isLibraryRoot(s, parent) ? "" : `, under “${clip(label(s, parent), 40)}”`}.`);
       // Imported text is scanned like any other writing: by a background job, once the server has it.
-      if (this.settings.autolink !== "off") void this.whenSynced().then(() => this.linkJob("doc", id, true));
+      if (this.settings.autolink !== "off") void this.whenSynced().then(() => this.linkJob(id, true));
     } catch (err) {
       if (!(err instanceof FormatError)) return this.say(`Could not import ${file.name}: ${err instanceof Error ? err.message : err}`);
-      if (this.mode !== "docs") this.openMenu();
-      this.menu.problems = err.problems;
-      this.say(`Could not import ${file.name}: ${err.problems.length} problem${err.problems.length > 1 ? "s" : ""}, listed in the menu.`);
+      const n = err.problems.length;
+      this.say(`Could not import ${file.name}: ${err.problems[0]}${n > 1 ? ` (and ${n - 1} more problem${n > 2 ? "s" : ""})` : ""}`);
     }
   }
 
-  /** /open name: by slug, then by title (exact, then its start, then anywhere). */
-  openByName(name: string) {
-    const q = name.trim().toLowerCase();
-    if (!q) return this.openMenu();
-    const all = this.menuItems("");
-    const d =
-      all.find((x) => x.slug === q) ?? all.find((x) => x.title.toLowerCase() === q) ?? all.find((x) => x.title.toLowerCase().startsWith(q)) ??
-      all.find((x) => `${x.title} ${x.slug}`.toLowerCase().includes(q));
-    if (!d) return this.say(`No document matches “${name}”. m lists them.`);
-    this.openDoc(d.node, true);
-    this.say(`Opened “${clip(d.title, 60)}”.`);
+  /** M: pick a node to move the active node (and everything under it) under. The jump box is the picker. */
+  startMove() {
+    if (!this.writable()) return;
+    const id = this.activeNode;
+    if (isLibraryRoot(this.snap, id)) return this.say("The library root stays where it is: M moves a node under another.");
+    this.moving = id;
+    this.mode = "move";
+    this.emit();
+  }
+
+  /** What the move picker offers for a query: the library root and its sections, never the node being moved or anything under it. */
+  moveTargets(q: string): NodeId[] {
+    const s = this.snap;
+    const id = this.moving;
+    const away = new Set(id && s.nodes[id] ? [id, ...descendants(s, id)] : []);
+    const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const root = !terms.length || terms.every((t) => s.nodes[s.root].title.toLowerCase().includes(t)) ? [s.root] : [];
+    const found = terms.length ? this.search(q, away) : tops(s).filter((t) => !away.has(t));
+    return [...root, ...found].slice(0, 12);
+  }
+
+  /** Enter in the move picker: the node goes under the one chosen, as its last child, in one commit (u undoes). */
+  moveUnder(target: NodeId) {
+    const id = this.moving;
+    this.moving = null;
+    this.mode = "normal";
+    const s = this.snap;
+    if (!id || !s.nodes[id] || !s.nodes[target]) return this.emit();
+    if (target === id || ancestors(s, target).includes(id)) return this.say("A node cannot go under itself or anything under it.");
+    const n = s.nodes[id];
+    if (n.parent === target) return this.say(`“${clip(label(s, id), 40)}” is under “${clip(label(s, target), 40)}” already.`);
+    const from = n.parent!;
+    this.nodeWrite(() => {
+      this.doc.as(this.user, () => this.doc.apply([{ op: "move", id, parent: target }], `Move “${clip(label(s, id), 40)}” under “${clip(label(s, target), 40)}”`));
+      this.open.add(target);
+      this.go(id);
+      this.remember(true);
+      this.say(`Moved “${clip(label(s, id), 40)}” under “${clip(label(s, target), 40)}”. u undoes.`);
+      if (!isLibraryRoot(s, target)) this.afterEdit(target, `the subsection “${n.title}” was moved in`);
+      if (!isLibraryRoot(s, from)) this.afterEdit(from, `the subsection “${n.title}” was moved out`);
+    });
+  }
+
+  /** Esc in the move picker. */
+  cancelMove() {
+    this.moving = null;
+    this.setMode("normal");
   }
 
   // ---- history, branches, merge ----
@@ -3398,33 +3296,37 @@ class Store {
   }
 
   /**
-   * The documents a commit wrote to, derived from the containers its ops changed (the commit
-   * itself does not record them), placed by where those nodes are now. A node deleted since
-   * cannot be placed without checking out the past, which costs the size of the library, so a
-   * commit that only deleted names no document.
+   * The nodes a commit wrote to, derived from the containers its ops changed (the commit itself
+   * does not record them), that are still in the library.
    */
-  touchedDocs(c: Commit): NodeId[] {
+  touchedNodes(c: Commit): NodeId[] {
     const key = `${this.repo.current}:${c.id}`;
     let out = this.touchedCache.get(key);
     if (out) return out;
     const s = this.doc.snap();
-    const docs = new Set<NodeId>();
-    for (const id of touched(this.doc, c.spans).nodes) {
-      const d = s.nodes[id] ? docOf(s, id) : null;
-      if (d) docs.add(d);
-    }
-    out = [...docs];
+    out = [...touched(this.doc, c.spans).nodes].filter((id) => s.nodes[id]);
     this.touchedCache.set(key, out);
     return out;
   }
 
+  /**
+   * Where a commit wrote, for its line in history: the top-level nodes its nodes are under, placed
+   * by where those nodes are now. A node deleted since cannot be placed without checking out the
+   * past, which costs the size of the library, so a commit that only deleted names nothing.
+   */
+  touchedTops(c: Commit): NodeId[] {
+    const s = this.doc.snap();
+    return [...new Set(this.touchedNodes(c).map((id) => topOf(s, id)).filter((t): t is NodeId => !!t))];
+  }
+
   /** Items of the history panel, in the order j and k walk them. */
   panel() {
-    const here = this.historyFilter ? this.currentDoc : null;
     const s = this.doc.snap();
-    const conflicts = this.doc.conflicts().filter((c) => !here || [c.node, c.parent].some((x) => x && s.nodes[x] && docOf(s, x) === here));
+    const here = this.historyFilter && s.nodes[this.historyFilter] ? this.historyFilter : null;
+    const under = here ? new Set([here, ...descendants(s, here)]) : null;
+    const conflicts = this.doc.conflicts().filter((c) => !under || [c.node, c.parent].some((x) => x && under.has(x)));
     const branches = [...this.repo.branches.keys()];
-    const commits = here ? this.commits().filter((c) => this.touchedDocs(c).includes(here)) : this.commits();
+    const commits = under ? this.commits().filter((c) => this.touchedNodes(c).some((id) => under.has(id))) : this.commits();
     return [
       ...conflicts.map((c) => ({ type: "conflict" as const, conflict: c })),
       ...branches.map((b) => ({ type: "branch" as const, branch: b })),
@@ -3432,16 +3334,19 @@ class Store {
     ];
   }
 
-  /** f in history: show only what touched the current document, or everything. */
+  /** f in history: show only what touched the active node and what is under it, or everything. */
   toggleHistoryFilter() {
-    if (!this.historyFilter && !this.currentDoc) return this.say("Open a document first: the filter shows what touched the current one.");
-    this.historyFilter = !this.historyFilter;
+    const id = this.activeNode;
+    if (!this.historyFilter && isLibraryRoot(this.doc.snap(), id)) return this.say("On the library root history shows everything: focus a node first, and f shows only what touched it and what is under it.");
+    this.historyFilter = this.historyFilter ? null : id;
     this.historyIndex = 0;
     this.emit();
   }
 
   openHistory() {
     this.mode = "history";
+    // The filter follows the reader: on another node it is that node's.
+    if (this.historyFilter) this.historyFilter = isLibraryRoot(this.doc.snap(), this.activeNode) ? null : this.activeNode;
     this.historyIndex = Math.min(this.historyIndex, this.panel().length - 1);
     const firstCommit = this.panel().findIndex((i) => i.type === "commit");
     if (!this.doc.conflicts().some((c) => c.status === "open")) this.historyIndex = Math.max(this.historyIndex, firstCommit);
@@ -3476,17 +3381,19 @@ class Store {
   }
 
   /**
-   * r in history: roll the current document back to the commit, leaving the rest of the library
-   * as it is. On the library itself, the whole library goes back.
+   * r in history: roll the active node and everything under it back to the commit, leaving the
+   * rest of the library as it is. On the library root, the whole library goes back.
    */
   revert(commit: Commit) {
     this.preview = null;
-    const here = this.currentDoc;
+    const s = this.doc.snap();
+    if (!s.nodes[this.focus.node]) return this.repairView(), this.say("The node you were on is gone now: pick one, then r reverts it.");
+    const here = isLibraryRoot(s, this.activeNode) ? null : this.activeNode;
     this.attempt(() => {
-      if (here) revertDocTo(this.doc, commit, here);
+      if (here) revertSubtreeTo(this.doc, commit, here);
       else revertTo(this.doc, commit);
       this.repairView();
-      this.say(here ? `Reverted “${clip(this.snap.nodes[here]?.title ?? "", 40)}” to “${clip(commit.message, 50)}” as a new commit; the rest of the library is unchanged.` : `Reverted the library to “${clip(commit.message, 50)}” as a new commit.`);
+      this.say(here ? `Reverted “${clip(label(this.snap, here), 40)}” and what is under it to “${clip(commit.message, 50)}” as a new commit; the rest of the library is unchanged.` : `Reverted the library to “${clip(commit.message, 50)}” as a new commit.`);
     });
     this.repairView();
     this.emit();
@@ -3568,12 +3475,12 @@ class Store {
     this.repairView();
   }
 
-  /** Sections matching a query, across the whole library, for the jump box. */
-  search(q: string): NodeId[] {
+  /** Sections matching a query, across the whole library, for the jump box (and the move picker, leaving out `skip`). */
+  search(q: string, skip?: Set<NodeId>): NodeId[] {
     const s = this.snap;
     const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
-    const all = Object.values(s.nodes).filter((n) => n.kind === "section" && n.id !== s.root && !inArticles(s, n.id));
-    if (!terms.length) return documents(s).slice(0, 12);
+    const all = Object.values(s.nodes).filter((n) => n.kind === "section" && n.id !== s.root && !inArticles(s, n.id) && !skip?.has(n.id));
+    if (!terms.length) return tops(s).slice(0, 12);
     const low = (n: (typeof all)[number]) => {
       let l = lowered.get(n);
       if (!l) lowered.set(n, (l = [n.title.toLowerCase(), n.body.toLowerCase()]));
@@ -3590,19 +3497,18 @@ class Store {
       }
       return total;
     };
-    // Between equally good matches, the document the reader is in comes first.
-    const here = this.currentDoc;
-    const near = (id: NodeId) => (here && docOf(s, id) === here ? 0.5 : 0);
+    // Between equally good matches, those in the same top-level tree as the reader come first.
+    const here = s.nodes[this.focus.node] ? topOf(s, this.focus.node) : null;
+    const near = (id: NodeId) => (here && topOf(s, id) === here ? 0.5 : 0);
     return all.map((n) => [n.id, score(n)] as const).filter(([, sc]) => sc > 0).map(([id, sc]) => [id, sc + near(id)] as const).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([id]) => id);
   }
 
-  /** Enter in the jump box: a document opens; anything else is gone to, in whichever document it is. */
+  /** Enter in the jump box: the node is gone to, wherever it is (outside the hoisted node, the page goes back to the library). */
   jumpTo(id: NodeId) {
     this.mode = "normal";
     this.aux = null;
     this.colWiki = null;
-    const s = this.snap;
-    if (s.library && s.nodes[id]?.parent === s.root) return this.openDoc(id, true);
+    if (!this.snap.nodes[id]) return this.emit();
     this.reveal(id);
     this.focus = { node: id, grain: "node" };
     this.saveView();

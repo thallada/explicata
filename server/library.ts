@@ -6,15 +6,14 @@
  *   <data>/library.json             starter files already imported (by file name), so a deleted one stays deleted
  *
  * Branch names are percent-encoded into file names, so no request can name a file outside it.
- * Writes are gathered for a moment before they go to disk: with every document in one file, a
+ * Writes are gathered for a moment before they go to disk: with the whole library in one file, a
  * save per keystroke would rewrite the whole library each time. Replicas keep what has not been
  * saved and send it again, so a crash loses nothing that a browser still holds.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FormatError } from "../src/core/format";
-import { listDocs } from "../src/core/library";
-import { Doc } from "../src/core/model";
+import { Doc, tops } from "../src/core/model";
 import { writeText } from "../src/core/seed";
 import { slugify } from "../src/core/text";
 import { SEED_KEY, migrate } from "./migrate";
@@ -56,8 +55,10 @@ export class LibraryStore {
     return this.main.libraryId ?? "";
   }
 
-  list() {
-    return listDocs(this.main.snap());
+  /** The titles of the root's children on main, in order. */
+  titles(): string[] {
+    const snap = this.main.snap();
+    return tops(snap).map((id) => snap.nodes[id].title);
   }
 
   /** What the migration recorded, for browsers that still hold replicas of the old documents. */

@@ -187,7 +187,8 @@ article { width: min(100%, var(--col)); }
 .node.open.d3 > .row > .title, .node.open.d6 > .row > .title { font-weight: 500; font-variant-caps: small-caps; letter-spacing: 0.02em; }
 .node.focused > .row { background: var(--sel); }
 .node.focused > .row .mark { color: var(--fg); }
-.flags { margin-left: auto; padding-left: 1em; flex: none; font-family: var(--sans); font-size: 0.62rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
+/* Flags give way (cut short) before a cramped row runs off a narrow screen. */
+.flags { margin-left: auto; padding-left: 1em; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--sans); font-size: 0.62rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
 .flags.attn { color: var(--attn); }
 .byline .flags { margin-left: 0.8em; padding: 0; }
 
@@ -234,10 +235,10 @@ article.preview { opacity: 0.92; }
 .lrow.rejected .lq, .lrow.rejected .lt { color: var(--faint); }
 .lrow .sub { overflow-wrap: anywhere; }
 .lrow .lwhere { color: var(--dim); }
-.lempty { color: var(--faint); margin: 0.8rem 0.45rem; }
+.lempty, .lmore { color: var(--faint); margin: 0.8rem 0.45rem; }
 .hash { font-family: var(--mono); font-size: 0.62rem; color: var(--faint); flex: none; }
-/* The documents a commit touched. */
-.item .docs { color: var(--dim); font-size: 0.62rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The top-level nodes a commit touched. */
+.item .under { color: var(--dim); font-size: 0.62rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip { margin-left: auto; font-size: 0.58rem; letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid var(--rule); padding: 0 0.35em; border-radius: 2px; color: var(--dim); }
 .conflict.open .chip { color: var(--attn); border-color: var(--attn); }
 .sides { margin-top: 0.4rem; display: grid; gap: 0.35rem; font-family: var(--serif); font-size: 0.74rem; line-height: 1.4; cursor: default; }
@@ -273,6 +274,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .jump li .p { color: var(--faint); font-size: 0.66rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .jump li .p .in { font-weight: 600; color: var(--dim); }
 .jump li.none { color: var(--faint); cursor: default; }
+.jump-head { padding: 0.45rem 0.8rem 0; font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
 
 .popup {
   position: fixed; width: 440px; max-height: 320px; overflow: auto; z-index: 15;
@@ -581,49 +583,23 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .orphan-note { text-transform: none; letter-spacing: 0.02em; font-style: italic; }
 
 /* The first pane keeps the page title, set from the left so it stays readable when the pane is partly covered. */
-.pane.root .top h1, .pane.root .byline, .pane.doc .top h1, .pane.doc .byline { text-align: left; }
-.pane.root .rows, .pane.doc .rows { margin-top: 0; padding-top: 0; border-top: 0; }
+.pane.root .top h1, .pane.root .byline { text-align: left; }
 
 /* A pane has no margin: notes are set into its column, as on a narrow screen. */
 .pane .sidenote { float: none; display: block; width: auto; margin: 0.5rem 0 0.7rem 1.75em; padding: 0.4rem 0.8rem; border: 0; border-left: 2px dotted var(--rule); }
 .pane .sidenote.focused { border-left: 2px solid var(--fg); }
 /* ---- end panes view ---- */
 
-/* ---- the top bar and the documents menu (src/ui/Menu.tsx) ----
- * The bar sits in the page's top margin: the document's title, which opens the menu, and whether
- * the server has every edit yet. The menu is a panel like history's.
+/* ---- the top bar (src/ui/Menu.tsx) ----
+ * The bar sits in the page's top margin: the library's name, and whether the server has every
+ * edit yet; undo, redo and the menu on the right.
  */
 .docbar { display: flex; align-items: baseline; gap: 0.9em; width: min(100%, var(--col)); margin: -30px 0 16px; min-width: 0; font-family: var(--sans); font-size: 0.66rem; color: var(--faint); letter-spacing: 0.02em; }
-.doc-title { display: flex; align-items: baseline; gap: 0.35em; min-width: 0; max-width: 75%; padding: 0; border: 0; background: none; font-size: inherit; color: var(--dim); }
-.doc-title .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.doc-title .chev { align-self: center; width: 0; height: 0; border: 0.38em solid transparent; border-top: 0.46em solid var(--faint); border-bottom: 0; margin-left: 0.1em; }
-.doc-title:hover .name { color: var(--fg); text-decoration: underline dotted; text-underline-offset: 0.2em; }
+.lib-name { min-width: 0; max-width: 75%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
 .save-state { white-space: nowrap; }
 .save-state.offline, .save-state.deleted { color: var(--attn); }
 .view-panes .docbar { flex: none; width: auto; margin: 0; padding: 0.3rem 0.9rem 0.25rem; border-bottom: 1px solid var(--hair); }
-
-.panel .filter, .panel .prompt input {
-  display: block; width: 100%; margin: 0.6rem 0 0.3rem; padding: 0.3rem 0.5rem; font: inherit; font-size: 0.8rem;
-  color: var(--fg); background: var(--bg); border: 1px solid var(--rule); border-radius: 2px; outline: none;
-}
-.panel .filter:focus, .panel .prompt input:focus { border-color: var(--fg); }
-.panel .prompt { display: block; margin-top: 0.5rem; }
-.panel .prompt span { font-size: 0.6rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
-.panel .prompt input { margin-top: 0.15rem; }
-.doclist { list-style: none; margin: 0.3rem 0 0; padding: 0; }
-.doc { margin-bottom: 0.1rem; }
-.doc .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.doc .when { flex: none; font-size: 0.6rem; color: var(--faint); }
-.doc .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.doc.current .title::before { content: "● "; font-size: 0.7em; color: var(--dim); }
-.doc .actions { flex-wrap: wrap; margin: 0.3rem 0 0.1rem; }
-.doclist .none { padding: 0.3rem 0.45rem; color: var(--faint); }
-.confirm, .problems { margin: 0.5rem 0; padding: 0.45rem 0.6rem; background: var(--wash); border-left: 2px solid var(--attn); }
-.confirm .actions { margin-top: 0.4rem; }
-.problems ul { margin: 0.3rem 0 0; padding-left: 1.1rem; font-family: var(--mono); font-size: 0.6rem; overflow-wrap: anywhere; }
-.panel-foot { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; margin-top: 0.9rem; padding-top: 0.6rem; border-top: 1px solid var(--hair); font-size: 0.62rem; color: var(--faint); }
-.panel.docs.dropping { outline: 2px dashed var(--fg); outline-offset: -6px; }
-/* ---- end documents ---- */
+/* ---- end top bar ---- */
 
 /* ---- links (src/ui/Links.tsx) ----
  * After gwern.net's typed links: the linked words keep the text's colour and get a thin solid

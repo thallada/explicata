@@ -332,6 +332,38 @@ describe("the scan route in review mode", () => {
     expect(marked.suggestions.find((s: Suggestion) => s.kind === "forced")).toBeTruthy();
     expect(marked.entries.find((s: Suggestion) => s.kind === "forced").review).toBeUndefined();
   });
+
+  it("scopes by node: a node and everything under it (/linkhere), or on the library root the whole library (/linkall); pending lists a subtree", async () => {
+    const snap = ids.doc.snap();
+    expect(scopeNodes(snap, ids.minds)).toEqual([ids.minds, ids.arms]);
+    expect(scopeNodes(snap, ids.arms)).toEqual([ids.arms]);
+    expect(scopeNodes(snap, null)).toEqual([ids.minds, ids.arms, ids.stars]);
+    expect(scopeNodes(snap, ids.lib)).toEqual(scopeNodes(snap, null));
+    const done = async () => {
+      for (let i = 0; i < 200; i++) {
+        const { job } = await (await fetch(`${base}/api/links/jobs`)).json();
+        if (job.state !== "running") return job as JobState;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      throw new Error("the job did not finish");
+    };
+    expect((await post("jobs", { scope: "node", node: ids.minds })).job).toMatchObject({ scope: "node", node: ids.minds, title: "Octopus minds", total: 2 });
+    expect(await done()).toMatchObject({ state: "done", done: 2 });
+    expect((await post("jobs", { scope: "node", node: ids.lib })).job).toMatchObject({ scope: "library", title: "the library", total: 3 });
+    await done();
+    const lib = (await post("jobs", { scope: "library" })).job;
+    expect(lib).toMatchObject({ scope: "library", total: 3 });
+    expect(lib.node).toBeUndefined();
+    await done();
+    expect((await post("jobs", { scope: "doc", doc: "octopus-minds" })).error).toMatch(/scope is "node" or "library"/);
+    expect((await post("jobs", { scope: "node", node: "999@999" })).error).toMatch(/no node/);
+    // Pending: a node alone, or with everything under it.
+    const sub = await (await fetch(`${base}/api/links/pending?node=${encodeURIComponent(ids.minds)}&subtree=1&all=1`)).json();
+    expect(sub.suggestions.length).toBeGreaterThan(0);
+    expect(new Set(sub.suggestions.map((s: Suggestion) => s.node))).toEqual(new Set([ids.arms]));
+    const alone = await (await fetch(`${base}/api/links/pending?node=${encodeURIComponent(ids.minds)}&all=1`)).json();
+    expect(alone.suggestions.every((s: Suggestion) => s.node === ids.minds)).toBe(true);
+  });
 });
 
 describe("the links list in the page", () => {

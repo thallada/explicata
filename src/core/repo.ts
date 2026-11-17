@@ -173,7 +173,7 @@ function reanchor(doc: Doc, id: NodeId, was: NodeSnap, now: NodeSnap) {
 /** Roll the whole tree back to a commit by writing the inverse as a new commit. History is kept. */
 export function revertTo(doc: Doc, commit: Commit) {
   const target = at(doc, commit).snap();
-  if (doc.snap().library && !target.library) throw new OpError("that commit is from before the library existed; revert one document to it instead");
+  if (doc.snap().library && !target.library) throw new OpError("that commit is from before the library existed; revert one node to it instead");
   doc.begin(`Revert to “${clip(commit.message, 60)}”`, "human", "revert");
   doc.loro.revertTo(commit.frontiers);
   doc.reread();
@@ -192,12 +192,12 @@ export function revertTo(doc: Doc, commit: Commit) {
 }
 
 /**
- * Roll one subtree (a document) back to how it stood at a commit, leaving the rest of the library
- * as it is now. Nodes that still exist keep their ids and are moved, rewritten and re-anchored to
- * match; nodes deleted since come back as copies under new ids; nodes added since are deleted.
- * The document node itself stays where it is now.
+ * Roll one node and everything under it back to how it stood at a commit, leaving the rest of the
+ * library as it is now. Nodes that still exist keep their ids and are moved, rewritten and
+ * re-anchored to match; nodes deleted since come back as copies under new ids; nodes added since
+ * are deleted. The node itself stays where it is now.
  */
-export function revertDocTo(doc: Doc, commit: Commit, id: NodeId) {
+export function revertSubtreeTo(doc: Doc, commit: Commit, id: NodeId) {
   const target = at(doc, commit).snap();
   const now = doc.snap();
   if (!target.nodes[id]) throw new OpError(`“${clip(label(now, id), 40)}” did not exist yet at “${clip(commit.message, 40)}”`);

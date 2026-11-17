@@ -10,7 +10,7 @@ import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { LibraryStore } from "../server/library";
 import { Doc, descendants, isStale, tops, type NodeId } from "../src/core/model";
-import { at, history, mergeBranch, revertDocTo, revertTo, verifyHistory } from "../src/core/repo";
+import { at, history, mergeBranch, revertSubtreeTo, revertTo, verifyHistory } from "../src/core/repo";
 
 const temp = () => mkdtempSync(join(tmpdir(), "ie-migrate-"));
 
@@ -88,7 +88,7 @@ describe("migration from the per-document layout", () => {
 
     // One library: the first document first, then most recently changed first.
     expect(snap.library).toBe(true);
-    expect(store.list().map((d) => d.title)).toEqual(["Infinite Expand", "The tides", "The tides (copy)"]);
+    expect(store.titles()).toEqual(["Infinite Expand", "The tides", "The tides (copy)"]);
     const [nFirst, nTides, nCopy] = tops(snap);
     for (const [node, old] of [[nFirst, first], [nTides, tides], [nCopy, copy]] as const) {
       expect(lib.shape(snap, node)).toBe(old.shape());
@@ -117,7 +117,7 @@ describe("migration from the per-document layout", () => {
     // Reverting the whole library to before it existed is refused; reverting the document to then works.
     const humanEdit = h.find((c) => c.message === "Human edit")!;
     expect(() => revertTo(lib, humanEdit)).toThrow(/before the library existed/);
-    revertDocTo(lib, humanEdit, first.snap().root);
+    revertSubtreeTo(lib, humanEdit, first.snap().root);
     expect(lib.snap().nodes[one].title).toBe("One");
     expect(lib.shape(lib.snap(), nTides)).toBe(tides.shape());
     expect(verifyHistory(lib).mismatches).toEqual([]);
@@ -155,7 +155,7 @@ describe("migration from the per-document layout", () => {
     const logs: string[] = [];
     const store = new LibraryStore(data, (m) => logs.push(m)).open();
     const snap = store.main.snap();
-    expect(store.list().map((d) => d.title)).toEqual(["Infinite Expand"]);
+    expect(store.titles()).toEqual(["Infinite Expand"]);
     expect(store.main.shape(snap, tops(snap)[0])).toBe(main.shape());
     expect(readdirSync(data).filter((f) => f.endsWith(".loro"))).toEqual([]);
     expect(existsSync(join(data, "notes.txt"))).toBe(true); // anything else is left alone
@@ -169,7 +169,7 @@ describe("migration from the per-document layout", () => {
     const data = temp();
     const store = new LibraryStore(data, () => {}).open();
     expect(store.main.snap().library).toBe(true);
-    expect(store.list()).toEqual([]);
+    expect(store.titles()).toEqual([]);
     expect(readdirSync(data)).toEqual(["library"]);
   });
 });
