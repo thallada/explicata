@@ -50,13 +50,13 @@ export interface Forest<R, S = unknown> {
   hues?: number;
 }
 
-export type Same<R> = (a: R, b: R) => boolean;
+type Same<R> = (a: R, b: R) => boolean;
 
 let ids = 0;
-export const leaf = <R, S>(ref: R): Tree<R, S> => ({ ref, kids: [], pick: 0, id: ++ids });
+const leaf = <R, S>(ref: R): Tree<R, S> => ({ ref, kids: [], pick: 0, id: ++ids });
 
 /** A plain trail as a tree. */
-export function chain<R, S>(refs: R[]): Tree<R, S> | null {
+function chain<R, S>(refs: R[]): Tree<R, S> | null {
   let t: Tree<R, S> | null = null;
   for (let i = refs.length - 1; i >= 0; i--) t = { ref: refs[i], kids: t ? [t] : [], pick: 0, id: ++ids };
   return t;
@@ -89,7 +89,7 @@ function palette(f: Forest<unknown, unknown>) {
 }
 
 /** The column a tree's root is in. */
-export const colOf = (t: Tree<unknown, unknown>) => t.col ?? 0;
+const colOf = (t: Tree<unknown, unknown>) => t.col ?? 0;
 
 /** The focused tree. */
 export const focused = <R, S>(f: Forest<R, S>): Tree<R, S> | null => f.trees[f.at] ?? null;
@@ -192,17 +192,18 @@ export function columns<R, S>(f: Forest<R, S>): Map<number, Placed<R, S>[]> {
 export function reorder<R, S>(f: Forest<R, S>, id: number, before: number | null): Forest<R, S> {
   const me = all(f).find((x) => x.node.id === id);
   if (!me || id === before) return f;
-  const col = columns(f).get(me.col)!.map((x) => x.node.id);
+  const items = columns(f).get(me.col)!;
+  const col = items.map((x) => x.node.id);
   const rest = col.filter((x) => x !== id);
   const at = before === null ? rest.length : rest.indexOf(before);
   if (at < 0) return f;
   rest.splice(at, 0, id);
-  if (rest.every((x, i) => x === col[i]) && col.every((x) => (all(f).find((y) => y.node.id === x)!.node.rank ?? -1) >= 0)) return f;
+  if (rest.every((x, i) => x === col[i]) && items.every((x) => (x.node.rank ?? -1) >= 0)) return f;
   return rest.reduce((g, x, i) => updateIn(g, x, (n) => (n.rank === i ? n : { ...n, rank: i })), f);
 }
 
 /** Change the node with this id, copying the path to it. */
-export function update<R, S>(t: Tree<R, S>, id: number, f: (n: Tree<R, S>) => Tree<R, S>): Tree<R, S> {
+function update<R, S>(t: Tree<R, S>, id: number, f: (n: Tree<R, S>) => Tree<R, S>): Tree<R, S> {
   if (t.id === id) return f(t);
   let changed = false;
   const kids = t.kids.map((k) => {
@@ -222,7 +223,7 @@ export function updateIn<R, S>(f: Forest<R, S>, id: number, fn: (n: Tree<R, S>) 
 }
 
 /** Make the node with this id lie on its tree's focused branch (its own picks below it kept). */
-export function select<R, S>(t: Tree<R, S>, id: number): Tree<R, S> | null {
+function select<R, S>(t: Tree<R, S>, id: number): Tree<R, S> | null {
   if (t.id === id) return t;
   for (let k = 0; k < t.kids.length; k++) {
     const s = select(t.kids[k], id);
@@ -422,7 +423,7 @@ export function withBranch<R, S>(f: Forest<R, S>, refs: R[], same: Same<R>): For
 }
 
 /** As stored: refs (made storable by the caller), children, picks, pins, an orphan's column, places and colours; no ids, nothing remembered. */
-export interface Saved<R> {
+interface Saved<R> {
   ref: R;
   kids?: Saved<R>[];
   pick?: number;

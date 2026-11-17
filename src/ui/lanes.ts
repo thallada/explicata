@@ -37,11 +37,7 @@ export function crossings(order: { sy: number; ey: number }[]): number {
  * scroll or an open elsewhere does not reshuffle the bundle.
  */
 export function laneOrder<T extends { key: string; sy: number; ey: number }>(edges: T[], last: string[] = []): T[] {
-  const rule = [...edges].sort((a, b) => {
-    const da = a.ey >= a.sy ? a.ey - a.sy : a.sy - a.ey;
-    const db = b.ey >= b.sy ? b.ey - b.sy : b.sy - b.ey;
-    return da - db;
-  });
+  const rule = [...edges].sort((a, b) => Math.abs(a.ey - a.sy) - Math.abs(b.ey - b.sy));
   const byKey = new Map(edges.map((e) => [e.key, e]));
   const order = last.flatMap((k) => byKey.get(k) ?? []);
   for (const e of rule) {

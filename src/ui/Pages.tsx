@@ -11,17 +11,17 @@ import { mapStep, rails, type Rail } from "./pages";
 import { article } from "./wiki";
 
 /** What a pane is called: its node's title, or its article's (a section of one by its heading). */
-export function paneTitle(p: PaneRef): string {
+function paneTitle(p: PaneRef): string {
   if (p.kind === "node") return store.snap.nodes[p.id] ? label(store.snap, p.id) : "…";
   const a = article(p.title, p.lang);
   const sec = p.sec !== undefined && a.state === "ready" ? a.value.sections.find((x) => x.id === p.sec) : undefined;
   return sec ? sec.heading : a.state === "ready" ? a.value.title : p.title;
 }
 
-const W = () => <b class="wmark">W</b>;
+export const W = () => <b class="wmark">W</b>;
 
 /** Up to this many panes in a column, a trail step shows a dot for each; beyond, their number. */
-export const STACK_DOTS = 4;
+const STACK_DOTS = 4;
 
 /**
  * How many panes the page of a step holds, when more than one: a dot for each, top to bottom as they
@@ -107,12 +107,13 @@ export function Trail() {
   );
 }
 
-const Pin = () => (
+/** A pane's pin and close icons (here and in Panes.tsx). */
+export const Pin = () => (
   <svg viewBox="0 0 12 12" aria-hidden="true">
     <path d="M4 1.5h4M4.6 1.5v3.6L2.8 7.2h6.4L7.4 5.1V1.5M6 7.2V11" />
   </svg>
 );
-const Close = () => (
+export const Close = () => (
   <svg viewBox="0 0 12 12" aria-hidden="true">
     <path d="M3 3l6 6M9 3l-6 6" />
   </svg>
@@ -134,7 +135,7 @@ function RailLine({ r, step, hue, on }: { r: Rail; step: number; hue?: number; o
         ? { left: `${x}px`, width: `${markAt(r.level + 1, step) + MARK - x}px`, top: 0, height: "50%" }
         : r.kind === "pass"
           ? { left: `${x}px`, top: 0, bottom: 0 }
-          : { left: `${r.kind === "down" ? lineAt(r.level, step) : x}px`, top: "50%", bottom: 0 };
+          : { left: `${x}px`, top: "50%", bottom: 0 };
   return <span class={`rail r-${r.kind}${on ? " strong" : ""}`} data-hue={hue} data-rail={r.kind} data-to={r.tid} style={style} aria-hidden="true" />;
 }
 

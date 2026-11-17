@@ -19,9 +19,10 @@ import { Component, type ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import { ancestors, label, sections, staleness, type NodeId } from "../core/model";
 import { LANES, LANE_FIRST, LANE_LAST, LANE_PITCH, laneOrder } from "./lanes";
-import { ACROSS, DOWN, crowds, fill, fit, folded, mark, offsets, release, resize, reveal, starts, stick, unmark, whole } from "./stack";
+import { ACROSS, DOWN, crowds, fill, fit, folded, mark, offsets, release, resize, reveal, setAttr, starts, stick, unmark, whole } from "./stack";
 import { NodeBacklinks, NodeRelated, PaneCtx, TargetRow } from "./Links";
 import { pageAt, paneOfPage } from "./pages";
+import { Close, Pin, W } from "./Pages";
 import { Abstract, Flags, NodeBody, PendingSections, Row, TitleEditor, TopMatter, isPrompt } from "./Node";
 import { kidClass, refKey, store, type Aux, type Pane as PaneNode, type PaneRef } from "./store";
 import { WikiView } from "./Wiki";
@@ -87,8 +88,7 @@ function watchHead(tid: number) {
   const pane = document.querySelector<HTMLElement>(`.strip .pane[data-tid="${tid}"]`);
   if (!pane || typeof IntersectionObserver === "undefined") return;
   const scroll = pane.querySelector<HTMLElement>(":scope > .pane-scroll");
-  const head = pane.querySelector<HTMLElement>(HEADS);
-  const target = head?.matches(".top") ? head.querySelector("h1") : head;
+  const target = ruleOf(pane);
   const w = watched.get(tid);
   if (w && w.target === target && w.tab === TAB) return;
   w?.io.disconnect();
@@ -125,14 +125,15 @@ const paneClass = (props: PaneProps) => `${props.active ? " active" : ""}${props
 function Chrome({ props, title, mark }: { props: PaneProps; title: string; mark?: ComponentChildren }) {
   const tid = props.t.id;
   const pinned = !!props.t.pinned;
+  const close = () => (
+    <span role="button" class="pane-btn close" data-close={tid} title="Close this pane and what was opened from it (q)" aria-label="Close">
+      <Close />
+    </span>
+  );
   return (
     <>
       <div class="spine" data-spine={props.index} title={title}>
-        <span role="button" class="pane-btn close" data-close={tid} title="Close this pane and what was opened from it (q)" aria-label="Close">
-          <svg viewBox="0 0 12 12" aria-hidden="true">
-            <path d="M3 3l6 6M9 3l-6 6" />
-          </svg>
-        </span>
+        {close()}
         <span class="spine-title">
           {mark}
           {mark && " "}
@@ -149,15 +150,9 @@ function Chrome({ props, title, mark }: { props: PaneProps; title: string; mark?
           ⋯
         </span>
         <span role="button" class={`pane-btn pin${pinned ? " on" : ""}`} data-pin={tid} title={pinned ? "Unpin this pane (P)" : "Pin this pane: it stays when what opened it closes, and never folds away (P)"} aria-label={pinned ? "Unpin" : "Pin"}>
-          <svg viewBox="0 0 12 12" aria-hidden="true">
-            <path d="M4 1.5h4M4.6 1.5v3.6L2.8 7.2h6.4L7.4 5.1V1.5M6 7.2V11" />
-          </svg>
+          <Pin />
         </span>
-        <span role="button" class="pane-btn close" data-close={tid} title="Close this pane and what was opened from it (q)" aria-label="Close">
-          <svg viewBox="0 0 12 12" aria-hidden="true">
-            <path d="M3 3l6 6M9 3l-6 6" />
-          </svg>
-        </span>
+        {close()}
       </div>
     </>
   );
@@ -229,7 +224,7 @@ function WikiPane(props: PaneProps) {
   const title = sec ? `${sec.heading} · ${p.title}` : a.state === "ready" ? a.value.title : p.title;
   return (
     <article class={`pane wiki-pane${p.from ? " jumped" : ""}${paneClass(props)}`} {...paneAttrs(props, `w:${p.title}${p.sec ? `#${p.sec}` : ""}`)}>
-      <Chrome props={props} title={title} mark={<b class="wmark">W</b>} />
+      <Chrome props={props} title={title} mark={<W />} />
       <div class="pane-scroll">
         <div class="pane-body">
           <Orphaned on={props.orphan} />
@@ -267,7 +262,7 @@ const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(pre
  * a link, the trail, the map, Back): short, easing out. The browser's smooth scroll takes twice as
  * long or more, at its own pace; a finger's swipe keeps the browser's own snapping.
  */
-export const GLIDE_MS = 140;
+const GLIDE_MS = 140;
 /** The strip's glide under way: its frame. */
 const glides = new WeakMap<HTMLElement, number>();
 /** Whether the strip is gliding (its scroll events are its own, not a finger's). */
@@ -281,15 +276,15 @@ function stopGlide(el: HTMLElement) {
   el.removeAttribute("data-gliding");
 }
 /** Glide the strip to a scroll offset, easing out (a cubic), without snapping on the way (data-gliding), landing exactly there. */
-function glideTo(el: HTMLElement, to: number, done: () => void, ms = GLIDE_MS) {
+function glideTo(el: HTMLElement, to: number, done: () => void) {
   stopGlide(el);
   const from = el.scrollLeft;
-  if (ms <= 0 || Math.abs(to - from) < 1) return void ((el.scrollLeft = to), done());
+  if (Math.abs(to - from) < 1) return void ((el.scrollLeft = to), done());
   el.setAttribute("data-gliding", "");
   let t0 = -1;
   const step = (now: number) => {
     if (t0 < 0) t0 = now - 1000 / 60;
-    const p = Math.min(1, (now - t0) / ms);
+    const p = Math.min(1, (now - t0) / GLIDE_MS);
     el.scrollLeft = from + (to - from) * (1 - (1 - p) ** 3);
     if (p < 1) return void glides.set(el, requestAnimationFrame(step));
     glides.delete(el);
@@ -318,40 +313,35 @@ function nearestY(el: Element | null | false) {
  */
 function ruleShows(p: HTMLElement, col: DOMRect, next: number): boolean {
   if (p.hasAttribute("data-buried")) return false;
-  const head = p.querySelector<HTMLElement>(HEADS);
-  const rule = (head?.matches(".top") ? head.querySelector<HTMLElement>("h1") : head)?.getBoundingClientRect();
+  const rule = ruleOf(p)?.getBoundingClientRect();
   if (!rule) return false;
   const r = p.getBoundingClientRect();
   const sc = p.querySelector<HTMLElement>(":scope > .pane-scroll")!.getBoundingClientRect();
   return rule.bottom > Math.max(r.top, col.top, sc.top) + TAB && rule.bottom <= Math.min(next, col.bottom, sc.bottom);
 }
 
-const setAttr = (el: Element | undefined, name: string, on: boolean) => {
-  if (el && el.hasAttribute(name) !== on) on ? el.setAttribute(name, "") : el.removeAttribute(name);
-};
-
 /** The least height a pane keeps in a column while all its panes fit; below it, the column stacks them. */
-export const PANE_MIN = 260;
+const PANE_MIN = 260;
 /** A covered pane's tab, the strip a pane leaves down a crowded column (as a spine does across): as pages, a finger's height (PAGE_TAB). Set as the panes are drawn. */
-export let TAB = 30;
+let TAB = 30;
 const DESK_TAB = 30;
-export const PAGE_TAB = 44;
+const PAGE_TAB = 44;
 /** As pages, how long a finger is held still on a pane's tab or the band above its title to pick the pane up. */
-export const HOLD_MS = 380;
+const HOLD_MS = 380;
 /** The touch drag's move handler (Panes' effect sets it); the handles call it from their own, blocking, touchmove listeners. */
 let handleMove: ((e: TouchEvent) => void) | null = null;
 const onHandleMove = (e: TouchEvent) => handleMove?.(e);
 /** How long the mouse rests on a covered pane before it peeks out. */
-export const PEEK_MS = 200;
+const PEEK_MS = 200;
 
 /** As pages, how far a finger moves on a pane's handle before its direction is known: up or down resizes the pane, sideways is the browser's (the page turns). */
-export const LOCK_PX = 8;
+const LOCK_PX = 8;
 /** As pages, a pane sized by hand left less than this much taller than its tab folds to it when the finger lifts. */
-export const FOLD_SNAP = 40;
+const FOLD_SNAP = 40;
 /** As pages, how long a released edge takes to come to rest at a fold, easing out. */
-export const SNAP_MS = 120;
+const SNAP_MS = 120;
 /** As pages, two taps on a pane's handle this close together put its page back to the automatic sizes. */
-export const DOUBLE_TAP_MS = 320;
+const DOUBLE_TAP_MS = 320;
 
 /**
  * As pages, a page sized by hand (Panes' touch handlers, stack.ts `resize`): each pane's height
@@ -511,7 +501,7 @@ export function Panes() {
       const col = Number(c.dataset.col);
       const tids = ps.map((p) => Number(p.dataset.tid));
       // The pane to show whole: on the focused branch, or the one last on it here.
-      const here = tids.find((t) => onBranch.has(t)) ?? (tids.includes(lastIn.current.get(col)!) ? lastIn.current.get(col)! : tids[0]);
+      const here = paneOfPage(tids, onBranch, lastIn.current.get(col))!;
       const sig = tids.map((t, i) => `${t}${ps[i].classList.contains("pinned") ? "^" : ""}`).join();
       // As pages, a page too short for a tab for each of its panes is never sized by hand (its handles scroll it).
       c.classList.toggle("tight", pages && ps.length * TAB > h);
@@ -578,11 +568,7 @@ export function Panes() {
       }
     }
     if (deferred)
-      later.current = setTimeout(() => {
-        latest.current(true);
-        measure();
-        schedule();
-      }, 150);
+      later.current = setTimeout(relayout, 150);
     // The focused branch's panes, marked without redrawing them.
     for (const [id, p] of paneEls(el)) p.classList.toggle("on-branch", onBranch.has(id));
     for (const [col, ps] of cols) for (const x of ps) if (onBranch.has(x.node.id)) lastIn.current.set(col, x.node.id);
@@ -682,9 +668,14 @@ export function Panes() {
     if (!frame.current)
       frame.current = requestAnimationFrame(() => {
         frame.current = 0;
-        if (store.pages) pageMarks(strip.current, svg.current);
-        else curves(strip.current, svg.current);
+        curves(strip.current, svg.current);
       });
+  };
+  /** Lay out every column again, measure, and draw. */
+  const relayout = () => {
+    latest.current(true);
+    measure();
+    schedule();
   };
 
   /** Where each newly opened pane came from in its parent, down the parent's text (its column's order goes by it). */
@@ -724,11 +715,7 @@ export function Panes() {
     measure();
     schedule();
     if (typeof ResizeObserver !== "undefined") {
-      bodies.current ??= new ResizeObserver(() => {
-        latest.current(true);
-        measure();
-        schedule();
-      });
+      bodies.current ??= new ResizeObserver(relayout);
       for (const b of strip.current?.querySelectorAll(".pane-body") ?? []) if (!watchedBodies.current.has(b)) (watchedBodies.current.add(b), bodies.current.observe(b));
     }
     // As pages, a step from pane to pane is a step in the browser's history.
@@ -738,6 +725,9 @@ export function Panes() {
   useEffect(() => {
     const el = strip.current!;
     const wrap = el.parentElement!;
+    // Every listener added below goes when the panes do.
+    const ac = new AbortController();
+    const signal = ac.signal;
     /*
      * As pages, a swipe ends on a page: its pane becomes the active one (the one on the focused
      * branch there, else the one last on it, else the first), so the page on screen is always the
@@ -771,11 +761,11 @@ export function Panes() {
       // A finger on the strip takes it from a glide, where it is.
       if (e.type === "touchstart") (stopGlide(el), (programmatic.current = false));
     };
-    el.addEventListener("touchstart", onTouch, { passive: true });
+    el.addEventListener("touchstart", onTouch, { passive: true, signal });
     // Its end heard on the window: a touch whose target leaves the page (a pane that closed) ends there too.
-    window.addEventListener("touchend", onTouch, { passive: true, capture: true });
-    window.addEventListener("touchcancel", onTouch, { passive: true, capture: true });
-    if (ends) el.addEventListener("scrollend", settle);
+    window.addEventListener("touchend", onTouch, { passive: true, capture: true, signal });
+    window.addEventListener("touchcancel", onTouch, { passive: true, capture: true, signal });
+    if (ends) el.addEventListener("scrollend", settle, { signal });
     const onScroll = (e: Event) => {
       const t = e.target as HTMLElement;
       if (t === el && store.pages) {
@@ -798,7 +788,7 @@ export function Panes() {
       schedule();
     };
     // Panes and crowded columns scroll on their own: their scroll events are caught on the way down.
-    wrap.addEventListener("scroll", onScroll, { passive: true, capture: true });
+    wrap.addEventListener("scroll", onScroll, { passive: true, capture: true, signal });
     // While anything animates, the curves are drawn every frame, so they follow it.
     let moving = 0;
     const tick = () => {
@@ -813,10 +803,10 @@ export function Panes() {
       moving = Math.max(0, moving - 1);
       if (!moving) schedule();
     };
-    window.addEventListener(GEOMETRY, schedule);
-    wrap.addEventListener("transitionrun", onRun);
-    wrap.addEventListener("transitionend", onEnd);
-    wrap.addEventListener("transitioncancel", onEnd);
+    window.addEventListener(GEOMETRY, schedule, { signal });
+    wrap.addEventListener("transitionrun", onRun, { signal });
+    wrap.addEventListener("transitionend", onEnd, { signal });
+    wrap.addEventListener("transitioncancel", onEnd, { signal });
     // The strip changes size with the window and when the history panel opens or closes.
     const sizes = new ResizeObserver(onResize);
     sizes.observe(el);
@@ -924,9 +914,9 @@ export function Panes() {
         if (now.length) peek(pane, now);
       }, PEEK_MS);
     };
-    el.addEventListener("pointermove", onMove);
-    el.addEventListener("pointerleave", unpeek);
-    window.addEventListener("keydown", unpeek, true);
+    el.addEventListener("pointermove", onMove, { signal });
+    el.addEventListener("pointerleave", unpeek, { signal });
+    window.addEventListener("keydown", unpeek, { capture: true, signal });
 
     /*
      * Dragging a pane up or down its column, by its grip (the band above its title, beside the pin
@@ -936,14 +926,18 @@ export function Panes() {
      */
     let drag: { tid: number; col: HTMLElement; y0: number; on: boolean; before: number | null; line: HTMLElement | null; touch?: boolean } | null = null;
     let swallow = false;
+    /** The grip or tab pressed, its pane and its column, when the column has other panes to move among. */
+    const handleAt = (t: EventTarget | null) => {
+      const handle = (t as HTMLElement).closest<HTMLElement>("[data-grip], .tabline");
+      const pane = handle?.closest<HTMLElement>(".pane");
+      const col = pane?.parentElement;
+      return handle && pane && col && col.children.length > 1 ? { handle, pane, col } : null;
+    };
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0 || (e.pointerType === "touch" && store.pages)) return;
-      const t = e.target as HTMLElement;
-      if (t.closest("[data-close], [data-pin]")) return;
-      const handle = t.closest<HTMLElement>("[data-grip], .tabline");
-      const pane = handle?.closest<HTMLElement>(".pane");
-      const col = pane?.parentElement as HTMLElement | undefined;
-      if (!handle || !pane || !col || col.children.length < 2) return;
+      const h = handleAt(e.target);
+      if (!h) return;
+      const { handle, pane, col } = h;
       drag = { tid: Number(pane.dataset.tid), col, y0: e.clientY, on: false, before: null, line: null };
       handle.setPointerCapture(e.pointerId);
     };
@@ -1032,7 +1026,6 @@ export function Panes() {
       if (!h || !store.pages || !h.pane.isConnected) return;
       drag = { tid: Number(h.pane.dataset.tid), col: h.col, y0: h.y, on: false, before: null, line: null, touch: true };
       startDrag();
-      wrap.classList.add("lifting");
       h.pane.setAttribute("data-lifted", "");
       ghost = document.createElement("div");
       ghost.className = "drag-ghost";
@@ -1113,7 +1106,7 @@ export function Panes() {
       const col = Number(r.col.dataset.col);
       const m = hands.get(col);
       // Dropped while the finger was down (its panes changed): laid out automatically.
-      if (!m) return void (latest.current(true), measure(), schedule());
+      if (!m) return relayout();
       tids.forEach((t, k) => m.sizes.set(t, to[k]));
       const from = r.now;
       cancelAnimationFrame(snapping);
@@ -1147,9 +1140,7 @@ export function Panes() {
       if (!hands.delete(Number(col.dataset.col))) return;
       cancelAnimationFrame(snapping);
       easing = null;
-      latest.current(true);
-      measure();
-      schedule();
+      relayout();
     };
     const onHoldStart = (e: TouchEvent) => {
       if (!store.pages) return;
@@ -1160,14 +1151,10 @@ export function Panes() {
         return void (hold || drag?.touch ? end(false) : undefined);
       }
       press = null;
-      const t = e.target as HTMLElement;
-      if (t.closest("[data-close], [data-pin], [data-more]")) return;
-      const handle = t.closest<HTMLElement>("[data-grip], .tabline");
-      const pane = handle?.closest<HTMLElement>(".pane");
-      const col = pane?.parentElement as HTMLElement | undefined;
-      if (!handle || !pane || !col) return;
+      const h = handleAt(e.target);
+      if (!h) return;
+      const { pane, col } = h;
       const ps = [...col.querySelectorAll<HTMLElement>(":scope > .pane")];
-      if (ps.length < 2) return;
       const p = e.changedTouches[0];
       cancelHold();
       press = { x: p.clientX, y: p.clientY, id: p.identifier, pane, col, i: ps.indexOf(pane), lock: null, start: [], ps: [], now: [], dy: 0 };
@@ -1252,57 +1239,33 @@ export function Panes() {
       e.stopPropagation();
       e.preventDefault();
     };
-    el.addEventListener("touchstart", onHoldStart, { passive: true });
-    el.addEventListener("touchmove", onHoldMove, { passive: true });
-    el.addEventListener("touchend", onHoldEnd);
-    el.addEventListener("touchcancel", onHoldEnd);
-    window.addEventListener("contextmenu", onLongPress, true);
+    el.addEventListener("touchstart", onHoldStart, { passive: true, signal });
+    el.addEventListener("touchmove", onHoldMove, { passive: true, signal });
+    el.addEventListener("touchend", onHoldEnd, { signal });
+    el.addEventListener("touchcancel", onHoldEnd, { signal });
+    window.addEventListener("contextmenu", onLongPress, { capture: true, signal });
     // A press elsewhere puts a peeking pane back; on it, the click goes through to it (and makes it the active pane), and then it goes back.
     const onPress = (e: PointerEvent) => !peeked.some((p) => p.contains(e.target as Node)) && unpeek();
     const afterClick = () => peeked.length && requestAnimationFrame(unpeek);
-    el.addEventListener("pointerdown", onDown);
-    el.addEventListener("pointerdown", onPress);
-    el.addEventListener("click", afterClick);
-    el.addEventListener("pointermove", onDrag);
-    el.addEventListener("pointerup", onUp);
-    el.addEventListener("pointercancel", onCancel);
-    window.addEventListener("keydown", onKey, true);
-    window.addEventListener("click", onClick, true);
+    el.addEventListener("pointerdown", onDown, { signal });
+    el.addEventListener("pointerdown", onPress, { signal });
+    el.addEventListener("click", afterClick, { signal });
+    el.addEventListener("pointermove", onDrag, { signal });
+    el.addEventListener("pointerup", onUp, { signal });
+    el.addEventListener("pointercancel", onCancel, { signal });
+    window.addEventListener("keydown", onKey, { capture: true, signal });
+    window.addEventListener("click", onClick, { capture: true, signal });
     return () => {
       stopGlide(el);
       cancelAnimationFrame(frame.current);
       clearTimeout(later.current);
       clearTimeout(timer);
       clearTimeout(rest);
-      el.removeEventListener("touchstart", onTouch);
-      window.removeEventListener("touchend", onTouch, { capture: true });
-      window.removeEventListener("touchcancel", onTouch, { capture: true });
-      if (ends) el.removeEventListener("scrollend", settle);
-      wrap.removeEventListener("scroll", onScroll, { capture: true });
-      window.removeEventListener(GEOMETRY, schedule);
-      wrap.removeEventListener("transitionrun", onRun);
-      wrap.removeEventListener("transitionend", onEnd);
-      wrap.removeEventListener("transitioncancel", onEnd);
+      ac.abort();
       bodies.current?.disconnect();
       sizes.disconnect();
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerleave", unpeek);
-      window.removeEventListener("keydown", unpeek, true);
-      el.removeEventListener("pointerdown", onDown);
-      el.removeEventListener("pointerdown", onPress);
-      el.removeEventListener("click", afterClick);
-      el.removeEventListener("pointermove", onDrag);
-      el.removeEventListener("pointerup", onUp);
-      el.removeEventListener("pointercancel", onCancel);
-      window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("click", onClick, true);
       end(false);
       handleMove = null;
-      el.removeEventListener("touchstart", onHoldStart);
-      el.removeEventListener("touchmove", onHoldMove);
-      el.removeEventListener("touchend", onHoldEnd);
-      el.removeEventListener("touchcancel", onHoldEnd);
-      window.removeEventListener("contextmenu", onLongPress, true);
     };
   }, []);
 
@@ -1412,15 +1375,8 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
   if (!el || !svg) return;
   if (store.pages) return pageMarks(el, svg);
   if (tinted.size) untint();
-  if (!store.settings.curves) {
-    for (const p of svg.querySelectorAll("path")) p.remove();
-    for (const s of underlined) s.removeAttribute("data-curved");
-    underlined = new Set();
-    markRuled(paneEls(el), new Map());
-    return;
-  }
+  if (!store.settings.curves) return uncurve(paneEls(el), svg);
   // The curves' layer covers the window from its corner (style.css), so its pixels are the device's and a hairline set on device pixels lands on them; it shows only over the strip.
-  const box = { left: 0, top: 0 };
   // (Clipped inside the drawing: a CSS clip on the layer would have it resampled, softening every hairline.)
   const area = (svg.parentElement as HTMLElement).getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
@@ -1462,7 +1418,6 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     // What of the child shows: up to the next column where it covers it, down to the pane after it in a crowded column.
     const nextCol = colEls[colEls.indexOf(ccol) + 1]?.getBoundingClientRect().left ?? Infinity;
     const shownRight = Math.min(cbox.right, nextCol);
-    // A pane folded down a crowded column shows its tab, and may still show its title under it.
     // A pane showing its tab (folded down a crowded column, or scrolled past its title): the curve lands in the tab's foot; else in the rule under its title, where that shows (the same test as the tab's, ruleShows, so the two hand over at once).
     const below = ccol.classList.contains("crowded") ? ((ce.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top ?? Infinity) : Infinity;
     let folded = ce.hasAttribute("data-tab") || ce.hasAttribute("data-scrolled") || ce.hasAttribute("data-buried") || (ce.hasAttribute("data-covered") && !ruleShows(ce, ccolBox, below));
@@ -1473,9 +1428,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
       const tr = t?.getBoundingClientRect();
       ey = tr && tr.bottom > scroll.top + 4 ? Math.max(scroll.top + 6, tr.top + Math.min(tr.height, 32) / 2) : scroll.top + 14;
       // The rule: under the pane's own head (a section's, a page's title, an article's), not an article's set under a node; the focused head's too (the heavy rule on top marks the active pane).
-      const head = ruled ? ce.querySelector<HTMLElement>(HEADS) : null;
-      const ruleEl = head?.matches(".top") ? head.querySelector<HTMLElement>("h1") : head;
-      const rr = ruleEl?.getBoundingClientRect();
+      const rr = ruled ? ruleOf(ce)?.getBoundingClientRect() : undefined;
       // Scrolled past its title (its tab is on its way): its tab's foot.
       if (rr && rr.bottom <= Math.max(cbox.top, scroll.top) + TAB) {
         folded = true;
@@ -1496,7 +1449,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
       rules.set(x.node.id, "tab");
       tabbed.add(x.node.id);
     }
-    // Below the column's foot (every pane leaves at least its tab there now, so this is only a pane still being laid out).
+    // Below the column's foot (every pane leaves at least its tab there, so this is only a pane still being laid out).
     if (ey > ccolBox.bottom) {
       ey = ccolBox.bottom - 4;
       lost = true;
@@ -1531,7 +1484,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
       sx = footRight;
       // A few pixels straight on before it turns, so the foot runs on visibly.
       textRight = footRight + 6;
-      if (ruled) feet.set(parent.id, { x0: pbox.left - box.left, x1: footRight - box.left, y: sy - box.top, hue: parent.hue, on: branch.has(parent.id) });
+      if (ruled) feet.set(parent.id, { x0: pbox.left, x1: footRight, y: sy, hue: parent.hue, on: branch.has(parent.id) });
     } else {
       src ??= cands[0];
       const head = pe.querySelector<HTMLElement>(".pane-head h2, .top h1, .wiki-head h2");
@@ -1585,7 +1538,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
       tabbed.delete(x.node.id);
     }
     const gutter = colEls.indexOf(ccol);
-    edges.push({ from: parent.id, to: x.node.id, gutter, left: left - box.left, sx: sx - box.left, sy: sy - box.top, under: under && { x: under.x - box.left, y: under.y - box.top }, hint: hint && { x: hint.x - box.left, y: hint.y - box.top }, lines: lines?.map((q) => ({ x0: q.x0 - box.left, x1: q.x1 - box.left, y: q.y - box.top })), textRight: textRight - box.left, ex: ex - box.left, ey: ey - box.top, on: branch.has(x.node.id) && branch.has(parent.id), lost, hue: x.node.hue, rule: rule && { x0: rule.x0 - box.left, x1: rule.x1 - box.left } });
+    edges.push({ from: parent.id, to: x.node.id, gutter, left, sx, sy, under, hint, lines, textRight, ex, ey, on: branch.has(x.node.id) && branch.has(parent.id), lost, hue: x.node.hue, rule });
   }
   // Lanes, gutter by gutter.
   const lane = new Map<Edge, number>();
@@ -1619,7 +1572,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     const x1 = Math.round(right * dpr) / dpr - h;
     const yb = Math.round(bottom * dpr) / dpr - h;
     if (bottom > top) {
-      const d = right < r.right - 1 ? `M${fx(x0 - box.left)} ${fx(top - box.top)}V${fx(yb - box.top)}H${fx(right - box.left)}` : `M${fx(x0 - box.left)} ${fx(top - box.top)}V${fx(yb - box.top)}H${fx(x1 - box.left)}V${fx(top - box.top)}`;
+      const d = right < r.right - 1 ? `M${fx(x0)} ${fx(top)}V${fx(yb)}H${fx(right)}` : `M${fx(x0)} ${fx(top)}V${fx(yb)}H${fx(x1)}V${fx(top)}`;
       out.push({ key: "frame", from: Number(act.dataset.tid), to: -1, lane: -1, cls: "frame", d, hue: "" });
     }
   }
@@ -1659,7 +1612,7 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
   }
   // What peeks out, and the selection bar, leave their places clear of the curves (holes in a mask), but for the curves that belong to what peeks.
   const peeked = [...el.querySelectorAll<HTMLElement>("[data-peek]")];
-  const local = (r: DOMRect) => ({ x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height });
+  const local = (r: DOMRect) => ({ x: r.left, y: r.top, w: r.width, h: r.height });
   const holes = peeked.map((p) => local(p.getBoundingClientRect()));
   const bar = el.querySelector<HTMLElement>(".pane > .selbar");
   const barHole = bar && bar.style.visibility !== "hidden" ? [local(bar.getBoundingClientRect())] : [];
@@ -1770,13 +1723,9 @@ let tinted = new Set<HTMLElement>();
  * under its title, of its tab and of its place in the trail (style.css, data-src-hue). Drawn when
  * the panes change, not as anything scrolls.
  */
-function pageMarks(el: HTMLElement | null, svg: SVGSVGElement | null) {
-  if (!el) return;
-  if (svg) for (const p of svg.querySelectorAll("path")) p.remove();
-  for (const s of underlined) s.removeAttribute("data-curved");
-  underlined = new Set();
+function pageMarks(el: HTMLElement, svg: SVGSVGElement) {
   const els = paneEls(el);
-  markRuled(els, new Map());
+  uncurve(els, svg);
   const branch = new Set(store.branchNodes.map((n) => n.id));
   const now = new Set<HTMLElement>();
   for (const x of store.panesPlaced) {
@@ -1792,6 +1741,14 @@ function pageMarks(el: HTMLElement | null, svg: SVGSVGElement | null) {
   untint(now);
 }
 
+/** No curves drawn: every link's underline and pane's rule its own. */
+function uncurve(els: Map<number, HTMLElement>, svg: SVGSVGElement) {
+  for (const p of svg.querySelectorAll("path")) p.remove();
+  for (const s of underlined) s.removeAttribute("data-curved");
+  underlined = new Set();
+  markRuled(els, new Map());
+}
+
 /** Take the colour off what no longer opens a pane (all of it, when the panes are side by side again). */
 function untint(keep = new Set<HTMLElement>()) {
   for (const s of tinted)
@@ -1804,6 +1761,11 @@ function untint(keep = new Set<HTMLElement>()) {
 
 /** A pane's own head, whose rule a curve into it lands in: a section's, a page's title, an article's (not an article set under a node). */
 const HEADS = ":scope > .pane-scroll > .pane-body > .pane-head, :scope > .pane-scroll > .pane-body > .top, :scope > .pane-scroll > .pane-body > .wiki:not(.embedded) > .wiki-head";
+/** The element under which a pane's own head draws its rule (a page's title is its h1). */
+function ruleOf(p: HTMLElement): HTMLElement | null {
+  const head = p.querySelector<HTMLElement>(HEADS);
+  return head?.matches(".top") ? head.querySelector<HTMLElement>("h1") : head;
+}
 
 /** Which panes' rules a curve draws (head or tab), so that their own are left out. */
 function markRuled(els: Map<number, HTMLElement>, rules: Map<number, string>) {

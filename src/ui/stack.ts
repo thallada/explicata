@@ -12,22 +12,19 @@
  * height less a tab for each other pane) and applies what comes back.
  */
 
-export interface Axis {
-  /** The sticky inset, and the start and end of a box along the axis. */
+interface Axis {
+  /** The sticky inset, where a box starts along the axis. */
   start: "left" | "top";
-  end: "right" | "bottom";
   size: "offsetWidth" | "offsetHeight";
   client: "clientWidth" | "clientHeight";
-  scroll: "scrollLeft" | "scrollTop";
-  scrollSize: "scrollWidth" | "scrollHeight";
 }
 /** Across: the columns of the strip. */
-export const ACROSS: Axis = { start: "left", end: "right", size: "offsetWidth", client: "clientWidth", scroll: "scrollLeft", scrollSize: "scrollWidth" };
+export const ACROSS: Axis = { start: "left", size: "offsetWidth", client: "clientWidth" };
 /** Down: the panes of a crowded column. */
-export const DOWN: Axis = { start: "top", end: "bottom", size: "offsetHeight", client: "clientHeight", scroll: "scrollTop", scrollSize: "scrollHeight" };
+export const DOWN: Axis = { start: "top", size: "offsetHeight", client: "clientHeight" };
 
 /** An item covered to less than this share of its size shows only its strip (spine or tab). */
-export const COVERED = 0.4;
+const COVERED = 0.4;
 
 /**
  * Each item's sticky offset: every item before it leaves its strip, a pinned one its whole size;
@@ -77,7 +74,7 @@ export const starts = (sizes: number[]) => sizes.map((_, i) => sizes.slice(0, i)
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
-/** Sizes from edges (each item's start, then the end of the last), each edge rounded to a whole pixel: an item at least `min` before stays so after. */
+/** Sizes from edges (each item's start, then the end of the last), each edge rounded to a whole pixel. */
 const fromEdges = (e: number[]) => e.slice(1).map((x, k) => Math.round(x) - Math.round(e[k]));
 
 /**
@@ -160,7 +157,8 @@ export function reveal(scroll: number, view: number, start: number, size: number
 /** Whether an item is shown whole at this scroll. */
 export const whole = (scroll: number, view: number, start: number, size: number, stuck: number) => scroll >= start + size - view - 1 && scroll <= start - stuck + 1;
 
-const setAttr = (el: Element | undefined, name: string, on: boolean) => {
+/** Set or remove a boolean attribute, touching the DOM only when it changes. */
+export const setAttr = (el: Element | undefined, name: string, on: boolean) => {
   if (el && el.hasAttribute(name) !== on) on ? el.setAttribute(name, "") : el.removeAttribute(name);
 };
 
