@@ -37,7 +37,7 @@
  *
  * Run again, it does nothing (the libraries layout is there and no old files are left). If a
  * migration stopped after the commit step, a second run only moves the old files aside. It will
- * not run while a server has the data directory open (lock.ts).
+ * not run while a server holds the data directory's lock (lock.ts).
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
@@ -47,7 +47,7 @@ import { Doc, NOLINK, ancestors, isStale, label, notesOf, sections, staleness, t
 import { canonRef } from "../src/core/ref";
 import { digest } from "../src/core/text";
 import { LIBRARIES, OLD_FILES, indexText, layout, stamp, type LibraryEntry } from "./libraries";
-import { busy } from "./lock";
+import { lockHolder } from "./lock";
 import { dataDir } from "./util";
 
 export interface MigrateOptions {
@@ -95,7 +95,8 @@ export function migrateLibraries(dataIn: string, o: MigrateOptions = {}): Migrat
     log(msg);
     return { status: "refused", problems: [msg] };
   }
-  const why = busy(data);
+  const lock = lockHolder(data);
+  const why = lock && `a server (pid ${lock.pid}${lock.port ? `, port ${lock.port}` : ""}) has ${data} open`;
   if (why && !o.check) {
     const msg = `Refusing to migrate: ${why}. Stop it first.`;
     log(msg);

@@ -1,7 +1,8 @@
 /**
  * The migration from the single-library layout (server/migrateLibraries.ts), on data directories
- * written by older commits (tests/fixtures/migrate, made by make.ts there): pre/ by the code before
- * documents went, main/ by the code just before libraries, mixed/ by the first then the second.
+ * written by older commits (tests/fixtures/migrate, made by running those commits' servers): pre/
+ * by 626dc19, before documents went, main/ by c4d6856, just before libraries, mixed/ by the first
+ * then the second.
  * The text, the notes, the flags and every reference must come across exactly; a dry run writes
  * nothing; a second run does nothing; a copy that differs leaves the data untouched; the server
  * will not open the old layout.
@@ -338,34 +339,20 @@ describe("the migration's guards", () => {
     expect(r.problems[0]).toMatch(/c4d6856/);
   });
 
-  it("refuses to run while a server has the data open: by its lock, or, for a server from before locks, by its checkout", async () => {
-    // A stand-in server: a process whose command line names server/index.ts.
-    const checkout = temp();
-    const data = join(checkout, ".data");
+  it("refuses to run while a server holds the data's lock; a dry run and a stale lock are no obstacle", async () => {
+    const data = temp();
     cpSync(join(FIXTURES, "pre", "library"), join(data, "library"), { recursive: true });
-    const sleeper = (cwd: string) => {
-      const c = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", "server/index.ts"], { cwd, stdio: "ignore" });
-      children.push(c);
-      return c;
-    };
-    const old = sleeper(checkout);
+    // A stand-in server: a process whose command line names server/index.ts.
+    const server = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", "server/index.ts"], { stdio: "ignore" });
+    children.push(server);
     await new Promise((r) => setTimeout(r, 200));
+    writeFileSync(join(data, LOCK), JSON.stringify({ pid: server.pid, port: 4999 }));
     const r = run(data);
     expect(r.status).toBe("refused");
-    expect(r.problems[0]).toMatch(new RegExp(`pid ${old.pid}`));
-    // A dry run is allowed: it writes nothing.
+    expect(r.problems[0]).toMatch(new RegExp(`pid ${server.pid}, port 4999`));
     expect(run(data, { check: true }).status).toBe("checked");
-    old.kill("SIGKILL");
+    server.kill("SIGKILL");
     await new Promise((r) => setTimeout(r, 200));
-    // A server with a lock, running from elsewhere.
-    const elsewhere = temp();
-    const locked = sleeper(elsewhere);
-    await new Promise((r) => setTimeout(r, 200));
-    writeFileSync(join(data, LOCK), JSON.stringify({ pid: locked.pid, port: 4999 }));
-    expect(run(data).problems[0]).toMatch(new RegExp(`pid ${locked.pid}, port 4999`));
-    locked.kill("SIGKILL");
-    await new Promise((r) => setTimeout(r, 200));
-    // A stale lock is no obstacle.
     expect(run(data).status).toBe("migrated");
   });
 });

@@ -20,7 +20,7 @@
  * layout from before (`<data>/library/main.loro`) is not opened: `npm run migrate` brings it over
  * (migrateLibraries.ts).
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { LIBRARY_ID } from "../src/core/address";
 import { FormatError } from "../src/core/format";
@@ -270,6 +270,3 @@ function cleanTitle(title: unknown): string {
   if (t.length > 200) throw new HttpError(400, "a library's title is at most 200 characters");
   return t;
 }
-
-/** Whether a path is a directory (for the migration's checks). */
-export const isDir = (p: string) => existsSync(p) && statSync(p).isDirectory();
