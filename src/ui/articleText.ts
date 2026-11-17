@@ -25,12 +25,12 @@ export interface DomLike {
 }
 
 /** An inline element around some text. */
-export interface Mark {
+interface Mark {
   tag: string;
   attrs: [string, string][];
 }
 /** A stretch of a paragraph with the same inline elements around it; a formula is a run of its own. */
-export interface Run {
+interface Run {
   s: number;
   e: number;
   marks: Mark[];

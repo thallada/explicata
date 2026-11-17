@@ -1,7 +1,7 @@
 /** Rendering shared by both page layouts: a node's body with its notes, the outline rows, and the top of the page. */
 import { Component, type ComponentChildren } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
-import { anchorLost, ancestors, descendants, isLibraryRoot, label, libraryNodeCount, notesOf, sections, staleness, type NodeId, type Snap } from "../core/model";
+import { anchorLost, ancestors, descendants, isLibraryRoot, isLink, label, libraryNodeCount, notesOf, sections, staleness, type NodeId, type Snap } from "../core/model";
 import type { Ref } from "../core/ref";
 import { clip, overlaps, paragraphs, plain, type Form, type Range } from "../core/text";
 import { streamView } from "../core/marks";
@@ -33,7 +33,7 @@ function notesFor(snap: Snap, id: NodeId): { placed: VNote[]; orphans: NodeId[] 
     const n = snap.nodes[c];
     const ranges = n.anchors.filter((a) => a.end > a.start).map((a): Range => [a.start, a.end]);
     if (!ranges.length || n.anchors.every(anchorLost)) orphans.push(c);
-    else placed.push({ key: c, id: c, form: n.form ?? "note", ranges, open: store.open.has(c), lens: n.lens, ref: n.ref, link: !!n.ref && !n.body.trim() });
+    else placed.push({ key: c, id: c, form: n.form ?? "note", ranges, open: store.open.has(c), lens: n.lens, ref: n.ref, link: isLink(n) });
   }
   for (const p of store.pending.values()) {
     if (p.node === id && p.kind === "note" && p.range) placed.push({ key: p.key, form: p.form ?? "note", ranges: [p.range], open: true, pending: p, lens: p.lens });

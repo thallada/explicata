@@ -5,12 +5,12 @@
 import { VersionVector } from "loro-crdt";
 import { Doc } from "../core/model";
 import { Repo, decodeVV, encodeVV, mergeUpdate, vvIncludes, type MergeReport } from "../core/repo";
-import { libApi } from "./api";
+import { failure, libApi } from "./api";
 import { idbGet, idbSet } from "./idb";
 
 type VV = Map<`${number}`, number>;
 
-export interface SessionHooks {
+interface SessionHooks {
   /** A replica changed, locally or by sync. */
   changed(doc: Doc): void;
   /** A sync round ended; `ok` says whether the server answered. */
@@ -23,18 +23,6 @@ export interface SessionHooks {
   gone(): void;
   /** Any other notice from the server (a link job's progress). */
   message?(msg: Record<string, unknown>): void;
-}
-
-export async function failure(res: Response): Promise<Error & { body?: Record<string, unknown> }> {
-  let message = `${res.status} ${res.statusText}`;
-  let body: Record<string, unknown> | undefined;
-  try {
-    body = await res.json();
-    message = String(body?.error ?? message);
-  } catch {
-    /* not JSON */
-  }
-  return Object.assign(new Error(message), { body });
 }
 
 export class Session {
@@ -90,11 +78,11 @@ export class Session {
   private async fetchBranch(name: string): Promise<Doc | null> {
     const res = await fetch(libApi(`/branch/${encodeURIComponent(name)}`));
     if (!res.ok) {
-      if (res.status === 404 && (await failure(res)).message.startsWith("no library")) this.vanished();
+      if (res.status === 404 && (await failure(res)).message.startsWith("no library")) this.stop("gone");
       return null;
     }
     if (res.headers.get("x-library") !== this.library) {
-      this.lost();
+      this.stop("foreign");
       return null;
     }
     const doc = Doc.load(new Uint8Array(await res.arrayBuffer()), this.user);
@@ -181,9 +169,9 @@ export class Session {
         body: bytes as BodyInit,
       });
       if (!res.ok) {
-        if (res.status === 409) this.lost();
+        if (res.status === 409) this.stop("foreign");
         const err = await failure(res);
-        if (res.status === 404 && err.message.startsWith("no library")) this.vanished();
+        if (res.status === 404 && err.message.startsWith("no library")) this.stop("gone");
         throw err;
       }
       const theirs = decodeVV(res.headers.get("x-vv")!);
@@ -201,19 +189,12 @@ export class Session {
     if (ok && server && !vvIncludes(server, this.repo.branches.get(name)!.loro.version().toJSON())) void this.sync(name);
   }
 
-  private lost() {
+  /** The server holds another library, or none (gone): stop sending, and say so once. */
+  stop(why: "foreign" | "gone") {
     if (this.foreign) return;
     this.foreign = true;
     this.disconnect();
-    this.hooks.foreign();
-  }
-
-  /** The library is gone from the server: stop sending, and say so once. */
-  vanished() {
-    if (this.foreign) return;
-    this.foreign = true;
-    this.disconnect();
-    this.hooks.gone();
+    this.hooks[why]();
   }
 
   /** Listen for other writers. */
@@ -256,7 +237,7 @@ export class Session {
       /* unreachable */
     }
     if (this.foreign) return;
-    if (status === 404 && message.startsWith("no library")) return this.vanished();
+    if (status === 404 && message.startsWith("no library")) return this.stop("gone");
     if (status >= 200 && status < 300) return this.connect();
     setTimeout(() => void this.probe(Math.min(wait * 2, 30_000)), wait);
   }

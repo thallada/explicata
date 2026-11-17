@@ -200,7 +200,7 @@ export function WikiView({ host }: { host: string }) {
   const art = article(h.title, h.lang);
   if (art.state !== "ready") {
     // While the article loads, a summary already at hand is shown at once.
-    const have = known(h.title, h.lang).summary;
+    const have = known(h.title, h.lang);
     return (
       <section class={`wiki${embedded ? " embedded" : ""}`} data-host={host}>
         <Head title={have?.title ?? h.title} focused={at({ t: "head" })} />

@@ -18,7 +18,7 @@ import { suggest, summary, wikiConfig, type Attribution as Attr, type Suggestion
 const MARK: Record<Ref["kind"], string> = { wiki: "W", node: "§", url: "↗" };
 
 /** Where a node is, in a word: the title of the top-level node it is under, or for a top-level node itself, the library's. */
-export function whereIs(s: Snap, id: NodeId): string {
+function whereIs(s: Snap, id: NodeId): string {
   const t = topOf(s, id);
   return t && t !== id ? s.nodes[t].title : label(s, s.root);
 }
@@ -28,7 +28,7 @@ function where(r: Ref): string {
   if (r.kind === "wiki") return `Wikipedia: ${r.title}`;
   if (r.kind === "url") return hostOf(r.url);
   const s = store.snap;
-  const id = resolveNode(store.snap, r);
+  const id = resolveNode(s, r);
   if (!id) return "a note that is gone";
   const t = topOf(s, id);
   return `${label(s, id)}${t && t !== id ? ` · in ${s.nodes[t].title}` : ""}`;
@@ -77,7 +77,7 @@ export function LinkCard({ r, compact }: { r: Ref; compact?: boolean }) {
   }
   if (r.kind === "node") {
     const s = store.snap;
-    const id = resolveNode(store.snap, r);
+    const id = resolveNode(s, r);
     if (!id) {
       return (
         <div class="lcard l-node broken">
@@ -263,14 +263,14 @@ export const articleChoice = (w: Suggestion): Choice => ({ group: "Wikipedia", l
  * Wikipedia's title suggestions for some text, after a pause in typing. A superseded request is
  * abandoned, and the server then never sends it. Empty text asks for nothing.
  */
-export function useWikiSuggest(text: string): { q: string; list: Suggestion[]; problem?: string } | null {
-  const [found, setFound] = useState<{ q: string; list: Suggestion[]; problem?: string } | null>(null);
+export function useWikiSuggest(text: string): { list: Suggestion[]; problem?: string } | null {
+  const [found, setFound] = useState<{ list: Suggestion[]; problem?: string } | null>(null);
   useEffect(() => {
     if (!text || wikiConfig().mode === "off") return setFound(null);
     const ac = new AbortController();
     const timer = setTimeout(() => {
       suggest(text, ac.signal)
-        .then((r) => !ac.signal.aborted && setFound(Array.isArray(r) ? { q: text, list: r } : { q: text, list: [], problem: r.message }))
+        .then((r) => !ac.signal.aborted && setFound(Array.isArray(r) ? { list: r } : { list: [], problem: r.message }))
         .catch(() => {});
     }, 250);
     return () => (clearTimeout(timer), ac.abort());

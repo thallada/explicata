@@ -11,9 +11,6 @@ export function setLibrary(id: string) {
   library = id;
 }
 
-/** The library this page holds, once boot has chosen it. */
-export const currentLibrary = () => library;
-
 /**
  * A path under this library's API: libApi("/links/jobs") → /api/l/<id>/links/jobs. Before a library
  * is chosen (only in the tests: the page chooses one before anything asks) the unprefixed route,
@@ -33,16 +30,21 @@ export interface LibraryInfo {
   branches: string[];
 }
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init);
-  let body: Record<string, unknown> = {};
+/** A failed answer as an error: the server's `error`, else its status. */
+export async function failure(res: Response): Promise<Error> {
+  let message = `${res.status} ${res.statusText}`;
   try {
-    body = await res.json();
+    message = String((await res.json())?.error ?? message);
   } catch {
     /* not JSON */
   }
-  if (!res.ok) throw new Error(String(body.error ?? `${res.status} ${res.statusText}`));
-  return body as T;
+  return new Error(message);
+}
+
+async function call<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, init);
+  if (!res.ok) throw await failure(res);
+  return res.json().catch(() => ({})) as Promise<T>;
 }
 const send = (method: string, body?: unknown): RequestInit => ({ method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
 

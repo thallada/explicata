@@ -108,11 +108,10 @@ export function sensesOf(title: string, lang = config.lang): Loadable<Sense[]> {
   return load(senses, wikiKey(lang, title), `/api/wiki/senses?${q(wikiTitle(title))}`, "senses");
 }
 
-/** What is already known about an article, without asking for anything. */
-export function known(title: string, lang = config.lang): { summary?: Summary; article?: Article } {
+/** An article's summary if it is here already, without asking for anything. */
+export function known(title: string, lang = config.lang): Summary | undefined {
   const s = summaries.get(wikiKey(lang, title));
-  const a = articles.get(wikiKey(lang, title));
-  return { summary: s?.state === "ready" ? s.value : undefined, article: a?.state === "ready" ? a.value : undefined };
+  return s?.state === "ready" ? s.value : undefined;
 }
 
 /**
@@ -120,7 +119,7 @@ export function known(title: string, lang = config.lang): { summary?: Summary; a
  * which must never wait on Wikipedia.
  */
 export async function cachedExtract(title: string, ms = 300): Promise<{ title: string; extract: string } | null> {
-  const have = known(title).summary;
+  const have = known(title);
   if (have?.extract) return { title: have.title, extract: have.extract };
   if (config.mode === "off") return null;
   const ac = new AbortController();
@@ -156,16 +155,12 @@ const ATTRS = new Set(["colspan", "rowspan", "start", "data-wiki", "data-wiki-fr
 /** Elements whose content goes with them. */
 const DROP = new Set(["script", "style", "iframe", "object", "embed", "svg", "link", "meta", "base", "form", "template", "noscript", "video", "audio", "img", "picture", "figure", "source", "canvas", "title", "head", "input", "button", "select", "textarea"]);
 
-const cleaned = new Map<string, string>();
-
 /**
  * Clean article HTML once more, in an inert document (DOMParser runs no script and loads nothing):
  * allowlisted elements and attributes only, wiki links kept as data-wiki, other links only if
- * http(s) and then in a new tab without an opener. Remembered per string.
+ * http(s) and then in a new tab without an opener.
  */
-export function cleanHtml(html: string): string {
-  const have = cleaned.get(html);
-  if (have !== undefined) return have;
+function cleanHtml(html: string): string {
   const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
   const walk = (el: Element) => {
     for (const child of [...el.children]) {
@@ -192,10 +187,7 @@ export function cleanHtml(html: string): string {
     }
   };
   walk(doc.body);
-  const out = doc.body.innerHTML;
-  if (cleaned.size > 400) cleaned.delete(cleaned.keys().next().value as string);
-  cleaned.set(html, out);
-  return out;
+  return doc.body.innerHTML;
 }
 
 /** A piece of article HTML as text to select in (articleText.ts). Remembered per string. */

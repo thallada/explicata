@@ -1,7 +1,7 @@
 /** The model, as the browser sees it: the LLM seam (src/llm/types.ts) as fetches to the local server's /api/llm. */
 import type { JsonReq, LLM, Req, Turn, TurnReq } from "../llm/types";
 import type { WebStep } from "../llm/web";
-import { failure } from "./session";
+import { failure } from "./api";
 
 async function fail(res: Response): Promise<never> {
   throw await failure(res);

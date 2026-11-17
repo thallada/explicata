@@ -74,7 +74,7 @@ export const kidClass = (key: string) => {
   return `k${h.toString(36)}`;
 };
 /** Whether two panes show the same thing (a node, or an article or one of its sections). */
-export const sameRef = (a: PaneRef, b: PaneRef): boolean =>
+const sameRef = (a: PaneRef, b: PaneRef): boolean =>
   a.kind === b.kind && (a.kind === "node" ? a.id === (b as { id: NodeId }).id : a.title === (b as { title: string }).title && a.sec === (b as { sec?: number }).sec);
 /** What a pane shows, as a key: `n:<node id>`, or `w:<title>` with `#<section>`. A link's target has the same key as the pane it opens. */
 export const refKey = (p: PaneRef): string => (p.kind === "node" ? `n:${p.id}` : `w:${p.title}${p.sec !== undefined ? `#${p.sec}` : ""}`);
@@ -1208,7 +1208,7 @@ class Store {
         gone: () => this.libraryGone(),
         message: (msg) => {
           if (msg.linkJob) this.jobUpdate(msg.linkJob as JobState);
-          if (msg.library === "deleted") this.session.vanished();
+          if (msg.library === "deleted") this.session.stop("gone");
         },
       });
       await this.session.load((state?.branches ?? []).map((b) => b.name), this.online);

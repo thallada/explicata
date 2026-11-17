@@ -25,20 +25,6 @@ export async function idbGet<T>(key: string): Promise<T | undefined> {
   }
 }
 
-/** Every stored key. */
-export async function idbKeys(): Promise<string[]> {
-  try {
-    const d = await db();
-    return await new Promise((resolve, reject) => {
-      const req = d.transaction("kv").objectStore("kv").getAllKeys();
-      req.onsuccess = () => resolve(req.result.map(String));
-      req.onerror = () => reject(req.error);
-    });
-  } catch {
-    return [];
-  }
-}
-
 export async function idbSet(key: string, value: unknown): Promise<void> {
   try {
     const d = await db();

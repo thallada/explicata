@@ -21,7 +21,7 @@ import { libApi } from "./api";
 import { clip, overlaps, type Range } from "../core/text";
 import type { Nearby } from "../llm/prompts";
 
-export type { JobState, ReviewReport, Sugg };
+export type { JobState, Sugg };
 /** After an edit: the model reviews what was found and links what it approves (review), the sure tier is linked (on), all is suggested (suggest), nothing is looked for (off). */
 export type AutoMode = "review" | "on" | "suggest" | "off";
 
@@ -45,7 +45,6 @@ export interface LinkRow {
   reason: string | null;
   /** What the reviewer said, when it said something different from how things stand (a person overruled it). */
   verdict: boolean | null;
-  at: number | null;
   sugg?: Sugg;
   /** The link's own note, when it is linked. */
   note?: NodeId;
@@ -65,7 +64,10 @@ interface Host {
 }
 
 /** Who wrote the text being scanned: a person's marks always resolve; a model's follow the mode. */
-type Origin = "human" | "model" | "import";
+type Origin = "human" | "model";
+
+/** What the server answers a scan. */
+type ScanReply = { suggestions: Sugg[]; entries?: Sugg[]; apply?: Sugg[]; review?: ReviewReport; unresolved: string[]; degraded: string[] };
 
 interface Task {
   node: NodeId;
@@ -86,12 +88,8 @@ const turnedDown = (snap: Snap, s: Sugg) => !!snap.nodes[s.node]?.nolink?.includ
 function place(snap: Snap, s: Sugg, overrule = false): Sugg | null {
   const n = snap.nodes[s.node];
   if (!n || (!overrule && turnedDown(snap, s))) return null;
-  let range = s.range;
-  if (n.body.slice(range[0], range[1]) !== s.quote) {
-    const at = n.body.indexOf(s.quote);
-    if (at < 0) return null;
-    range = [at, at + s.quote.length];
-  }
+  const range = locate(n.body, s);
+  if (!range) return null;
   for (const c of notesOf(snap, s.node)) {
     const note = snap.nodes[c];
     for (const a of note.anchors) {
@@ -129,14 +127,14 @@ function rowOf(snap: Snap, s: Sugg): LinkRow | null {
     if (!note.ref || !note.anchors.some((a) => overlaps([a.start, a.end], range))) continue;
     if (!sameTarget(note.ref, s.target)) return null;
     const by = s.decided?.link ? s.decided.by : s.review?.link ? "reviewer" : null;
-    return { ...base, status: "linked", by, verdict: s.review && by !== "reviewer" ? s.review.link : null, at: s.decided?.at ?? s.review?.at ?? null, note: c };
+    return { ...base, status: "linked", by, verdict: s.review && by !== "reviewer" ? s.review.link : null, note: c };
   }
   if (n.nolink?.includes(s.key) || s.decided?.link === false) {
     const by = s.decided?.link === false ? s.decided.by : null;
-    return { ...base, status: "rejected", by, verdict: s.review ? s.review.link : null, at: s.decided?.at ?? null };
+    return { ...base, status: "rejected", by, verdict: s.review ? s.review.link : null };
   }
-  if (s.review?.link === false && !s.decided?.link) return { ...base, status: "rejected", by: "reviewer", verdict: null, at: s.review.at };
-  return { ...base, status: "pending", by: null, verdict: s.review ? s.review.link : null, at: s.review?.at ?? null };
+  if (s.review?.link === false && !s.decided?.link) return { ...base, status: "rejected", by: "reviewer", verdict: null };
+  return { ...base, status: "pending", by: null, verdict: s.review ? s.review.link : null };
 }
 
 export class Linker {
@@ -203,12 +201,12 @@ export class Linker {
         const a = note.anchors[0];
         if (!note.ref || !a || mine.some((x) => x.note === c)) continue;
         const quote = n.body.slice(a.start, a.end);
-        mine.push({ key: `note:${c}`, node: id, range: [a.start, a.end], quote, target: note.ref, title: titleOf(snap, note.ref), status: "linked", by: null, reason: null, verdict: null, at: null, note: c });
+        mine.push({ key: `note:${c}`, node: id, range: [a.start, a.end], quote, target: note.ref, title: titleOf(snap, note.ref), status: "linked", by: null, reason: null, verdict: null, note: c });
         seen.add(phraseKey(quote));
       }
       for (const k of n.nolink ?? []) {
         if (seen.has(k) || (this.byNode.get(id) ?? []).some((s) => s.key === k)) continue;
-        mine.push({ key: `nolink:${id}:${k}`, node: id, range: null, quote: k, target: null, title: "", status: "rejected", by: null, reason: null, verdict: null, at: null });
+        mine.push({ key: `nolink:${id}:${k}`, node: id, range: null, quote: k, target: null, title: "", status: "rejected", by: null, reason: null, verdict: null });
       }
       out.push(...mine.sort((a, b) => (a.range?.[0] ?? 1e9) - (b.range?.[0] ?? 1e9)));
     }
@@ -283,7 +281,7 @@ export class Linker {
     const review = this.effective() === "review" ? (t.origin === "human" ? "unmarked" : "all") : undefined;
     const res = await post("scan", { ...this.request(snap, t.node, t.forced), ...(review ? { review } : {}) });
     if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? `the server answered ${res.status}`);
-    const r = (await res.json()) as { suggestions: Sugg[]; entries?: Sugg[]; apply?: Sugg[]; review?: ReviewReport; unresolved: string[]; degraded: string[] };
+    const r = (await res.json()) as ScanReply;
     this.take(doc, t.node, r, t.origin);
   }
 
@@ -293,7 +291,7 @@ export class Linker {
    * [[marks]] always, by "linker". Everything still pending waits, drawn in the text; what the
    * reviewer rejected waits behind the links list's filter.
    */
-  private take(doc: Doc, node: NodeId, r: { suggestions: Sugg[]; entries?: Sugg[]; apply?: Sugg[]; review?: ReviewReport; unresolved: string[]; degraded: string[] }, origin: Origin) {
+  private take(doc: Doc, node: NodeId, r: ScanReply, origin: Origin) {
     const mode = this.effective();
     const marked = (s: Sugg) => s.kind === "forced";
     const list = r.suggestions;
@@ -310,7 +308,7 @@ export class Linker {
     else if (approved.length) this.host.say(`${this.linkedText(approved)} · u undoes${rejected ? ` · ${rejected} rejected` : ""}${later.length ? ` · ${later.length} to review` : ""} · S lists them`);
     else if (rep?.fallback && later.length) this.host.say(`${this.fallbackText(rep.fallback)}: ${later.length} link suggestion${later.length > 1 ? "s" : ""} for you · Tab reaches ${later.length > 1 ? "them" : "it"}, y links, n declines`);
     else if (rejected && !placed.length) this.host.say(`The reviewer rejected ${rejected} link${rejected > 1 ? "s" : ""} here${later.length ? `; ${later.length} left to review` : ""} · S lists them`);
-    else if (!placed.length && later.length && origin !== "import") this.host.say(`${later.length} link suggestion${later.length > 1 ? "s" : ""}: Tab reaches ${later.length > 1 ? "them" : "it"}, y links, n declines${r.degraded.length ? ` (${r.degraded[0]})` : ""}`);
+    else if (!placed.length && later.length) this.host.say(`${later.length} link suggestion${later.length > 1 ? "s" : ""}: Tab reaches ${later.length > 1 ? "them" : "it"}, y links, n declines${r.degraded.length ? ` (${r.degraded[0]})` : ""}`);
     this.host.emit(node);
   }
 
