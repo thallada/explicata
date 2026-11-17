@@ -301,11 +301,12 @@ test("a curve per open edge, from where each pane was opened to its title; it fo
   expect(start.y).toBeLessThan(link.y + link.height);
   await nearIn(kinds.locator(".node.forked > .row", { hasText: "Simple cells" }), edge("Two kinds of cell", "Simple cells")[0].a);
   const title = (t: string) => pane(page, t).locator(".wiki-head h2, .pane-head h2").first();
-  // Each runs on into the rule under its pane's title: one line.
+  // Each runs on into the rule under its pane's title and along it (drawing it): one line.
   for (const t of ["Eukaryote", "Simple cells", "Complex cells"]) {
     const end = edge("Two kinds of cell", t)[0].b;
     const r = (await pane(page, t).locator(".wiki-head, .pane-head").first().boundingBox())!;
-    expect(Math.abs(end.x - r.x), t).toBeLessThan(2);
+    expect(end.x, t).toBeGreaterThan(r.x + 100);
+    expect(end.x, t).toBeLessThanOrEqual(r.x + r.width + 1);
     expect(Math.abs(end.y - (r.y + r.height - 0.5)), t).toBeLessThan(1.5);
   }
   await near('.wiki-pane .wiki-text a[data-wiki="Bacteria"]', edge("Eukaryote", "Bacteria")[0].a);
@@ -334,8 +335,7 @@ test("a curve per open edge, from where each pane was opened to its title; it fo
   const now = edge("Two kinds of cell", "Simple cells")[0].b;
   const r = (await title("Simple cells").boundingBox())!;
   expect(Math.abs(now.x - was.x)).toBeGreaterThan(20);
-  expect(now.x).toBeGreaterThan(r.x - 30);
-  expect(now.x).toBeLessThanOrEqual(r.x + 2);
+  expect(now.x).toBeGreaterThan(r.x);
   // And they can be turned off, and on again.
   await page.keyboard.press(":");
   await page.keyboard.type("/curves off");
@@ -347,7 +347,7 @@ test("a curve per open edge, from where each pane was opened to its title; it fo
   await expect.poll(async () => (await curves(page)).length).toBeGreaterThan(3);
 });
 
-test("each fork has a colour, shared by its curve and the rule under its title; the first trail is plain ink; /colors off takes them away", async ({ page }) => {
+test("each fork has a colour, shared by its curve and the rule under its title; a trail keeps its colour, the top node has none; /colors off takes them away", async ({ page }) => {
   await cells(page);
   const ids: Record<string, number> = {};
   for (const t of ["Two kinds of cell", "Eukaryote", "Simple cells", "Complex cells", "Bacteria"]) ids[t] = await tid(page, t);
@@ -356,17 +356,20 @@ test("each fork has a colour, shared by its curve and the rule under its title; 
     page.locator(`.curves path[data-to="${ids[to]}"]`).evaluate((el) => ({ stroke: getComputedStyle(el).stroke, hue: (el as SVGElement).dataset.hue }));
   const rule = (t: string) => pane(page, t).locator(".wiki-head, .pane-head").first().evaluate((el) => getComputedStyle(el).borderBottomColor);
   const hue = (t: string) => pane(page, t).getAttribute("data-hue");
-  // Eukaryote went on from Two kinds of cell, Bacteria from it: the first trail, uncoloured. Simple and Complex cells are forks, each its own colour.
-  for (const t of ["Two kinds of cell", "Eukaryote", "Bacteria"]) expect(await hue(t), t).toBeNull();
-  expect((await curve("Eukaryote")).hue).toBeUndefined();
-  expect(await hue("Simple cells")).not.toBeNull();
+  // The library (the top node) has no colour; the trail down from it one, Eukaryote and Bacteria going on in it. Simple and Complex cells are forks, each its own colour.
+  expect(await pane(page, "Library").getAttribute("data-hue")).toBeNull();
+  for (const t of ["Eukaryote", "Bacteria"]) expect(await hue(t), t).toBe(await hue("Two kinds of cell"));
+  expect(await hue("Two kinds of cell")).not.toBeNull();
+  expect((await curve("Eukaryote")).hue).toBe(await hue("Two kinds of cell"));
+  expect(await hue("Simple cells")).not.toBe(await hue("Two kinds of cell"));
   expect(await hue("Complex cells")).not.toBe(await hue("Simple cells"));
-  // A curve and its pane's title rule: one colour, off the focused branch (Simple cells) or on it (Complex cells), and the two forks' differ.
+  // The curve draws the rule under its pane's title (the pane's own is left out): one stroke, in the pane's colour.
   for (const t of ["Simple cells", "Complex cells"]) {
     expect((await curve(t)).hue).toBe(await hue(t));
-    expect((await curve(t)).stroke, t).toBe(await rule(t));
+    expect(await pane(page, t).getAttribute("data-ruled")).toBe("head");
+    expect(await rule(t)).toBe("rgba(0, 0, 0, 0)");
   }
-  expect(await rule("Simple cells")).not.toBe(await rule("Complex cells"));
+  expect((await curve("Simple cells")).stroke).not.toBe((await curve("Complex cells")).stroke);
   expect((await curve("Simple cells")).stroke).not.toBe((await curve("Eukaryote")).stroke);
   // The active pane's heavy ink rule is as it was.
   expect(await page.locator(".pane.active").evaluate((el) => getComputedStyle(el, "::after").height)).toBe("3px");

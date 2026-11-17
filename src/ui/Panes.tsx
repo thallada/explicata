@@ -57,10 +57,48 @@ class Pane extends Component<PaneProps> {
     if (next.p.kind === "wiki") return true;
     return store.paneDirty(next.p.id) || !!store.targetOf(next.p.id) || store.linkedFrom(next.p.id).length > 0;
   }
+  componentDidMount() {
+    watchHead(this.props.t.id);
+  }
+  componentDidUpdate() {
+    watchHead(this.props.t.id);
+  }
+  componentWillUnmount() {
+    watched.get(this.props.t.id)?.io.disconnect();
+    watched.delete(this.props.t.id);
+  }
   render() {
     const p = this.props.p;
     return <PaneCtx.Provider value={this.props.t.id}>{p.kind === "node" ? <NodePane {...this.props} id={p.id} /> : <WikiPane {...this.props} />}</PaneCtx.Provider>;
   }
+}
+
+/**
+ * A pane scrolled past its title shows its tab at its top, as a folded one does (data-scrolled): an
+ * observer on the title's rule, against the pane's own scroll box less the tab, so nothing is done
+ * per scroll or per key, and the tab comes exactly as the rule goes under it.
+ */
+const watched = new Map<number, { io: IntersectionObserver; target: Element }>();
+function watchHead(tid: number) {
+  const pane = document.querySelector<HTMLElement>(`.strip .pane[data-tid="${tid}"]`);
+  if (!pane || typeof IntersectionObserver === "undefined") return;
+  const scroll = pane.querySelector<HTMLElement>(":scope > .pane-scroll");
+  const head = pane.querySelector<HTMLElement>(HEADS);
+  const target = head?.matches(".top") ? head.querySelector("h1") : head;
+  const w = watched.get(tid);
+  if (w && w.target === target) return;
+  w?.io.disconnect();
+  watched.delete(tid);
+  if (!target || !scroll) return void pane.removeAttribute("data-scrolled");
+  const io = new IntersectionObserver(
+    (es) => {
+      const e = es[es.length - 1];
+      setAttr(pane, "data-scrolled", !e.isIntersecting && !!e.rootBounds && e.boundingClientRect.height > 0 && e.boundingClientRect.bottom <= e.rootBounds.top + 1);
+    },
+    { root: scroll, rootMargin: `-${TAB}px 0px 0px 0px` },
+  );
+  io.observe(target);
+  watched.set(tid, { io, target });
 }
 
 /** The attributes every pane has: which it is, its place in its tree, its id there, and its branch's colour (forks.ts; style.css draws it). */
@@ -468,8 +506,8 @@ export function Panes() {
     const onScroll = (e: Event) => {
       const t = e.target as HTMLElement;
       if (t === el || t.classList?.contains("col")) measure();
-      // What peeks is placed for where things were: put it back (one waiting to peek still may).
-      if (peeked) hide();
+      // A scroll inside what peeks (the wheel over it) keeps it out; any other moves things from under it.
+      if (peeked.length && !peeked.some((p) => p !== t && p.contains(t)) && !(t === peeked[0] && peeked.length === 1 && !t.classList.contains("pane"))) hide();
       schedule();
     };
     const onResize = () => {
@@ -493,53 +531,72 @@ export function Panes() {
      * foot, lifted into view; nothing else moves. A click makes it the active pane, which uncovers
      * it for good. Not for touch, the keyboard, or while dragging.
      */
-    let peeked: HTMLElement | null = null;
+    /** What peeks (its column across, the pane down its column, or both) and the pane it is for. */
+    let peeked: HTMLElement[] = [];
+    let peekedFor: HTMLElement | null = null;
     let pending: HTMLElement | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const lower = (it: HTMLElement) => {
+      it.removeAttribute("data-peek");
+      it.style.transform = "";
+    };
     function hide() {
-      if (!peeked) return;
-      peeked.removeAttribute("data-peek");
-      peeked.style.transform = "";
-      peeked = null;
+      for (const it of peeked) lower(it);
+      peeked = [];
+      peekedFor = null;
     }
     function unpeek() {
       clearTimeout(timer);
       pending = null;
       hide();
     }
-    const peekable = (pane: HTMLElement): HTMLElement | null => {
+    /** What must come out for a pane to show whole: its column, if later columns cover it; the pane, if later panes in a crowded column do, or the column's foot cuts it. */
+    const peekable = (pane: HTMLElement): HTMLElement[] => {
       const col = pane.parentElement as HTMLElement;
-      if (col.hasAttribute("data-covered") || (col.nextElementSibling as HTMLElement | null)?.hasAttribute("data-over")) return col;
-      if (!col.classList.contains("crowded")) return null;
-      const r = pane.getBoundingClientRect();
-      const c = col.getBoundingClientRect();
-      if (pane.hasAttribute("data-covered") || (pane.nextElementSibling as HTMLElement | null)?.hasAttribute("data-over") || r.bottom > c.bottom + 1) return pane;
-      return null;
+      const out: HTMLElement[] = [];
+      if (col.hasAttribute("data-covered") || (col.nextElementSibling as HTMLElement | null)?.hasAttribute("data-over")) out.push(col);
+      if (col.classList.contains("crowded")) {
+        const r = pane.getBoundingClientRect();
+        const c = col.getBoundingClientRect();
+        if (pane.hasAttribute("data-covered") || (pane.nextElementSibling as HTMLElement | null)?.hasAttribute("data-over") || r.bottom > c.bottom + 1) out.push(pane);
+      }
+      return out;
     };
-    const peek = (it: HTMLElement) => {
-      peeked = it;
-      it.setAttribute("data-peek", "");
-      if (it.classList.contains("pane")) {
-        const r = it.getBoundingClientRect();
-        const c = (it.parentElement as HTMLElement).getBoundingClientRect();
-        const dy = Math.max(c.top - r.top, Math.min(0, c.bottom - r.bottom));
-        if (dy) it.style.transform = `translateY(${Math.round(dy)}px)`;
+    const peek = (pane: HTMLElement, its: HTMLElement[]) => {
+      peekedFor = pane;
+      for (const it of its) {
+        if (peeked.includes(it)) continue;
+        peeked.push(it);
+        it.setAttribute("data-peek", "");
+        if (it === pane) {
+          const r = it.getBoundingClientRect();
+          const c = (it.parentElement as HTMLElement).getBoundingClientRect();
+          const dy = Math.max(c.top - r.top, Math.min(0, c.bottom - r.bottom));
+          if (dy) it.style.transform = `translateY(${Math.round(dy)}px)`;
+        }
       }
     };
     const onMove = (e: PointerEvent) => {
       if (e.pointerType !== "mouse" || e.buttons || drag) return;
       const pane = (e.target as HTMLElement).closest<HTMLElement>(".pane");
-      const it = pane && (pane === peeked || pane.parentElement === peeked ? peeked : peekable(pane));
-      if (it === peeked && it) return;
-      if (it === pending && it) return;
-      unpeek();
-      if (!it) return;
-      pending = it;
+      if (pane && (pane === peekedFor || pane === pending)) return;
+      clearTimeout(timer);
+      pending = null;
+      const its = pane ? peekable(pane) : [];
+      // Within a column that is out already: only the pane part changes.
+      const col = pane?.parentElement as HTMLElement | undefined;
+      if (col && peeked.includes(col)) {
+        for (const it of peeked.filter((x) => x !== col)) lower(it);
+        peeked = [col];
+        peekedFor = pane;
+      } else hide();
+      if (!pane || !its.some((x) => !peeked.includes(x))) return;
+      pending = pane;
       timer = setTimeout(() => {
-        if (pending !== it) return;
+        if (pending !== pane) return;
         pending = null;
-        const pane = it.classList.contains("pane") ? it : it.querySelector<HTMLElement>(".pane");
-        if (pane && peekable(pane)) peek(it);
+        const now = peekable(pane);
+        if (now.length) peek(pane, now);
       }, PEEK_MS);
     };
     el.addEventListener("pointermove", onMove);
@@ -622,8 +679,8 @@ export function Panes() {
       e.preventDefault();
     };
     // A press elsewhere puts a peeking pane back; on it, the click goes through to it (and makes it the active pane), and then it goes back.
-    const onPress = (e: PointerEvent) => !(peeked && peeked.contains(e.target as Node)) && unpeek();
-    const afterClick = () => peeked && requestAnimationFrame(unpeek);
+    const onPress = (e: PointerEvent) => !peeked.some((p) => p.contains(e.target as Node)) && unpeek();
+    const afterClick = () => peeked.length && requestAnimationFrame(unpeek);
     el.addEventListener("pointerdown", onDown);
     el.addEventListener("pointerdown", onPress);
     el.addEventListener("click", afterClick);
@@ -705,6 +762,8 @@ interface Edge {
   lost: boolean;
   /** The child's branch colour (forks.ts). */
   hue?: number;
+  /** Where the curve runs on into the rule under the child's title (or its tab's foot), drawn here as part of the curve: from x0 to x1 at the arrival's height. */
+  rule?: { x0: number; x1: number };
 }
 
 /** A font's descent, by its CSS font string: where its baseline sits above the bottom of an inline box. */
@@ -749,14 +808,29 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
   if (!el || !svg) return;
   if (!store.settings.curves) {
     if (svg.firstChild) svg.replaceChildren();
+    markRuled(paneEls(el), new Map());
     return;
   }
-  const box = svg.getBoundingClientRect();
+  // The curves' layer is painted from its box's whole pixel: positions are measured from there, so that a hairline set on device pixels lands on them.
+  const sb = svg.getBoundingClientRect();
+  const box = { left: Math.round(sb.left), top: Math.round(sb.top) };
+  const dpr = window.devicePixelRatio || 1;
   const els = paneEls(el);
   const colEls = [...el.children] as HTMLElement[];
   const branch = new Set(store.branchNodes.map((n) => n.id));
-  // Coloured lines: a curve runs on into the rule under its pane's title (or its tab's), one line.
+  // Coloured lines: a curve runs on into the rule under its pane's title (or its tab's foot), one line, the rule drawn here
+  // with it (the pane's own rule left out, data-ruled) so that the two cannot differ by a pixel.
   const ruled = store.settings.colors === "line";
+  // A hairline: one device pixel (two from a ratio of 2), its level runs on device pixels, as the page's borders are.
+  const wd = Math.max(1, Math.floor(dpr + 0.01));
+  const hair = `${wd / dpr}px`;
+  if (svg.style.getPropertyValue("--hair") !== hair) svg.style.setProperty("--hair", hair);
+  const level = (y: number) => (Math.round(y * dpr - wd / 2) + wd / 2) / dpr;
+  const rules = new Map<number, string>();
+  /** Tabs' feet that curves leave from, drawn with them. */
+  const feet = new Map<number, { x0: number; x1: number; y: number; hue?: number; on: boolean }>();
+  /** The panes whose tab's foot a curve into them draws already. */
+  const tabbed = new Set<number>();
   const edges: Edge[] = [];
   for (const x of store.panesPlaced) {
     const parent = x.parent;
@@ -773,15 +847,44 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     let ey: number;
     let ex = left + ARRIVE;
     let lost = false;
-    if (ce.hasAttribute("data-covered")) ey = ruled ? cbox.top + TAB - 0.5 : cbox.top + TAB / 2;
+    let rule: Edge["rule"];
+    // What of the child shows: up to the next column where it covers it, down to the pane after it in a crowded column.
+    const nextCol = colEls[colEls.indexOf(ccol) + 1]?.getBoundingClientRect().left ?? Infinity;
+    const shownRight = Math.min(cbox.right, nextCol);
+    // A pane folded down a crowded column shows its tab, and may still show its title under it.
+    // A pane folded down a crowded column, or scrolled past its title, shows its tab (data-covered, data-scrolled).
+    let folded = ce.hasAttribute("data-covered");
+    if (ce.hasAttribute("data-buried")) ey = cbox.top + TAB / 2;
     else {
       const scroll = ce.querySelector<HTMLElement>(".pane-scroll")!.getBoundingClientRect();
+      // Under the tab, a rule does not show.
+      const top = Math.max(cbox.top, scroll.top) + TAB;
       const t = ce.querySelector<HTMLElement>(".pane-head h2, .top h1, .wiki-head h2");
       const tr = t?.getBoundingClientRect();
-      ey = tr && tr.bottom > scroll.top + 4 ? Math.max(scroll.top + 6, tr.top + Math.min(tr.height, 32) / 2) : scroll.top + 14;
-      // The rule: a page title's own underline, a heading's under its head.
-      const rr = ruled && t ? (t.matches("h1") ? tr : t.parentElement?.getBoundingClientRect()) : undefined;
-      if (rr && rr.bottom > scroll.top + 4 && rr.bottom < scroll.bottom) (ey = rr.bottom - 0.5), (ex = Math.max(left + ARRIVE, rr.left));
+      ey = folded ? cbox.top + TAB / 2 : tr && tr.bottom > scroll.top + 4 ? Math.max(scroll.top + 6, tr.top + Math.min(tr.height, 32) / 2) : scroll.top + 14;
+      // The rule: under the pane's own head (a section's, a page's title, an article's), not an article's set under a node; and not while that head holds the focus (its rule is then the text's ink).
+      const head = ruled ? ce.querySelector<HTMLElement>(HEADS) : null;
+      const ruleEl = head?.matches(".top") ? head.querySelector<HTMLElement>("h1") : head;
+      const rs = (ruleEl ?? ce.querySelector<HTMLElement>(".pane-head, .top h1, .wiki-head"))?.getBoundingClientRect();
+      if (rs && rs.bottom <= top) {
+        folded = true;
+        ey = cbox.top + TAB / 2;
+      }
+      const rr = ruleEl && !head!.classList.contains("focused") ? rs : undefined;
+      const below = ccol.classList.contains("crowded") ? ((ce.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top ?? Infinity) : Infinity;
+      if (rr && rr.bottom > top + 4 && rr.bottom < Math.min(scroll.bottom, below) && rr.left < shownRight) {
+        ey = level(rr.bottom - 0.5);
+        ex = Math.max(left + ARRIVE, rr.left);
+        rule = { x0: ex, x1: Math.min(rr.right, shownRight) };
+        rules.set(x.node.id, "head");
+      }
+    }
+    // Folded or scrolled so far that its title's rule does not show: into its tab's foot.
+    if (folded && !rule && ruled) {
+      ey = level(cbox.top + TAB - 0.5);
+      rule = { x0: cbox.left, x1: Math.round(Math.min(cbox.right - 1, nextCol) * dpr) / dpr };
+      rules.set(x.node.id, "tab");
+      tabbed.add(x.node.id);
     }
     if (ey > ccolBox.bottom - 4) {
       ey = ccolBox.bottom - 4;
@@ -789,27 +892,33 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     }
     // Where it starts: the words, row or link it was opened from. The text's edge: the pane's right padding, or the next column where it covers the pane.
     const pbox = pe.getBoundingClientRect();
-    const textRight = Math.min(pbox.right - 33, left - 2);
+    let textRight = Math.min(pbox.right - 33, left - 2);
     let sx = textRight;
     let sy: number;
     let under: { x: number; y: number } | undefined;
-    if (pe.hasAttribute("data-covered")) {
-      sy = pbox.top + TAB / 2;
-      lost = true;
-    } else {
-      // What of the pane shows: its own scroll box, less what the pane after it in a crowded column covers, down to the column's foot.
-      const box = pe.querySelector<HTMLElement>(".pane-scroll")!.getBoundingClientRect();
-      const nextTop = pcol.classList.contains("crowded") ? (pe.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top : undefined;
-      const sc = { top: box.top, bottom: Math.min(box.bottom, nextTop ?? Infinity, pcol.getBoundingClientRect().bottom) };
-      const cands = pe.querySelectorAll<HTMLElement>(`.${kidClass(refKey(x.node.ref))}`);
-      let src: HTMLElement | undefined;
-      for (const c of cands) {
-        const r = c.getBoundingClientRect();
-        if (r.height && r.bottom > sc.top && r.top < sc.bottom) {
-          src = c;
-          break;
-        }
+    // What of the pane shows: its own scroll box (below its tab, if folded), less what the pane after it in a crowded column covers, down to the column's foot.
+    const pfolded = pe.hasAttribute("data-covered");
+    const pscroll = pe.querySelector<HTMLElement>(".pane-scroll")!.getBoundingClientRect();
+    const nextTop = pcol.classList.contains("crowded") ? (pe.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top : undefined;
+    const sc = { top: pfolded ? Math.max(pscroll.top, pbox.top + TAB) : pscroll.top, bottom: Math.min(pscroll.bottom, nextTop ?? Infinity, pcol.getBoundingClientRect().bottom) };
+    const cands = pe.hasAttribute("data-buried") ? [] : pe.querySelectorAll<HTMLElement>(`.${kidClass(refKey(x.node.ref))}`);
+    let src: HTMLElement | undefined;
+    for (const c of cands) {
+      const r = c.getBoundingClientRect();
+      if (r.height && r.bottom > sc.top + 2 && r.top < sc.bottom - 2) {
+        src = c;
+        break;
       }
+    }
+    if (pfolded && !src) {
+      // Folded with its source out of sight: out of the right end of its tab's foot, carrying that line on (its foot drawn here too, so they join exactly).
+      const footRight = Math.round(Math.min(pbox.right - 1, left) * dpr) / dpr;
+      sy = level(pbox.top + TAB - 0.5);
+      sx = footRight;
+      // A few pixels straight on before it turns, so the foot runs on visibly.
+      textRight = footRight + 6;
+      if (ruled) feet.set(parent.id, { x0: pbox.left - box.left, x1: footRight - box.left, y: sy - box.top, hue: parent.hue, on: branch.has(parent.id) });
+    } else {
       src ??= cands[0];
       const head = pe.querySelector<HTMLElement>(".pane-head h2, .top h1, .wiki-head h2");
       const s = src ?? head;
@@ -835,9 +944,18 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
         sx = textRight;
         sy = Math.max(sc.top + 2, Math.min(sc.bottom - 2, sy));
       }
+      sy = level(sy);
+      if (under) under.y = level(under.y);
+    }
+    if (ruled && feet.has(parent.id) && !rules.get(parent.id)?.includes("tab")) rules.set(parent.id, rules.has(parent.id) ? "head tab" : "tab");
+    // A curve that cannot reach its pane (dotted) leaves the pane's own rule as it is.
+    if (lost && rule) {
+      rule = undefined;
+      rules.delete(x.node.id);
+      tabbed.delete(x.node.id);
     }
     const gutter = colEls.indexOf(ccol);
-    edges.push({ from: parent.id, to: x.node.id, gutter, left: left - box.left, sx: sx - box.left, sy: sy - box.top, under: under && { x: under.x - box.left, y: under.y - box.top }, textRight: textRight - box.left, ex: ex - box.left, ey: ey - box.top, on: branch.has(x.node.id) && branch.has(parent.id), lost, hue: x.node.hue });
+    edges.push({ from: parent.id, to: x.node.id, gutter, left: left - box.left, sx: sx - box.left, sy: sy - box.top, under: under && { x: under.x - box.left, y: under.y - box.top }, textRight: textRight - box.left, ex: ex - box.left, ey: ey - box.top, on: branch.has(x.node.id) && branch.has(parent.id), lost, hue: x.node.hue, rule: rule && { x0: rule.x0 - box.left, x1: rule.x1 - box.left } });
   }
   // Lanes, gutter by gutter.
   const lane = new Map<Edge, number>();
@@ -853,8 +971,9 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     order.forEach((o, i) => lane.set(o.e, Math.min(i, LANES - 1)));
   }
   for (const g of [...lanesUsed.keys()]) if (!gutters.has(g)) lanesUsed.delete(g);
-  const fx = (n: number) => Math.round(n * 2) / 2;
+  const fx = (n: number) => Math.round(n * 1000) / 1000;
   const out: { key: string; from: number; to: number; lane: number; cls: string; d: string; hue: string }[] = [];
+  for (const [id, f] of feet) if (!tabbed.has(id)) out.push({ key: `foot:${id}`, from: id, to: -1, lane: -1, cls: f.on ? "foot on" : "foot", d: `M${fx(f.x0)} ${fx(f.y)}H${fx(f.x1)}`, hue: f.hue === undefined ? "" : String(f.hue) });
   edges.sort((a, b) => Number(a.on) - Number(b.on));
   for (const e of edges) {
     const i = lane.get(e)!;
@@ -877,6 +996,8 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
         `C${fx(g)} ${fx(e.ey - sg * r2 * (1 - k))} ${fx(g + r2 - k * r2)} ${fx(e.ey)} ${fx(g + r2)} ${fx(e.ey)}` +
         `H${fx(e.ex)}`;
     }
+    // On into the rule: one path, so one stroke (where its foot runs back under the turn, a stroke covers once).
+    if (e.rule) d += e.rule.x0 < e.ex - 0.01 ? `M${fx(e.rule.x0)} ${fx(e.ey)}H${fx(e.rule.x1)}` : `H${fx(e.rule.x1)}`;
     out.push({ key: `${e.from}>${e.to}`, from: e.from, to: e.to, lane: i, cls: `${e.on ? "on" : ""}${e.lost ? " lost" : ""}`, d, hue: e.hue === undefined ? "" : String(e.hue) });
   }
   // Each curve keeps its element, changed only where it changed, so only what moved is painted again.
@@ -899,4 +1020,16 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     if (svg.children[k] !== p) svg.insertBefore(p, svg.children[k] ?? null);
   });
   for (const p of had.values()) p.remove();
+  markRuled(els, rules);
+}
+
+/** A pane's own head, whose rule a curve into it lands in: a section's, a page's title, an article's (not an article set under a node). */
+const HEADS = ":scope > .pane-scroll > .pane-body > .pane-head, :scope > .pane-scroll > .pane-body > .top, :scope > .pane-scroll > .pane-body > .wiki:not(.embedded) > .wiki-head";
+
+/** Which panes' rules a curve draws (head or tab), so that their own are left out. */
+function markRuled(els: Map<number, HTMLElement>, rules: Map<number, string>) {
+  for (const [id, p] of els) {
+    const v = rules.get(id);
+    if ((p.getAttribute("data-ruled") ?? undefined) !== v) v ? p.setAttribute("data-ruled", v) : p.removeAttribute("data-ruled");
+  }
 }

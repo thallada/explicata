@@ -7,6 +7,7 @@
  * Wikipedia's fixtures in server/wikiMock.ts).
  */
 import { writeFileSync } from "node:fs";
+import { inflateSync } from "node:zlib";
 import type { APIRequestContext, Page } from "@playwright/test";
 
 /** A keypress → paint timing, as the page records it. */
@@ -118,4 +119,41 @@ export async function seedLinks(request: APIRequestContext) {
   ];
   const res = await request.post("/api/ops", { data: { author: "linker", message: "Seed links for the link tests", ops } });
   if (!res.ok()) throw new Error(`seeding links failed: ${res.status()} ${await res.text()}`);
+}
+
+/** A screenshot's pixels (a PNG of 8-bit RGB or RGBA, as Playwright writes them): px(x, y) is [r, g, b]. */
+export function pixels(buf: Buffer): { w: number; h: number; px: (x: number, y: number) => [number, number, number] } {
+  let at = 8;
+  let w = 0;
+  let h = 0;
+  let type = 6;
+  const data: Buffer[] = [];
+  while (at < buf.length) {
+    const len = buf.readUInt32BE(at);
+    const kind = buf.toString("ascii", at + 4, at + 8);
+    const body = buf.subarray(at + 8, at + 8 + len);
+    if (kind === "IHDR") {
+      w = body.readUInt32BE(0);
+      h = body.readUInt32BE(4);
+      type = body[9];
+    } else if (kind === "IDAT") data.push(body);
+    at += 12 + len;
+  }
+  const bpp = type === 6 ? 4 : 3;
+  const raw = inflateSync(Buffer.concat(data));
+  const stride = w * bpp;
+  const out = Buffer.alloc(h * stride);
+  for (let y = 0; y < h; y++) {
+    const f = raw[y * (stride + 1)];
+    for (let i = 0; i < stride; i++) {
+      const x = raw[y * (stride + 1) + 1 + i];
+      const a = i >= bpp ? out[y * stride + i - bpp] : 0;
+      const b = y ? out[(y - 1) * stride + i] : 0;
+      const c = y && i >= bpp ? out[(y - 1) * stride + i - bpp] : 0;
+      const p = a + b - c;
+      const pr = Math.abs(p - a) <= Math.abs(p - b) && Math.abs(p - a) <= Math.abs(p - c) ? a : Math.abs(p - b) <= Math.abs(p - c) ? b : c;
+      out[y * stride + i] = (x + [0, a, b, (a + b) >> 1, pr][f]) & 255;
+    }
+  }
+  return { w, h, px: (x, y) => [out[y * stride + x * bpp], out[y * stride + x * bpp + 1], out[y * stride + x * bpp + 2]] };
 }

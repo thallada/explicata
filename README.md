@@ -107,20 +107,28 @@ Press `?` for every key. The short version:
   them, a short pane taking only what its text needs. When they do not all fit, the column stacks
   them the way the strip stacks columns: each pane stuck a tab below the one before, the pane on the
   focused branch shown whole and the others slid under it, partly and at the limit down to a
-  one-line tab, just as earlier columns slide under later ones down to a spine. Mouse resting on a
-  covered pane, tab or spine: after a moment it peeks out over its neighbours; a click makes it the
-  active pane. A pane's grip (the band above its title, by the pin and x, shown when pointed at) or
+  one-line tab, just as earlier columns slide under later ones down to a spine. A pane scrolled
+  past its own title shows the same tab at its top, over its text. Mouse resting on a covered pane,
+  tab or spine: after a moment it peeks out over its neighbours, its column across and the pane down
+  its column at once, and stays out while the pointer is on it (the wheel scrolls it); a click makes
+  it the active pane. A pane's grip (the band above its title, by the pin and x, shown when pointed at) or
   its tab drags it up or down its column; Esc cancels; the column keeps that order. `[` and `]` go to
   the pane above and below in the column, back where you were in it; at the top or bottom they stay.
   `h` and `l` move along the focused branch.
-- **Curves.** A faint curve runs from the words, row or link each pane was opened from (joined to
-  their underline) to its title; the focused branch's is drawn stronger. Curves down one gutter run
-  side by side, ordered to cross as little as they can. `/curves off` hides them.
+- **Curves.** A curve runs from the words, row or link each pane was opened from (joined to their
+  underline) into the rule under the pane's title, and draws that rule, so the two are one hairline
+  on device pixels; the focused branch's is drawn stronger. Where the title does not show (the pane
+  folded to its tab, or scrolled past it), the curve runs into the tab's foot instead; out of a
+  folded pane whose source is out of sight, it leaves from the end of that pane's tab foot. A source
+  scrolled out of a pane it is still in is held at the pane's edge and the curve dotted. Curves down
+  one gutter run side by side, ordered to cross as little as they can. `/curves off` hides them.
 - **Fork colours.** Each fork has a colour of its own, quiet and the same lightness for all: a
   pane opened as the first from its pane goes on in that pane's colour, any other starts the next
-  of seven, so a plain trail is one colour and the first trail plain ink. The colour runs along the
-  curve into the rule under the pane's title (a tab's foot, a dash on a spine), at full strength on
-  the focused branch; a pane keeps its colour while it is open, through a reorder, or as an orphan.
+  of seven, so a plain trail is one colour. The top node (the library) has none to hand down: each
+  pane opened from it starts its own. The colour runs along the curve into the rule under the
+  pane's title (a tab's foot, a dash on a spine), at full strength on the focused branch and
+  fainter off it; a pane keeps its colour while it is open, through a reorder, or as an orphan, and
+  nothing but the panes' tree decides it (not the focus, a scroll or a fold).
   `/colors line|top|edge|off` (or the menu) puts it there, in a band across each pane's top, down
   its left edge, or nowhere.
 - **The active pane**, where the keys act, has a heavy rule across its top; the rest of the focused
