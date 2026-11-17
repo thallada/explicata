@@ -147,7 +147,7 @@ describe("the reviewer", () => {
     return { p, list: out };
   }
 
-  it("judges many proposals a call, grouped by document and section, with what it takes to judge each", async () => {
+  it("judges many proposals a call, grouped by tree and section, with what it takes to judge each", async () => {
     const { doc, minds, arms, stars } = library();
     const { p, list } = proposals(doc, [minds, arms, stars], BATCH * 2 + 10);
     const { llm, calls } = counting();
@@ -163,7 +163,7 @@ describe("the reviewer", () => {
     expect(rep.fallback).toBeUndefined();
     const first = calls[0];
     expect(first).toMatchObject({ schema: "review", system: REVIEW_SYSTEM, effort: "low" });
-    expect(first.prompt).toContain("# Document: Octopus minds");
+    expect(first.prompt).toContain("# Tree: Octopus minds");
     expect(first.prompt).toContain("## Section: Arms");
     expect(first.prompt).toContain("“cephalopod” → Wikipedia article “T4” [scanner: unsure]");
     expect(first.prompt).toContain("in: “The cephalopod arm tastes what it touches.”");

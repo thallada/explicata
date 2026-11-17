@@ -1,12 +1,12 @@
 /**
- * The library's sections as vectors, for "closely matching nodes across documents": a VectorIndex
+ * The library's sections as vectors, for "closely matching nodes under other tops": a VectorIndex
  * (server/embed.ts) of each section's title and text, kept current from the snapshot's patches.
  * A patch only marks the nodes it touched; they are re-embedded later, a batch at a time, off the
  * request that made the edit (a section whose text is unchanged is skipped by its hash). Without a
  * model the index still holds the texts, so BM25 search works and "related" is text-only.
  */
 import { inArticles } from "../../src/core/article";
-import { Doc, docOf, isLibraryRoot, type NodeId, type Snap } from "../../src/core/model";
+import { Doc, isLibraryRoot, topOf, type NodeId, type Snap } from "../../src/core/model";
 import { plain } from "../../src/core/text";
 import { VectorIndex, type Embedder, type Hit, type HybridHit } from "../embed";
 
@@ -16,7 +16,7 @@ const nodeText = (snap: Snap, id: NodeId) => {
   return `${n.title}\n${plain(n.body)}`.trim();
 };
 
-/** Sections (and documents) worth indexing: not the library root, not notes, not the Wikipedia container's, and with some text. */
+/** Sections (the root's children too) worth indexing: not the library root, not notes, not the Wikipedia container's, and with some text. */
 const indexable = (snap: Snap, id: NodeId) => {
   const n = snap.nodes[id];
   return !!n && n.kind === "section" && !isLibraryRoot(snap, id) && !inArticles(snap, id) && (n.body.trim().length > 0 || n.title.trim().length > 0);
@@ -102,14 +102,14 @@ export class NodeIndex {
   }
 
   /**
-   * Sections close in meaning to a text, from other documents, best first. Excludes the node, its
-   * ancestors and its descendants. Null if there is no model.
+   * Sections close in meaning to a text, from under other tops than `top`, best first. Excludes the
+   * node, its ancestors and its descendants. Null if there is no model.
    */
-  async near(text: string, o: { exclude: Set<NodeId>; doc: NodeId | null; k?: number; snap: Snap; vector?: Float32Array | null }): Promise<Hit[] | null> {
+  async near(text: string, o: { exclude: Set<NodeId>; top: NodeId | null; k?: number; snap: Snap; vector?: Float32Array | null }): Promise<Hit[] | null> {
     const k = o.k ?? 8;
     // Never built (a first start): build it now rather than answer from nothing.
     if (!this.vectors.size && (this.all || this.running)) await this.refresh();
-    const filter = (id: string) => !o.exclude.has(id as NodeId) && !!o.snap.nodes[id as NodeId] && docOf(o.snap, id as NodeId) !== o.doc;
+    const filter = (id: string) => !o.exclude.has(id as NodeId) && !!o.snap.nodes[id as NodeId] && topOf(o.snap, id as NodeId) !== o.top;
     if (o.vector) return this.vectors.searchVector(o.vector, k, filter);
     const v = await this.vectors.vector(text);
     return v ? this.vectors.searchVector(v, k, filter) : null;

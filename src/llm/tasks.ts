@@ -2,7 +2,7 @@
  * Everything the app asks a model to do, written against the LLM seam and the op API.
  * Nothing here knows about the UI or the network.
  */
-import { Doc, OpError, ancestorsInDoc, docOf, isLibraryRoot, isLink, label, notesOf, sections, staleness, type Conflict, type NodeId, type Op, type Snap } from "../core/model";
+import { Doc, OpError, ancestorsBelowRoot, isLibraryRoot, topOf, isLink, label, notesOf, sections, staleness, type Conflict, type NodeId, type Op, type Snap } from "../core/model";
 import { describeTarget, formatTarget, parseTarget, type Ref } from "../core/ref";
 import { nodeRef, resolveNode as resolveTargetPath } from "../core/links";
 import { mergeBranch, resolveConflict, type MergeReport } from "../core/repo";
@@ -45,7 +45,7 @@ export interface ExpansionRequest {
   nearby?: Nearby[];
 }
 
-/** Stream a note for a selection. Does not touch the document, so it can run speculatively. */
+/** Stream a note for a selection. Does not touch the library, so it can run speculatively. */
 export function streamExpansion(llm: LLM, snap: Snap, r: ExpansionRequest, onText: OnText = noop, signal?: AbortSignal): Promise<string> {
   return llm.stream(
     {
@@ -153,7 +153,7 @@ export function parseSections(text: string): { title: string; body: string }[] {
 /** Give a leaf subsections. If it has no body yet, write that first. */
 export async function deepen(llm: LLM, doc: Doc, id: NodeId, onText: OnText = noop, signal?: AbortSignal, hooks?: WriteHooks): Promise<NodeId[]> {
   let snap = doc.snap();
-  if (isLibraryRoot(snap, id)) throw new OpError("The model does not write the library itself. m makes a new document.");
+  if (isLibraryRoot(snap, id)) throw new OpError("The model does not write the library itself. a adds a section to it.");
   const nearby = await nearbyOf(hooks, id);
   if (!snap.nodes[id].body.trim()) {
     const text = await llm.stream(
@@ -189,7 +189,7 @@ export async function deepen(llm: LLM, doc: Doc, id: NodeId, onText: OnText = no
 export async function regenUp(llm: LLM, doc: Doc, id: NodeId, onText: OnText = noop, signal?: AbortSignal, hooks?: WriteHooks): Promise<boolean> {
   const snap = doc.snap();
   const n = snap.nodes[id];
-  // The library's text is not a summary of its documents, so the model never rewrites it.
+  // The library's text is not a summary of its children, so the model never rewrites it.
   if (!n || n.pinned || isLibraryRoot(snap, id) || !sections(snap, id).length) return false;
   const settled = sections(snap, id).filter((c) => !staleness(snap, c).down);
   const nearby = await nearbyOf(hooks, id);
@@ -251,7 +251,7 @@ export interface CascadeEvent {
 /**
  * After an edit: ask the resolver how many ancestors actually need rewriting, rewrite those
  * bottom-up, bless the first one that does not, then revise the edited node's open children.
- * The ancestors end at the node's document: the library above it is never reconciled with it.
+ * The ancestors end at the node's top: the library above it is never reconciled with it.
  */
 export async function cascade(
   llm: LLM,
@@ -268,7 +268,7 @@ export async function cascade(
   // Upward.
   const first = staleness(snap, edited).up ? edited : snap.nodes[edited].parent;
   if (first && staleness(snap, first).up) {
-    const chain = [first, ...ancestorsInDoc(snap, first)];
+    const chain = [first, ...ancestorsBelowRoot(snap, first)];
     const decision = await llm.json<CascadeDecision>(
       { task: "cascade", schema: "cascade", system: SYSTEM, context: renderContext(snap, edited), prompt: cascadePrompt(snap, edited, what, chain), vars: { chain: String(chain.length) }, effort: "low", maxTokens: 1000 },
       opts.signal,
@@ -312,24 +312,24 @@ export async function cascade(
 
 // ---- semantic merge ----
 
-/** The document a conflict is in: its node's, or for a deleted node, its old parent's. */
-function conflictDoc(snap: Snap, c: Conflict): NodeId {
+/** The top a conflict is under: its node's, or for a deleted node, its old parent's. */
+function conflictTop(snap: Snap, c: Conflict): NodeId {
   const at = [c.node, c.parent].find((x) => x && snap.nodes[x]);
-  return (at && docOf(snap, at)) ?? snap.root;
+  return (at && topOf(snap, at)) ?? snap.root;
 }
 
-/** Split items by the document they belong to, so each call carries that document's context only. */
-function byDoc<T>(items: T[], docOfItem: (x: T) => NodeId): Map<NodeId, T[]> {
+/** Split items by the top they are under, so each call carries that top's outline only. */
+function byTop<T>(items: T[], topOfItem: (x: T) => NodeId): Map<NodeId, T[]> {
   const out = new Map<NodeId, T[]>();
   for (const x of items) {
-    const d = docOfItem(x);
+    const d = topOfItem(x);
     out.set(d, [...(out.get(d) ?? []), x]);
   }
   return out;
 }
 
 /**
- * Ask a model to settle the open conflicts, one call per document they are in. Each resolution
+ * Ask a model to settle the open conflicts, one call per top they are under. Each resolution
  * is an ordinary commit with its reasoning attached.
  */
 export async function resolveConflicts(llm: LLM, doc: Doc, signal?: AbortSignal): Promise<number> {
@@ -342,7 +342,7 @@ export async function resolveConflicts(llm: LLM, doc: Doc, signal?: AbortSignal)
     return p && snap.nodes[p] ? snap.nodes[p].body : "";
   };
   let n = 0;
-  for (const [d, group] of byDoc(open, (c) => conflictDoc(snap, c))) {
+  for (const [d, group] of byTop(open, (c) => conflictTop(snap, c))) {
     const result = await llm.json<Resolutions>(
       {
         task: "resolve",
@@ -367,8 +367,8 @@ export async function resolveConflicts(llm: LLM, doc: Doc, signal?: AbortSignal)
 
 /**
  * Look for contradictions between nodes that only one side touched. A clean merge can still hide
- * these. Each document is checked on its own, with its own context: a contradiction between two
- * documents is not looked for.
+ * these. Each top's tree is checked on its own, with its own outline: a contradiction between two
+ * trees is not looked for.
  */
 export async function scanContradictions(llm: LLM, doc: Doc, report: MergeReport, signal?: AbortSignal): Promise<number> {
   const { base, ours, theirs } = report;
@@ -384,8 +384,8 @@ export async function scanContradictions(llm: LLM, doc: Doc, report: MergeReport
         return mine && !theirsToo && n.body.trim() && now.nodes[n.id] && !isLibraryRoot(now, n.id);
       })
       .map((n) => ({ id: n.id as string, title: n.title || label(side, n.id), before: base.nodes[n.id]?.body ?? "(new node)", after: n.body }));
-  const a = byDoc(changed(ours, theirs), (x) => docOf(now, x.id as NodeId)!);
-  const b = byDoc(changed(theirs, ours), (x) => docOf(now, x.id as NodeId)!);
+  const a = byTop(changed(ours, theirs), (x) => topOf(now, x.id as NodeId)!);
+  const b = byTop(changed(theirs, ours), (x) => topOf(now, x.id as NodeId)!);
   let n = 0;
   for (const [d, sideA] of a) {
     const sideB = b.get(d);
@@ -432,7 +432,7 @@ export const TOOLS = [
   },
   {
     name: "find",
-    description: "Search node titles and bodies across the whole library for a phrase, case-insensitively. Returns up to 12 matching nodes with their ids, the document each is in, and where they sit. Use it to locate where something is discussed, including in notes, which the outline does not show, and in other documents.",
+    description: "Search node titles and bodies across the whole library for a phrase, case-insensitively. Returns up to 12 matching nodes with their ids, the top each is under, and where they sit. Use it to locate where something is discussed, including in notes, which the outline does not show, and elsewhere in the library.",
     input_schema: { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false },
   },
   {
@@ -446,7 +446,7 @@ export const TOOLS = [
         body: { type: "string" },
         quote: { type: "string", description: "For a note: the exact text in the parent's body that the note is about." },
         index: { type: "integer", description: "For a section: position among the parent's children, from 0." },
-        target: { type: "string", description: "Optional: what the node is about, elsewhere: \"w:Exact article title\", \"/document-slug/Section/Child\" or an http(s) address. A note with a quote, a target and an empty body is a link." },
+        target: { type: "string", description: "Optional: what the node is about, elsewhere: \"w:Exact article title\", a node's id or its path \"/Top title/Section/Child\", or an http(s) address. A note with a quote, a target and an empty body is a link." },
       },
       required: ["parent", "title", "body"],
       additionalProperties: false,
@@ -457,7 +457,7 @@ export const TOOLS = [
     description: "Change a node's title, its body, its target, or several, leaving everything beneath it in place. Give only the fields that change. A new body replaces the old one in full, so include the parts you are keeping. An empty target removes it.",
     input_schema: {
       type: "object",
-      properties: { id: { type: "string" }, title: { type: "string" }, body: { type: "string" }, target: { type: "string", description: "\"w:Exact article title\", \"/document-slug/Section/Child\", an http(s) address, or empty to remove the target." } },
+      properties: { id: { type: "string" }, title: { type: "string" }, body: { type: "string" }, target: { type: "string", description: "\"w:Exact article title\", a node's id or its path \"/Top title/Section/Child\", an http(s) address, or empty to remove the target." } },
       required: ["id"],
       additionalProperties: false,
     },
@@ -504,15 +504,16 @@ const int = (v: unknown, name: string): number | undefined => {
 };
 
 /**
- * A target the model wrote, as a Ref. A node path is checked against the library and pinned to the
- * node's id, so a link made by the agent is a real link, not a hope.
+ * A target the model wrote, as a Ref: a node's id, or a target in the text form. A node path is
+ * checked against the library and pinned to the node's id, so a link made by the agent is a real
+ * link, not a hope.
  */
 function toolTarget(snap: Snap, text: string, from: NodeId): Ref {
+  if (snap.nodes[text.trim() as NodeId]) return nodeRef(snap, text.trim() as NodeId);
   const r = parseTarget(text);
   if (typeof r === "string") throw new OpError(`not a target: ${r}`);
   if (r.kind !== "node") return r;
-  const d = docOf(snap, from);
-  const id = resolveTargetPath(snap, r, d ?? undefined);
+  const id = resolveTargetPath(snap, r, from);
   if (!id) throw new OpError(`no node at ${text}`);
   return nodeRef(snap, id);
 }
@@ -534,7 +535,7 @@ function checkRetrieved(ref: Ref | null | undefined, opts: ToolOpts) {
   );
 }
 
-/** Run one tool call against a document. Inputs are validated here, since the model's JSON is not trusted. */
+/** Run one tool call against a library. Inputs are validated here, since the model's JSON is not trusted. */
 export function execTool(doc: Doc, name: string, input: Record<string, unknown>, opts: ToolOpts = {}): string {
   const snap = doc.snap();
   const need = (id: string) => {
@@ -565,8 +566,8 @@ export function execTool(doc: Doc, name: string, input: Record<string, unknown>,
         .filter((n) => n.title.toLowerCase().includes(q) || n.body.toLowerCase().includes(q))
         .slice(0, 12)
         .map((n) => {
-          const d = docOf(snap, n.id);
-          return { ...brief(n.id), document: d ? snap.nodes[d].title : null, path: pathOf(snap, n.id), excerpt: clip(n.body, 160) };
+          const d = topOf(snap, n.id);
+          return { ...brief(n.id), top: d ? snap.nodes[d].title : null, path: pathOf(snap, n.id), excerpt: clip(n.body, 160) };
         });
       return JSON.stringify({ matches: hits });
     }
@@ -615,7 +616,7 @@ export function execTool(doc: Doc, name: string, input: Record<string, unknown>,
   }
 }
 
-/** What the agent's tools need from outside the document: the link scanner, through the server. */
+/** What the agent's tools need from outside the library: the link scanner, through the server. */
 export interface AgentHooks {
   /** The scanner's suggestions for a node of the agent's copy, or null if it could not be asked. */
   suggest?: (doc: Doc, id: NodeId) => Promise<{ quote: string; target: string; tier: string; score: number; why: string }[] | null>;

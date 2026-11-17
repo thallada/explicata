@@ -132,7 +132,7 @@ describe("link marks in what the model writes", () => {
   it("are taken out of the stored text and handed over, with the node they belong to", async () => {
     const { doc, a } = fixture();
     const marks: [NodeId, string[]][] = [];
-    const hooks = { nearby: async () => [{ handle: a, title: "Leaf A", document: "Root" }], marks: (id: NodeId, m: { phrase: string }[]) => marks.push([id, m.map((x) => x.phrase)]) };
+    const hooks = { nearby: async () => [{ handle: a, title: "Leaf A", top: "Root" }], marks: (id: NodeId, m: { phrase: string }[]) => marks.push([id, m.map((x) => x.phrase)]) };
     const created = await deepen(llm, doc, a, undefined, undefined, hooks);
     const bodies = created.map((c) => doc.snap().nodes[c].body);
     expect(bodies.join(" ")).not.toContain("[[");
@@ -155,7 +155,7 @@ describe("link marks in what the model writes", () => {
     const { doc, a } = fixture();
     let seen: { context: string; prompt: string } | null = null;
     const spy = { ...llm, stream: async (r: { context: string; prompt: string }, on: (d: string) => void) => ((seen = r), llm.stream(r as never, on)) } as typeof llm;
-    await deepen(spy, doc, a, undefined, undefined, { nearby: async () => [{ handle: "1@2", title: "Elsewhere", document: "Other" }] });
+    await deepen(spy, doc, a, undefined, undefined, { nearby: async () => [{ handle: "1@2", title: "Elsewhere", top: "Other" }] });
     expect(seen!.prompt).toContain("Nearby in this library:\n- Elsewhere (in Other) [1@2]");
     expect(seen!.prompt).toContain("[[phrase]]");
     expect(seen!.context).not.toContain("Nearby");
@@ -235,7 +235,7 @@ describe("context", () => {
 
 // ---- in a library ----
 
-/** A library of two model-written documents, Alpha (with a part and two leaves) and Beta. */
+/** A library of two model-written trees, Alpha (with a part and two leaves) and Beta. */
 function libraryFixture() {
   const doc = Doc.library("alice");
   const lib = doc.snap().root;
@@ -270,22 +270,45 @@ function recording() {
 }
 
 describe("context in a library", () => {
-  it("is the focused node's document only, and stays byte-for-byte the same while other documents change", () => {
+  it("is the outline of the focused node's top only, and stays byte-for-byte the same while other trees change", () => {
     const { doc, lib, aLeaf, b, bLeaf } = libraryFixture();
     const before = renderContext(doc.snap(), aLeaf);
-    expect(before).toContain("# Alpha");
+    expect(before).toMatch(/^<outline>\n# Alpha\n/);
     expect(before).toContain("Alpha leaf two");
     expect(before).not.toContain("Beta");
-    doc.apply([{ op: "update", id: bLeaf, body: "Beta changed a great deal." }], "Edit the other document");
-    doc.apply([{ op: "create", parent: lib, title: "Gamma", body: "A third document." }], "New document");
-    doc.apply(retitleOps(doc.snap(), b, "Beta renamed"), "Rename the other document");
+    doc.apply([{ op: "update", id: bLeaf, body: "Beta changed a great deal." }], "Edit the other tree");
+    doc.apply([{ op: "create", parent: lib, title: "Gamma", body: "A third tree." }], "New tree");
+    doc.apply(retitleOps(doc.snap(), b, "Beta renamed"), "Rename the other tree");
     doc.apply([{ op: "update", id: lib, body: "The library's own text." }], "Write the library");
     expect(renderContext(doc.snap(), aLeaf)).toBe(before);
-    // On the library itself, which is in no document, the context is the list of documents.
+    // On the library itself, which is under no top, the context is the list of the root's children.
     expect(renderContext(doc.snap(), lib)).toBe("<library>\n- Alpha\n- Beta renamed\n- Gamma\n</library>");
   });
 
-  it("every model task sends only the document it works in", async () => {
+  it("over its budget keeps only the bodies on the focus path, then starts lower down the path, under the titles above", () => {
+    const { doc, a, aLeaf } = libraryFixture();
+    const snap = () => doc.snap();
+    doc.apply([{ op: "create", parent: a, title: "Alpha aside", body: "An aside." }, { op: "create", parent: "$0" as NodeId, title: "Aside detail", body: "Detail. ".repeat(20) }], "Aside");
+    const full = renderContext(snap(), aLeaf);
+    expect(full).toContain("Detail. Detail.");
+    // Off the focus path (and its sections), titles only.
+    const lean = renderContext(snap(), aLeaf, { budget: full.length - 50 });
+    expect(lean).toContain("## Aside detail");
+    expect(lean).not.toContain("Detail. Detail.");
+    expect(lean).toContain("The second Alpha leaf says another.");
+    // A big tree beside the focus path: even titles are over the budget, so the outline starts at the part.
+    doc.apply(Array.from({ length: 40 }, (_, i) => ({ op: "create" as const, parent: a, title: `Alpha bulk ${i}`, body: "Bulk." })), "Bulk");
+    const stepped = renderContext(snap(), aLeaf, { budget: 300 });
+    expect(stepped).toMatch(/^<outline>\nLibrary › Alpha ›\n# Alpha part\nThe Alpha part summarises its leaves\.\n\n## Alpha leaf one\n/);
+    expect(stepped).not.toContain("bulk");
+    expect(stepped.length).toBeLessThanOrEqual(300 + "<outline>\n</outline>".length);
+    // Nothing on the path fits: the focus's own outline, cut to the budget.
+    expect(renderContext(snap(), aLeaf, { budget: 40 })).toBe(`<outline>\n${"Library › Alpha › Alpha part ›\n# Alpha leaf one".slice(0, 40)}</outline>`);
+    // With room for everything, it is the whole top again.
+    expect(renderContext(snap(), aLeaf)).toMatch(/^<outline>\n# Alpha\n/);
+  });
+
+  it("every model task sends only the tree it works in", async () => {
     const { doc, aLeaf, aPart, b } = libraryFixture();
     const { llm, sent } = recording();
     const body = doc.snap().nodes[aLeaf].body;
@@ -304,11 +327,11 @@ describe("context in a library", () => {
     expect(doc.snap().nodes[b].title).toBe("Beta");
   });
 
-  it("a cascade stops at the document: the library above it is never asked about or rewritten", async () => {
+  it("a cascade stops at the top: the library above it is never asked about or rewritten", async () => {
     const { doc, lib, a, aPart, b } = libraryFixture();
     const { llm, sent } = recording();
     const libraryBefore = doc.snap().nodes[lib];
-    // An edit to the document's part: the chain is the document alone, not the library above it.
+    // An edit to the top's part: the chain is the top alone, not the library above it.
     doc.apply([{ op: "update", id: aPart, body: "The Alpha part says something else now." }], "Edit the part");
     const events = await cascade(llm, doc, aPart, "edited");
     expect(sent.find((r) => r.task === "cascade")?.vars?.chain).toBe("1");
@@ -317,7 +340,7 @@ describe("context in a library", () => {
     const snap = doc.snap();
     expect(snap.nodes[lib].body).toBe(libraryBefore.body);
     expect(staleness(snap, lib)).toEqual({ up: false, down: false, orphan: false });
-    // Rewriting a document's text leaves the other documents alone.
+    // Rewriting a top's text leaves the other trees alone.
     expect(isStale(snap, b)).toBe(false);
     // And the model never writes the library itself.
     expect(await regenUp(llm, doc, lib)).toBe(false);
@@ -325,7 +348,7 @@ describe("context in a library", () => {
     expect(() => execTool(doc, "update_node", { id: lib, body: "x" })).toThrow(/library itself/);
   });
 
-  it("settles conflicts one document at a time, each with its own context", async () => {
+  it("settles conflicts one top's tree at a time, each with its own context", async () => {
     const { doc, aLeaf, bLeaf } = libraryFixture();
     const other = doc.fork("bob");
     doc.apply([{ op: "update", id: aLeaf, body: "Alpha: always." }, { op: "update", id: bLeaf, body: "Beta: always." }], "A");

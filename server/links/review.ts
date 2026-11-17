@@ -3,7 +3,7 @@
  * Wikipedia editor would, and its verdicts (link or not, with a one-line reason) are kept in the
  * pending store. It is given no tools: each call is one structured reply of verdicts.
  *
- * Cost. Proposals are reviewed many to a call (BATCH), grouped by document and section, each with
+ * Cost. Proposals are reviewed many to a call (BATCH), grouped by top and section, each with
  * just what it takes to judge it: its sentence, the section's title and path, the target's title,
  * description and (when the cache has it) first sentence, and, for a library target, how it stands
  * to the section. Anything judged before is never sent again. Each caller gives a budget of calls;
@@ -12,7 +12,7 @@
  * model, as it does when the model writes.
  */
 import { ownerSection } from "../../src/core/links";
-import { ancestors, docOf, documents, label, notesOf, sections, type NodeId, type Snap } from "../../src/core/model";
+import { ancestors, label, notesOf, sections, topOf, tops, type NodeId, type Snap } from "../../src/core/model";
 import type { Ref } from "../../src/core/ref";
 import { clip, plain, sentences } from "../../src/core/text";
 import type { LinkVerdicts, LLM } from "../../src/llm/types";
@@ -44,16 +44,16 @@ export interface ReviewReport {
   fallback?: string;
 }
 
-export const REVIEW_SYSTEM = `You review proposed links in a personal library of documents. A scanner has proposed linking phrases in the text to Wikipedia articles or to other sections of the library. Decide, for each proposal, whether a reader of this document would be glad of the link, as a careful Wikipedia editor applying the Manual of Style on linking would. A link is worth making only when it helps; when unsure, do not link. Expect to reject most proposals.
+export const REVIEW_SYSTEM = `You review proposed links in a personal library of text, kept as one tree of sections. A scanner has proposed linking phrases in the text to Wikipedia articles or to other sections of the library. Decide, for each proposal, whether a reader of this text would be glad of the link, as a careful Wikipedia editor applying the Manual of Style on linking would. A link is worth making only when it helps; when unsure, do not link. Expect to reject most proposals.
 
 Reject a proposal when:
 - the phrase is an everyday word, or a thing so famous that every reader knows it (a country, a major city, a common animal or material, an ordinary idea such as energy, water or the brain, a household name mentioned in passing);
 - the target is a different sense of the phrase than the text means, or a different person, place or thing with the same name;
 - the phrase is a fragment of a longer name or term in the text (a surname out of a full name, one word of a technical term), or the target is about the fragment alone;
-- the same thing is already linked in this section, or earlier in the document (listed as "Already linked"), or by another proposal before it in this list: link a thing once, at its first mention that matters;
+- the same thing is already linked in this section, or earlier in the same tree (listed as "Already linked"), or by another proposal before it in this list: link a thing once, at its first mention that matters;
 - a library target is this section's own subsection, parent or sibling (its relation is given): the outline already joins them;
 - a library target matches the phrase only by its title, and the text does not mean what that section is about;
-- the phrase is inside a verbatim quotation of the request or prompt the document was written from (instructions addressed to an assistant): such text stays as it was written;
+- the phrase is inside a verbatim quotation of the request or prompt the text was written from (instructions addressed to an assistant): such text stays as it was written;
 - the target is a list, a disambiguation page, a name page, or an article about a film, album, band, company or other namesake.
 
 Approve a proposal when the phrase names a specific concept, result, work, person, organism, place or event that the text means and that a curious reader may well want to look up: a technical term, a named theorem or process, a figure the passage discusses, or a library section elsewhere that treats the phrase's own subject in more depth.
@@ -68,7 +68,7 @@ The scanner's tier ("sure" or "unsure") is a weak hint only. Give a verdict for 
 export function describe(snap: Snap, s: Suggestion, given?: Given) {
   const n = snap.nodes[s.node];
   const body = given?.node === s.node && given.text !== undefined ? given.text : (n?.body ?? "");
-  const d = n ? docOf(snap, s.node) : (given?.doc ?? null);
+  const d = n ? topOf(snap, s.node) : (given?.top ?? null);
   const sent = sentences(body).find(([a, b]) => s.range[0] >= a && s.range[0] < b) ?? [0, body.length];
   const path: string[] = [];
   for (let x: NodeId | null = s.node; x && x !== d && snap.nodes[x]; x = snap.nodes[x].parent) path.unshift(label(snap, x));
@@ -76,8 +76,7 @@ export function describe(snap: Snap, s: Suggestion, given?: Given) {
   return {
     ...s,
     nodeTitle: n ? label(snap, s.node) : given?.title || "a new section",
-    document: d ? snap.nodes[d].title : null,
-    docSlug: d ? snap.nodes[d].slug ?? null : null,
+    top: d ? snap.nodes[d].title : null,
     path: path.join(" › "),
     sentence: clip(plain(body.slice(sent[0], sent[1])).trim(), 400),
   };
@@ -88,7 +87,7 @@ export interface Given {
   node: NodeId;
   text?: string;
   title?: string;
-  doc?: NodeId | null;
+  top?: NodeId | null;
 }
 
 /** How a library target stands to the section a phrase is in. */
@@ -101,9 +100,9 @@ function relation(snap: Snap, from: NodeId, target: NodeId): string {
   if (snap.nodes[sec]?.parent === target) return "this section's parent";
   if (ancestors(snap, sec).includes(target)) return "an ancestor of this section";
   if (t.parent && t.parent === snap.nodes[sec]?.parent) return "a sibling of this section";
-  const d = docOf(snap, target);
-  if (d && d === docOf(snap, sec)) return "elsewhere in this document";
-  return d ? `in another document, “${snap.nodes[d].title}”` : "elsewhere in the library";
+  const d = topOf(snap, target);
+  if (d && d === topOf(snap, sec)) return "elsewhere in this tree";
+  return d ? `in another tree, “${snap.nodes[d].title}”` : "elsewhere in the library";
 }
 
 const firstSentence = (text: string) => {
@@ -121,14 +120,14 @@ const linkedTitles = (snap: Snap, id: NodeId): string[] =>
 
 const targetTitle = (snap: Snap, r: Ref) => (r.kind === "wiki" ? r.title : r.kind === "url" ? (r.title ?? r.url) : r.id && snap.nodes[r.id] ? label(snap, r.id) : (r.path ?? []).join(" › ") || "a note");
 
-/** Everything already linked in a document, in reading order, each title once. */
-function linkedInDoc(snap: Snap, doc: NodeId): string[] {
+/** Everything already linked under a top, in reading order, each title once. */
+function linkedInTop(snap: Snap, top: NodeId): string[] {
   const out = new Set<string>();
   const visit = (id: NodeId) => {
     for (const t of linkedTitles(snap, id)) out.add(t);
     for (const c of sections(snap, id)) visit(c);
   };
-  visit(doc);
+  visit(top);
   return [...out];
 }
 
@@ -156,11 +155,11 @@ export class Reviewer {
     if (!list.length) return report;
     const llm = this.o.llm();
     if (!llm) return { ...report, fallback: "no model is configured" };
-    // By document, then in reading order, so a call sees a document's proposals together.
+    // By top, then in reading order, so a call sees a tree's proposals together.
     const snap = this.o.snap();
     const order = new Map<NodeId, number>();
     let i = 0;
-    for (const d of documents(snap)) for (const id of [d, ...descendantsInOrder(snap, d)]) order.set(id, i++);
+    for (const d of tops(snap)) for (const id of [d, ...descendantsInOrder(snap, d)]) order.set(id, i++);
     const sorted = [...list].sort((a, b) => (order.get(a.node) ?? 1e9) - (order.get(b.node) ?? 1e9) || a.range[0] - b.range[0]);
     for (let at = 0; at < sorted.length; at += BATCH) {
       if (budget.calls >= budget.max) return { ...report, fallback: `the reviewer's limit of ${budget.max} model call${budget.max === 1 ? "" : "s"} was reached` };
@@ -190,25 +189,25 @@ export class Reviewer {
     return report;
   }
 
-  /** The call for one batch: the document and section headings, and a line per proposal. */
+  /** The call for one batch: the top and section headings, and a line per proposal. */
   private async request(batch: Suggestion[], given?: Given) {
     const snap = this.o.snap();
     const wiki = this.o.wiki();
     const ids = new Map<string, Suggestion>();
     const lines: string[] = [];
     const proposals: { id: string; tier: string; quote: string; sentence: string }[] = [];
-    let doc: NodeId | null | undefined;
+    let top: NodeId | null | undefined;
     let node: NodeId | undefined;
     for (const [k, s] of batch.entries()) {
       const id = `p${k + 1}`;
       ids.set(id, s);
       const where = describe(snap, s, given);
-      const d = snap.nodes[s.node] ? docOf(snap, s.node) : (given?.doc ?? null);
-      if (d !== doc) {
-        doc = d;
+      const d = snap.nodes[s.node] ? topOf(snap, s.node) : (given?.top ?? null);
+      if (d !== top) {
+        top = d;
         node = undefined;
-        const already = d ? linkedInDoc(snap, d) : [];
-        lines.push("", `# Document: ${d ? snap.nodes[d].title : "(none)"}`, `Already linked in this document: ${already.length ? already.slice(0, 60).join("; ") : "nothing"}`);
+        const already = d ? linkedInTop(snap, d) : [];
+        lines.push("", `# Tree: ${d ? snap.nodes[d].title : "(none)"}`, `Already linked in this tree: ${already.length ? already.slice(0, 60).join("; ") : "nothing"}`);
       }
       if (s.node !== node) {
         node = s.node;
@@ -230,7 +229,7 @@ export class Reviewer {
     const prompt = `Proposals (${batch.length}):\n${lines.join("\n").trim()}\n\nGive a verdict for each of the ${batch.length} proposals.`;
     return {
       ids,
-      json: { task: "review-links", schema: "review" as const, system: REVIEW_SYSTEM, context: "Proposed links, grouped by document and section.", prompt, vars: { proposals: JSON.stringify(proposals) }, effort: "low" as const, maxTokens: 8000 },
+      json: { task: "review-links", schema: "review" as const, system: REVIEW_SYSTEM, context: "Proposed links, grouped by tree and section.", prompt, vars: { proposals: JSON.stringify(proposals) }, effort: "low" as const, maxTokens: 8000 },
     };
   }
 }

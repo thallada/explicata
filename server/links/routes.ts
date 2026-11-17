@@ -1,23 +1,23 @@
 /**
  * HTTP routes for link discovery. Wired into server/index.ts before the 404.
  *
- *   POST /api/links/scan        { node, text?, title?, doc?, docTitle?, ancestors?, occupied?, rejected?, forced?, within?, save?, review? }
+ *   POST /api/links/scan        { node, text?, title?, top?, topTitle?, ancestors?, occupied?, rejected?, forced?, within?, save?, review? }
  *                               → { suggestions, related, unresolved, degraded, stats, entries?, apply?, review? }; save (default
  *                               true) records the suggestions as pending for the node, and `entries` is then everything
  *                               stored for it, with determinations. review ("all", or "unmarked" to leave out [[marks]],
  *                               which a person typed) has the model reviewer judge what is undecided; `apply` is then the
  *                               approved links handed to the caller to make, and `review` the reviewer's report
- *   GET  /api/links/pending     ?doc=<slug|id>&node=<id>&tier=auto|suggest&limit=&offset=&all=1&claim=1
- *                               → { total, suggestions: [{ …, nodeTitle, document, docSlug, path, sentence }], apply? };
+ *   GET  /api/links/pending     ?doc=<top's id or name>&node=<id>&tier=auto|suggest&limit=&offset=&all=1&claim=1
+ *                               → { total, suggestions: [{ …, nodeTitle, top, path, sentence }], apply? };
  *                               all=1 lists every entry whatever was decided, with its determinations; claim=1 hands
  *                               out the approved links no page has made yet (in `apply`), to be made by the caller
  *   POST /api/links/accept      { ids, author? } → applied with applyLinks as one commit by "linker"
  *   POST /api/links/reject      { ids, author? } → the phrases recorded in each node's `nolink` (one commit)
  *   POST /api/links/decide      { ids, link, by } → a person's decision, made in their own replica, recorded
- *   GET  /api/links/related     ?node=<id> → { related, degraded }; or POST { node, text, title, doc, docTitle, ancestors }
- *   GET  /api/links/nearby      ?node=<id>&k=5 → { nearby: [{ handle, title, document }] } (hybrid search on the node);
+ *   GET  /api/links/related     ?node=<id> → { related, degraded }; or POST { node, text, title, top, topTitle, ancestors }
+ *   GET  /api/links/nearby      ?node=<id>&k=5 → { nearby: [{ handle, title, top }] } (hybrid search on the node);
  *                               or POST { node, text, title, ancestors }
- *   POST /api/links/jobs        { scope: "doc" | "library", doc?, review? } → the job's state; it runs in the background
+ *   POST /api/links/jobs        { scope: "doc" | "library", doc?, review? } → the job's state (doc: a top's id or name); it runs in the background
  *                               (with review, the model reviewer judges what it finds, within IE_REVIEW_CALLS calls)
  *   GET  /api/links/jobs        → { job } (the current or last one)
  *   DELETE /api/links/jobs      → cancel the running job
@@ -27,7 +27,8 @@
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { applyLinks, type LinkSpec } from "../../src/core/links";
-import { descendants, docOf, documents, findDoc, isLibraryRoot, type Doc, type NodeId, type Op, type Snap } from "../../src/core/model";
+import { findTop } from "../../src/core/library";
+import { descendants, isLibraryRoot, tops, type Doc, type NodeId, type Op, type Snap } from "../../src/core/model";
 import type { Embedder } from "../embed";
 import { HttpError, abortOnClose, readJson as readBody, sendJson as send } from "../util";
 import type { Jobs } from "./jobs";
@@ -56,15 +57,12 @@ class Bad extends HttpError {
 
 const readJson = <T>(req: IncomingMessage) => readBody<T>(req, 4 * 1024 * 1024);
 
-/** A document by slug or node id. */
-function docArg(snap: Snap, v: string | null): NodeId | null {
-  if (!v) return null;
-  return findDoc(snap, v) ?? (snap.nodes[v as NodeId] && docOf(snap, v as NodeId) === v ? (v as NodeId) : null);
-}
+/** A child of the root by its node id or name (TEMPORARY: step 2 scopes by any node). */
+const docArg = (snap: Snap, v: string | null): NodeId | null => (v ? (findTop(snap, v) ?? null) : null);
 
-/** The nodes of a document (or of the library), in reading order: sections and notes with text. */
+/** The nodes of a top's tree (or of the library), in reading order: sections and notes with text. */
 export function scopeNodes(snap: Snap, doc: NodeId | null): NodeId[] {
-  const roots = doc ? [doc] : documents(snap);
+  const roots = doc ? [doc] : tops(snap);
   const out: NodeId[] = [];
   for (const r of roots) for (const id of [r, ...descendants(snap, r)]) if (snap.nodes[id].body.trim() && !isLibraryRoot(snap, id)) out.push(id);
   return out;
@@ -96,7 +94,7 @@ export function linkRoutes(deps: LinkDeps) {
         const found = new Set(r.suggestions.map((s) => s.id));
         const mine = deps.pending.of(input.node).filter((s) => found.has(s.id));
         const todo = mine.filter((s) => !s.review && !s.decided && (input.review === "all" || s.kind !== "forced"));
-        const report = deps.reviewer ? await deps.reviewer.review(todo, { calls: 0, max: SCAN_CALLS }, signal, { node: input.node, text: input.text, title: input.title, doc: input.doc }) : { approved: 0, rejected: 0, calls: 0, left: todo.length, fallback: "no reviewer" };
+        const report = deps.reviewer ? await deps.reviewer.review(todo, { calls: 0, max: SCAN_CALLS }, signal, { node: input.node, text: input.text, title: input.title, top: input.top }) : { approved: 0, rejected: 0, calls: 0, left: todo.length, fallback: "no reviewer" };
         const apply = deps.pending.handOut(mine);
         return send(res, 200, { ...r, entries: deps.pending.of(input.node), apply, review: report }), true;
       }
@@ -146,7 +144,7 @@ export function linkRoutes(deps: LinkDeps) {
         return send(res, 200, { decided: deps.pending.decide(input.ids as string[], input.link, by) }), true;
       }
       if (route === "related" && (method === "GET" || method === "POST")) {
-        // GET ?node=<id> for a node the server has; POST { node, text, title, doc, docTitle, ancestors } for one it may not have yet.
+        // GET ?node=<id> for a node the server has; POST { node, text, title, top, topTitle, ancestors } for one it may not have yet.
         const input = method === "POST" ? await readJson<ScanInput>(req) : { node: url.searchParams.get("node") as NodeId };
         if (!input.node || (!snap.nodes[input.node] && typeof input.text !== "string")) throw new Bad("give an existing node, or its text");
         const r = await deps.linker().related(input.node, 5, input);

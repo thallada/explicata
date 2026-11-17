@@ -96,7 +96,7 @@ describe("the extractor", () => {
 
 describe("the tiering rule", () => {
   const hit = (over: Record<string, unknown>) =>
-    ({ c: { kind: "name", rarity: 50_000, words: 2, text: "Fred Hoyle", key: "fred hoyle", start: 0, end: 10, variants: [], sentenceStart: false }, target: W("Fred Hoyle"), source: "wikipedia", title: "Fred Hoyle", description: "British astronomer", fit: 0.75, exact: true, redirect: false, sense: false, searched: false, central: false, firstInDoc: true, ...over }) as never;
+    ({ c: { kind: "name", rarity: 50_000, words: 2, text: "Fred Hoyle", key: "fred hoyle", start: 0, end: 10, variants: [], sentenceStart: false }, target: W("Fred Hoyle"), source: "wikipedia", title: "Fred Hoyle", description: "British astronomer", fit: 0.75, exact: true, redirect: false, sense: false, searched: false, central: false, firstInTop: true, ...over }) as never;
 
   it("applies an exact, well-fitting name without asking", () => {
     expect(judge(hit({})).tier).toBe("auto");
@@ -110,19 +110,19 @@ describe("the tiering rule", () => {
     expect(judge(hit({ c: common, fit: 0.62 })).tier).toBe(null);
   });
 
-  it("applies a link unasked only at a concept's first mention in the document; later mentions are suggested", () => {
-    expect(judge(hit({ firstInDoc: false })).tier).toBe("suggest");
+  it("applies a link unasked only at a concept's first mention under its top; later mentions are suggested", () => {
+    expect(judge(hit({ firstInTop: false })).tier).toBe("suggest");
   });
 
   it("applies a library title unasked only when it has several words; a one-word title is at most suggested", () => {
-    const lib = (key: string, words: number) => hit({ source: "library", target: { kind: "node", id: "1@1" }, sameDoc: true, fit: 0.9, c: { kind: "noun", rarity: 50_000, words, text: key, key, start: 0, end: key.length, variants: [], sentenceStart: false } });
+    const lib = (key: string, words: number) => hit({ source: "library", target: { kind: "node", id: "1@1" }, sameTop: true, fit: 0.9, c: { kind: "noun", rarity: 50_000, words, text: key, key, start: 0, end: key.length, variants: [], sentenceStart: false } });
     expect(judge(lib("comma", 1)).tier).toBe("suggest");
     expect(judge(lib("diagonal lemma", 2)).tier).toBe("auto");
   });
 
-  it("links a concept central to the document once, at its first mention, and only as a suggestion", () => {
-    expect(judge(hit({ central: true, firstInDoc: false })).tier).toBe(null);
-    expect(judge(hit({ central: true, firstInDoc: true })).tier).toBe("suggest");
+  it("links a concept central to its tree once, at its first mention, and only as a suggestion", () => {
+    expect(judge(hit({ central: true, firstInTop: false })).tier).toBe(null);
+    expect(judge(hit({ central: true, firstInTop: true })).tier).toBe("suggest");
   });
 
   it("never applies a disambiguation sense, a country or a surname page unasked", () => {
@@ -147,7 +147,7 @@ describe("scanning a node", () => {
     expect(r.degraded).toEqual([]);
   });
 
-  it("never links a section to itself or its ancestors, and prefers a section in another document", async () => {
+  it("never links a section to itself or its ancestors, and prefers a section under another top", async () => {
     const { doc, ycomb, notes, lambda } = library();
     const { linker } = setup(doc, { wiki: null });
     // "lambda calculus" in its own child: the title is its parent's, so no library link.
@@ -238,12 +238,12 @@ describe("the node index", () => {
     expect(seen.length - first).toBe(1);
   });
 
-  it("gives a Related list from other documents only", async () => {
+  it("gives a Related list from under other tops only", async () => {
     const { doc, ycomb, notes } = library();
     const { linker } = setup(doc);
     const r = await linker.related(notes);
     expect(r.related.length).toBeGreaterThan(0);
-    expect(r.related.every((x) => x.doc !== "Notes")).toBe(true);
+    expect(r.related.every((x) => x.top !== "Notes")).toBe(true);
     expect(r.related.map((x) => x.node)).toContain(ycomb);
   });
 });
@@ -303,7 +303,7 @@ describe("accepting and rejecting", () => {
     expect(scanned.suggestions.length).toBeGreaterThan(1);
     const list = await (await fetch(`${base}/api/links/pending?doc=octopus-minds`)).json();
     expect(list.total).toBe(scanned.suggestions.length);
-    expect(list.suggestions[0]).toMatchObject({ nodeTitle: "Arms", document: "Octopus minds", docSlug: "octopus-minds" });
+    expect(list.suggestions[0]).toMatchObject({ nodeTitle: "Arms", top: "Octopus minds" });
     expect(list.suggestions[0].sentence.length).toBeGreaterThan(10);
     const hoyle = list.suggestions.find((s: { quote: string }) => s.quote === "Fred Hoyle");
     const before = history(doc).length;

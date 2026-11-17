@@ -2,7 +2,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { annotationsOf, articleNodes, articleParent, containers, fold, inArticles, makeAnchor, reanchor, type ArticleKey, type SectionText } from "../src/core/article";
-import { Doc, documents, isStale, staleness, type NodeId, type Op } from "../src/core/model";
+import { Doc, isStale, staleness, tops, type NodeId, type Op } from "../src/core/model";
 import { mergeUpdate, verifyHistory } from "../src/core/repo";
 import { listDocs } from "../src/core/library";
 import type { Range } from "../src/core/text";
@@ -151,12 +151,11 @@ describe("article nodes", () => {
     // Found by page id under another title (a rename), and not by a different page id.
     expect(articleNodes(snap, { lang: "en", title: "Octopodes", pageId: 1200106 })).toHaveLength(1);
     expect(articleNodes(snap, { lang: "fr", title: "Octopus" })).toHaveLength(0);
-    // Not a document: not listed, no slug, no count.
+    // Not one of the root's sections: not listed, no count.
     expect(listDocs(snap)).toEqual(before);
-    expect(documents(snap)).toHaveLength(1);
+    expect(tops(snap)).toHaveLength(1);
     const box = containers(snap)[0];
-    expect(snap.nodes[box].slug).toBeUndefined();
-    expect(inArticles(snap, first) && inArticles(snap, box) && !inArticles(snap, documents(snap)[0])).toBe(true);
+    expect(inArticles(snap, first) && inArticles(snap, box) && !inArticles(snap, tops(snap)[0])).toBe(true);
     for (const id of [box, articleNodes(snap, OCTOPUS)[0], first, second]) expect(isStale(snap, id)).toBe(false);
     // An annotation is edited like any note, and stays fresh.
     doc.apply([{ op: "update", id: first, body: "Eight of them." }], "Edit");
@@ -176,7 +175,7 @@ describe("article nodes", () => {
       // Each made the container and the article's node; both are kept, and read as one.
       expect(articleNodes(snap, OCTOPUS)).toHaveLength(2);
       expect(new Set(annotationsOf(snap, OCTOPUS))).toEqual(new Set([mine, theirs]));
-      expect(documents(snap)).toHaveLength(1);
+      expect(tops(snap)).toHaveLength(1);
     }
     // The next annotation goes under the same node on either replica.
     expect(articleParent(doc.snap(), OCTOPUS)).toEqual(articleParent(other.snap(), OCTOPUS));
@@ -187,6 +186,6 @@ describe("article nodes", () => {
     const doc = library();
     const { ops, parent } = articleParent(doc.snap(), OCTOPUS);
     expect(() => doc.apply([...ops, { op: "create", parent, kind: "note", body: "x", wanchor: { sec: "lead", q: "x", pre: "", post: "", rev: 1 } as never }], "Bad")).toThrow(/headings/);
-    expect(() => doc.apply([{ op: "create", parent: documents(doc.snap())[0], title: "Box", articles: true }], "Bad")).toThrow(/container/);
+    expect(() => doc.apply([{ op: "create", parent: tops(doc.snap())[0], title: "Box", articles: true }], "Bad")).toThrow(/container/);
   });
 });

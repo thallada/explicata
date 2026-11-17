@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { LibraryStore } from "../server/library";
-import { Doc, descendants, findDoc, isStale, type NodeId } from "../src/core/model";
+import { Doc, descendants, isStale, tops, type NodeId } from "../src/core/model";
 import { at, history, mergeBranch, revertDocTo, revertTo, verifyHistory } from "../src/core/repo";
 
 const temp = () => mkdtempSync(join(tmpdir(), "ie-migrate-"));
@@ -86,11 +86,11 @@ describe("migration from the per-document layout", () => {
     const lib = store.main;
     const snap = lib.snap();
 
-    // One library: the first document first, then most recently changed first, each under its old id as slug.
+    // One library: the first document first, then most recently changed first.
     expect(snap.library).toBe(true);
-    expect(store.list().map((d) => d.slug)).toEqual(["infinite-expand", "tides", "tides-copy"]);
-    for (const [id, old] of [["infinite-expand", first], ["tides", tides], ["tides-copy", copy]] as const) {
-      const node = findDoc(snap, id)!;
+    expect(store.list().map((d) => d.title)).toEqual(["Infinite Expand", "The tides", "The tides (copy)"]);
+    const [nFirst, nTides, nCopy] = tops(snap);
+    for (const [node, old] of [[nFirst, first], [nTides, tides], [nCopy, copy]] as const) {
       expect(lib.shape(snap, node)).toBe(old.shape());
       // Exactly what was stale before is stale now (the first document's edits left its root out of date).
       const was = old.snap();
@@ -98,9 +98,9 @@ describe("migration from the per-document layout", () => {
     }
     expect(isStale(snap, snap.root)).toBe(false);
     // Kept documents keep their node ids, so anchors and conflict records still point at them.
-    expect(findDoc(snap, "infinite-expand")).toBe(first.snap().root);
-    expect(findDoc(snap, "tides")).toBe(tides.snap().root);
-    expect(findDoc(snap, "tides-copy")).not.toBe(copy.snap().root);
+    expect(nFirst).toBe(first.snap().root);
+    expect(nTides).toBe(tides.snap().root);
+    expect(nCopy).not.toBe(copy.snap().root);
     expect(lib.conflicts().filter((c) => c.status === "open").map((c) => c.node)).toEqual([one]);
     expect(snap.nodes[one].pinned).toBe(true);
 
@@ -119,7 +119,7 @@ describe("migration from the per-document layout", () => {
     expect(() => revertTo(lib, humanEdit)).toThrow(/before the library existed/);
     revertDocTo(lib, humanEdit, first.snap().root);
     expect(lib.snap().nodes[one].title).toBe("One");
-    expect(lib.shape(lib.snap(), findDoc(lib.snap(), "tides")!)).toBe(tides.shape());
+    expect(lib.shape(lib.snap(), nTides)).toBe(tides.shape());
     expect(verifyHistory(lib).mismatches).toEqual([]);
 
     // The old directory is renamed, every byte as it was; the record says what was and was not carried.
@@ -155,8 +155,8 @@ describe("migration from the per-document layout", () => {
     const logs: string[] = [];
     const store = new LibraryStore(data, (m) => logs.push(m)).open();
     const snap = store.main.snap();
-    expect(store.list().map((d) => d.slug)).toEqual(["infinite-expand"]);
-    expect(store.main.shape(snap, findDoc(snap, "infinite-expand")!)).toBe(main.shape());
+    expect(store.list().map((d) => d.title)).toEqual(["Infinite Expand"]);
+    expect(store.main.shape(snap, tops(snap)[0])).toBe(main.shape());
     expect(readdirSync(data).filter((f) => f.endsWith(".loro"))).toEqual([]);
     expect(existsSync(join(data, "notes.txt"))).toBe(true); // anything else is left alone
     const flat = readdirSync(data).find((f) => f.startsWith("flat.migrated-"))!;

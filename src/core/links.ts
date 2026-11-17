@@ -5,7 +5,7 @@
  * A link is a note with a target and no body, so it is anchored, orphaned, healed, merged, undone
  * and versioned like any note. Nothing here is stored except through ops; the index is derived.
  */
-import { Doc, docOf, findDoc, notesOf, sections, type Actor, type NodeId, type NodeSnap, type Op, type Snap } from "./model";
+import { Doc, ancestors, notesOf, sections, topOf, type Actor, type NodeId, type NodeSnap, type Op, type Snap } from "./model";
 import { sameTarget, wikiKey, type Ref } from "./ref";
 import { clip, type Range } from "./text";
 
@@ -18,35 +18,33 @@ export function ownerSection(snap: Snap, id: NodeId): NodeId {
   return n?.id ?? id;
 }
 
-/** A target naming a node, with the hint that finds it again: its document's slug and the titles down to it. */
+/** A target naming a node, with the hint that finds it again: the titles down to it from the library root. */
 export function nodeRef(snap: Snap, id: NodeId): Ref & { kind: "node" } {
   const n = snap.nodes[id];
-  const d = docOf(snap, id);
-  const sec = ownerSection(snap, id);
   const path: string[] = [];
-  for (let x = snap.nodes[sec]; x && x.id !== d && x.parent; x = snap.nodes[x.parent]) path.unshift(x.title);
-  const out: Ref & { kind: "node" } = { kind: "node", id };
-  const slug = d ? snap.nodes[d].slug : undefined;
-  if (slug) out.doc = slug;
-  out.path = path;
+  for (let x = snap.nodes[ownerSection(snap, id)]; x?.parent; x = snap.nodes[x.parent]) path.unshift(x.title);
+  const out: Ref & { kind: "node" } = { kind: "node", id, path };
   if (n.kind === "note") out.quote = n.anchors[0]?.text || n.anchors[0]?.quote || "";
   return out;
 }
 
 /**
- * The node a target names: by id while it exists, else by its hint (document, section titles,
- * and a note's quote). `here` is the document a relative path is read from. Null if neither finds it.
+ * The node a target names: by id while it exists, else by its hint (section titles and a note's
+ * quote). `here` is where the target is written: a relative path is read from its top, and where
+ * two sections share a title, the one `here` is in wins. Null if neither finds it.
  */
 export function resolveNode(snap: Snap, ref: Ref & { kind: "node" }, here?: NodeId): NodeId | null {
   if (ref.id && snap.nodes[ref.id]) return ref.id;
-  if (!ref.path && !ref.doc) return null;
-  let at = ref.doc ? findDoc(snap, ref.doc) : here;
-  if (!at || !snap.nodes[at]) return null;
-  for (const title of ref.path ?? []) {
+  if (!ref.path) return null;
+  let at = ref.rel ? (here ? topOf(snap, here) : null) : snap.root;
+  if (!at) return null;
+  const mine = new Set(here && snap.nodes[here] ? [here, ...ancestors(snap, here)] : []);
+  for (const title of ref.path) {
     const kids = sections(snap, at);
-    const next = kids.find((c) => snap.nodes[c].title === title) ?? kids.find((c) => snap.nodes[c].title.toLowerCase() === title.toLowerCase());
-    if (!next) return null;
-    at = next;
+    let same = kids.filter((c) => snap.nodes[c].title === title);
+    if (!same.length) same = kids.filter((c) => snap.nodes[c].title.toLowerCase() === title.toLowerCase());
+    if (!same.length) return null;
+    at = same.find((c) => mine.has(c)) ?? same[0];
   }
   if (ref.quote !== undefined) {
     const note = notesOf(snap, at).find((c) => snap.nodes[c].anchors.some((a) => a.text === ref.quote || a.quote === ref.quote));
@@ -151,7 +149,7 @@ export function linkIndex(doc: Doc): LinkIndex {
 
 /**
  * Find node targets again whose node is gone (undoing a delete brings nodes back under new ids)
- * or was never found (a file linking to a document imported later), from the hint each carries.
+ * or was never found (a file linking to a text imported later), from the hint each carries.
  * One system commit, which undo steps over. Returns how many were found.
  */
 export function healLinks(doc: Doc): number {
@@ -160,7 +158,7 @@ export function healLinks(doc: Doc): number {
   for (const id of linkIndex(doc).broken()) {
     const n = snap.nodes[id];
     if (!n || n.ref?.kind !== "node") continue;
-    const found = resolveNode(snap, n.ref, docOf(snap, id) ?? undefined);
+    const found = resolveNode(snap, n.ref, id);
     if (found && found !== n.ref.id) ops.push({ op: "update", id, ref: nodeRef(snap, found) });
   }
   if (ops.length) doc.apply(ops, `Find ${ops.length} link target${ops.length > 1 ? "s" : ""} again`, { actor: "llm", tag: "regen" });

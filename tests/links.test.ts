@@ -9,7 +9,7 @@ import { commitExpansion } from "../src/llm/tasks";
 
 const W = (title: string): Ref => ({ kind: "wiki", title, lang: "en" });
 
-/** A library of two documents; the second has a section the first links to. */
+/** A library of two trees; the second has a section the first links to. */
 function library() {
   const doc = Doc.library("tester");
   const lib = doc.snap().root;
@@ -198,17 +198,30 @@ describe("the backlinks index", () => {
 });
 
 describe("healing", () => {
-  it("a node link whose target is gone is found again by its document and titles, else stays broken", () => {
+  it("a node link whose target is gone is found again by its titles from the library root, else stays broken", () => {
     const { doc, fixed, minds, arms } = library();
     const link = linkOn(doc, fixed, "Octopus", nodeRef(doc.snap(), arms));
-    expect(doc.snap().nodes[link].ref).toMatchObject({ doc: "minds", path: ["Arms"] });
+    expect(doc.snap().nodes[link].ref).toEqual({ kind: "node", id: arms, path: ["Minds", "Arms"] });
     doc.apply([{ op: "delete", id: arms }], "Delete");
     expect(healLinks(doc)).toBe(0);
     expect(linkIndex(doc).broken()).toEqual([link]);
     const [again] = doc.apply([{ op: "create", parent: minds, title: "Arms", body: "Rewritten." }], "Recreate").created;
     expect(healLinks(doc)).toBe(1);
     expect((doc.snap().nodes[link].ref as { id: NodeId }).id).toBe(again);
-    expect(resolveNode(doc.snap(), { kind: "node", doc: "minds", path: ["arms"] })).toBe(again);
+    expect(resolveNode(doc.snap(), { kind: "node", path: ["minds", "arms"] })).toBe(again);
+    // The root itself is the empty path; a relative path is read below the top of where it is written.
+    expect(resolveNode(doc.snap(), { kind: "node", path: [] })).toBe(doc.snap().root);
+    expect(resolveNode(doc.snap(), { kind: "node", path: ["Arms"], rel: true }, link)).toBeNull();
+    expect(resolveNode(doc.snap(), { kind: "node", path: ["Arms"], rel: true }, again)).toBe(again);
+  });
+
+  it("where two trees have the same titles, a path is found in the tree it is written in first", () => {
+    const { doc, lib, minds } = library();
+    const [copy] = doc.apply([{ op: "copy", id: minds, parent: lib }], "Copy").created;
+    const copyArms = sections(doc.snap(), copy)[0];
+    const path = { kind: "node" as const, path: ["Minds", "Arms"] };
+    expect(resolveNode(doc.snap(), path)).toBe(sections(doc.snap(), minds)[0]);
+    expect(resolveNode(doc.snap(), path, sections(doc.snap(), copyArms)[0])).toBe(copyArms);
   });
 });
 
@@ -244,9 +257,10 @@ describe("the text form of a target", () => {
       ["w:Fixed-point combinator", W("Fixed-point combinator")],
       ["w.fr:Point fixe", { kind: "wiki", title: "Point fixe", lang: "fr" }],
       ['"w:Star Wars: Episode IV"', W("Star Wars: Episode IV")],
-      ["/fixed-points/Recursion/How Y works", { kind: "node", doc: "fixed-points", path: ["Recursion", "How Y works"] }],
-      ["./A\\/B/C", { kind: "node", path: ["A/B", "C"] }],
-      ['/minds/Arms ^"tastes what"', { kind: "node", doc: "minds", path: ["Arms"], quote: "tastes what" }],
+      ["/Fixed points/Recursion/How Y works", { kind: "node", path: ["Fixed points", "Recursion", "How Y works"] }],
+      ["./A\\/B/C", { kind: "node", path: ["A/B", "C"], rel: true }],
+      ['/Minds/Arms ^"tastes what"', { kind: "node", path: ["Minds", "Arms"], quote: "tastes what" }],
+      ["/", { kind: "node", path: [] }],
       ['https://example.org/a?b=c "A title"', { kind: "url", url: "https://example.org/a?b=c", title: "A title" }],
     ];
     for (const [text, ref] of cases) {
@@ -261,9 +275,17 @@ describe("the text form of a target", () => {
 describe("the editor agent's tools", () => {
   it("create a link and set or remove a target, with node paths checked against the library", async () => {
     const { execTool } = await import("../src/llm/tasks");
-    const { doc, fixed, arms } = library();
-    const made = JSON.parse(execTool(doc, "create_node", { parent: fixed, title: "", body: "", quote: "Octopus", target: "/minds/Arms" })).created as NodeId;
-    expect(doc.snap().nodes[made].ref).toMatchObject({ kind: "node", id: arms, doc: "minds", path: ["Arms"] });
+    const { doc, fixed, recursion, arms } = library();
+    const made = JSON.parse(execTool(doc, "create_node", { parent: fixed, title: "", body: "", quote: "Octopus", target: "/Minds/Arms" })).created as NodeId;
+    expect(doc.snap().nodes[made].ref).toEqual({ kind: "node", id: arms, path: ["Minds", "Arms"] });
+    expect(JSON.parse(execTool(doc, "read_node", { id: fixed })).notes[0].target).toBe("/Minds/Arms");
+    // A node's id, or a path below the top of the node written in, does as well.
+    execTool(doc, "update_node", { id: made, target: recursion });
+    expect(doc.snap().nodes[made].ref).toEqual({ kind: "node", id: recursion, path: ["Fixed points", "Recursion"] });
+    execTool(doc, "update_node", { id: made, target: "./Recursion" });
+    expect(doc.snap().nodes[made].ref).toMatchObject({ id: recursion });
+    const found = JSON.parse(execTool(doc, "find", { query: "tastes" })).matches[0];
+    expect(found).toMatchObject({ id: arms, top: "Minds", path: "Minds › Arms" });
     execTool(doc, "update_node", { id: made, target: "w:Octopus" });
     expect(doc.snap().nodes[made].ref).toEqual(W("Octopus"));
     expect(JSON.parse(execTool(doc, "read_node", { id: fixed })).notes[0].target).toBe("w:Octopus");
@@ -271,7 +293,7 @@ describe("the editor agent's tools", () => {
     expect(doc.snap().nodes[fixed].ref).toEqual({ kind: "url", url: "https://example.org/fp" });
     execTool(doc, "update_node", { id: fixed, target: "" });
     expect(doc.snap().nodes[fixed].ref).toBeUndefined();
-    expect(() => execTool(doc, "update_node", { id: made, target: "/minds/No such section" })).toThrow(OpError);
+    expect(() => execTool(doc, "update_node", { id: made, target: "/Minds/No such section" })).toThrow(OpError);
     expect(() => execTool(doc, "update_node", { id: made, target: "javascript:alert(1)" })).toThrow(OpError);
   });
 });

@@ -9,7 +9,7 @@
  */
 import { UndoManager } from "loro-crdt";
 import {
-  Doc, OpError, SYSTEM_ORIGIN, ancestors, descendants, docOf, documents, freeSlug, isLibraryRoot, isLink, isStale, label, notesOf, sections,
+  Doc, OpError, SYSTEM_ORIGIN, ancestors, descendants, docOf, documents, isLibraryRoot, isLink, isStale, label, notesOf, sections,
   staleness, type NodeId, type Op, type Snap,
 } from "../core/model";
 import { FormatError, serializeDoc } from "../core/format";
@@ -38,7 +38,6 @@ import { refreshAfterCalls } from "./usage";
 import { Linker, type AutoMode, type JobState, type LinkRow, type Status, type Sugg } from "./linker";
 import { all, besideInColumn, close as closeIn, columns as columnsOf, reorder, focus as focusIn, focused, open as openIn, path, pin as pinIn, prune, restore as restoreForest, rooted, save as saveTree, setSources, updateIn, withBranch, type Forest, type Placed, type Tree } from "./forks";
 import { stripMarks, type Mark } from "../core/marks";
-import { SEED_SLUG } from "../core/seed";
 
 export type Grain = "node" | "sentence" | "word";
 export interface Focus {
@@ -1027,7 +1026,7 @@ class Store {
     }
     if (r.kind === "node") {
       const id = resolveNode(this.snap, r);
-      if (!id) return this.say(`The node this links to is gone${r.path?.length ? ` (it was “${r.path.join(" › ")}” in ${r.doc ?? "this document"})` : ""}, and nothing at its old place was found.`);
+      if (!id) return this.say(`The node this links to is gone${r.path?.length ? ` (it was “${r.path.join(" › ")}”)` : ""}, and nothing at its old place was found.`);
       if (this.panes) {
         const from = this.backHere();
         this.paneAt = this.openPane(this.paneAt, { kind: "node", id, from });
@@ -1223,7 +1222,7 @@ class Store {
     if (!(await idbGet("adopted"))) {
       for (const key of keys) {
         const m = /^branch:(.+)$/.exec(key);
-        if (m) await check(key, migrated.docs.find((d) => d.slug === SEED_SLUG), m[1]);
+        if (m) await check(key, migrated.docs.find((d) => d.slug === "infinite-expand"), m[1]);
       }
     }
     this.oldReplicas = found;
@@ -1864,10 +1863,6 @@ class Store {
       const links = e.field === "body" ? this.chosenLinks(e.node, value, e.chosen ?? []) : [];
       if (n && (value !== n[e.field] || links.length)) {
         const op: Op = { op: "update", id: e.node, [e.field]: value };
-        // A document added from the library page took a slug from its empty title; give it one from the real title.
-        if (e.fresh && e.field === "title" && n.parent === s.root && s.library) {
-          op.slug = freeSlug(value, new Set(documents(s).filter((d) => d !== n.id).map((d) => s.nodes[d].slug)));
-        }
         this.apply([...(value !== n[e.field] ? [op] : []), ...links], `${e.field === "title" ? "Rename" : "Edit"} “${clip(e.field === "title" ? value : label(s, e.node), 40)}”`);
         if (value !== n[e.field]) this.afterEdit(e.node, `the ${e.field} of “${n.title}” was edited by a person`);
         if (e.field === "body") this.links.scan(e.node, "human", marks);
@@ -3292,7 +3287,7 @@ class Store {
     });
   }
 
-  /** The slug stays, so links keep working; on this branch, and u undoes it. */
+  /** Links keep working (they go by node id); on this branch, and u undoes it. */
   renameDocument(id: NodeId, title: string) {
     title = title.replace(/\s+/g, " ").trim();
     if (!title) return this.say("A document needs a title.");
@@ -3338,7 +3333,7 @@ class Store {
     const n = s.nodes[id];
     if (!n) return;
     const { text, skipped } = serializeDoc(s, id);
-    const base = n.slug || slugify(n.title);
+    const base = slugify(n.title) || "untitled";
     const name = this.repo.current === "main" ? `${base}.md` : `${base}-${this.repo.current.replace(/[^\w-]+/g, "-")}.md`;
     download(name, text);
     const left = [skipped.orphans && `${skipped.orphans} orphaned note${skipped.orphans > 1 ? "s" : ""}`, skipped.inNotes && `${skipped.inNotes} section${skipped.inNotes > 1 ? "s" : ""} inside notes`].filter(Boolean);
@@ -3360,15 +3355,13 @@ class Store {
     input.click();
   }
 
-  /** A .md file as a new document at the end of the library, its slug made from the file's name. */
+  /** A .md file as a new document at the end of the library. */
   async importFile(file: File) {
     if (file.size > IMPORT_MAX) return this.say(`${file.name} is too large to import (the limit is ${IMPORT_MAX / 1024 / 1024} MB).`);
     if (!this.writable()) return;
     const text = await file.text();
-    const s = this.doc.snap();
-    const slug = freeSlug(file.name.replace(/\.(md|markdown|txt)$/i, ""), new Set(documents(s).map((d) => s.nodes[d].slug)));
     try {
-      const id = importDoc(this.doc, text, file.name, { creator: this.user, slug });
+      const id = importDoc(this.doc, text, file.name, { creator: this.user });
       this.openDoc(id, true);
       this.say(`Imported ${file.name} as “${clip(this.doc.snap().nodes[id].title, 60)}”.`);
       // Imported text is scanned like any other writing: by a background job, once the server has it.

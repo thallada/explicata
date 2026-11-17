@@ -9,15 +9,16 @@
  * text around them is edited.
  *
  * The whole library is one such tree. Its root is the library itself (flagged `library` in its
- * data); the root's sections are the documents, each with a slug for its address. Everything
- * else (notes, anchors, ops, staleness, history, merge) is the same wherever a node sits, except
- * that the root and the documents are not reconciled with each other: a document is not a
- * summary of the library, nor the library of its documents.
+ * data). Everything (notes, anchors, ops, staleness, history, merge) is the same wherever a node
+ * sits, except that the root and its children are not reconciled with each other: a child of the
+ * root is not a summary of the library, nor the library of its children. Such a child, the top of
+ * a node's branch (`topOf`), is not a kind of node; it is only where a few things are bounded: the
+ * model's outline, the link scanner's sense of "the same text", the batching of conflicts.
  */
 import { Cursor, LoroDoc, LoroText, type LoroEventBatch, type LoroMap, type LoroTreeNode, type TreeID } from "loro-crdt";
 import { RefError, canonRef, validateRef, type Ref } from "./ref";
 import type { WikiAnchor } from "./article";
-import { digest, sha256, slugify, words, type Form, type Range } from "./text";
+import { digest, sha256, words, type Form, type Range } from "./text";
 
 export type { Ref } from "./ref";
 
@@ -45,8 +46,6 @@ export interface NodeSnap {
   pinned: boolean;
   form?: Form;
   lens?: string;
-  /** A document's address (only meaningful on the library root's sections). */
-  slug?: string;
   /** What the node is about, elsewhere (see ref.ts). A note with a target and no body is a link. */
   ref?: Ref;
   /**
@@ -58,7 +57,7 @@ export interface NodeSnap {
   nolink?: string[];
   /**
    * The Wikipedia container (see article.ts): a section of the library root that holds a node per
-   * annotated article. It is not a document: it is listed nowhere and never reconciled.
+   * annotated article. It is listed nowhere and never reconciled.
    */
   articles?: boolean;
   /** An annotation on a Wikipedia article: where in the article it attaches (its parent is the article's node). */
@@ -78,7 +77,7 @@ export interface NodeSnap {
 export interface Snap {
   root: NodeId;
   nodes: Record<NodeId, NodeSnap>;
-  /** The root is a library, and its sections are documents. */
+  /** The root is a library (Doc.library), not a single tree (Doc.create). */
   library: boolean;
 }
 
@@ -96,8 +95,6 @@ export type Op =
       quote?: string;
       form?: Form;
       lens?: string;
-      /** For a new document (a section of the library root): its address. Made from the title if left out. */
-      slug?: string;
       /** What the node is about, elsewhere. A note with a target and no body is a link. */
       ref?: Ref;
       /** Make this section of the library root the Wikipedia container (article.ts). */
@@ -107,7 +104,7 @@ export type Op =
     }
   /** `ref: null` removes the target. Changing a target is not a change of content: it leaves authorship and staleness alone. */
   /** `nolink` adds phrases the writer declined to link; like a target, it is not a change of content. */
-  | { op: "update"; id: NodeId; title?: string; body?: string; pinned?: boolean; form?: Form; lens?: string; anchors?: Range[]; slug?: string; ref?: Ref | null; nolink?: string[] }
+  | { op: "update"; id: NodeId; title?: string; body?: string; pinned?: boolean; form?: Form; lens?: string; anchors?: Range[]; ref?: Ref | null; nolink?: string[] }
   /** Swap in new content and drop everything beneath the node. */
   | { op: "replace"; id: NodeId; title: string; body: string }
   | { op: "delete"; id: NodeId }
@@ -136,10 +133,6 @@ export class OpError extends Error {}
 
 export type PatchListener = (was: Map<NodeId, NodeSnap | undefined> | null, nodes: Record<NodeId, NodeSnap>) => void;
 
-/** A document's slug: also a path segment, so nothing that could leave its directory. */
-export const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
-/** Slugs that are words in the URL scheme rather than documents. */
-const RESERVED = new Set(["import"]);
 export const LIBRARY_TITLE = "Library";
 
 /**
@@ -217,7 +210,7 @@ export class Doc {
     });
   }
 
-  /** A single tree, not a library: what documents were before there was one (and what tests build). */
+  /** A single tree, not a library: what the tests and fixtures build. */
   static create(author: string, title: string, body: string, actor: Actor = "human"): Doc {
     const loro = new LoroDoc();
     loro.setPeerId(randomPeer());
@@ -378,7 +371,6 @@ export class Doc {
     };
     if (d.form) snap.form = d.form as Form;
     if (d.lens) snap.lens = d.lens as string;
-    if (d.slug) snap.slug = d.slug as string;
     if (d.ref && typeof d.ref === "object") snap.ref = d.ref as Ref;
     if (d.articles) snap.articles = true;
     if (d.wanchor && typeof d.wanchor === "object") snap.wanchor = d.wanchor as WikiAnchor;
@@ -572,7 +564,7 @@ export class Doc {
       const row: unknown[] = [n.kind, n.title, n.body, n.by, n.pinned, n.form ?? null, n.lens ?? null, n.anchors.map((a) => [a.start, a.end]), n.children.map(visit)];
       // A node target is compared by where its target sits, since ids differ between copies.
       if (n.wanchor || n.articles) row.push(n.wanchor ?? null, n.articles ?? null);
-      if (n.ref) row.push(n.ref.kind === "node" ? ["node", n.ref.id && snap.nodes[n.ref.id] ? position(snap, n.ref.id) : [n.ref.doc ?? null, n.ref.path ?? null], n.ref.quote ?? null] : canonRef(n.ref));
+      if (n.ref) row.push(n.ref.kind === "node" ? ["node", n.ref.id && snap.nodes[n.ref.id] ? position(snap, n.ref.id) : [n.ref.rel ?? null, n.ref.path ?? null], n.ref.quote ?? null] : canonRef(n.ref));
       return row;
     };
     return JSON.stringify(visit(from));
@@ -629,31 +621,11 @@ export class Doc {
   }
 
   /**
-   * The slug a node may take as a document: the one asked for if free, else one made from the
-   * hint. None if the node is not a section of the library root. Read from Loro, not a snapshot,
-   * because it runs for every op.
-   */
-  private slugFor(n: LoroTreeNode, asked: string | undefined, hint: string): string | undefined {
-    const lib = n.parent();
-    if (!lib || lib.parent() || !lib.data.get("library")) {
-      if (asked !== undefined) throw new OpError("only a document (a section of the library) has a slug");
-      return undefined;
-    }
-    const taken = new Set((lib.children() ?? []).filter((c) => c.id !== n.id).map((c) => c.data.get("slug") as string | undefined));
-    if (asked !== undefined) {
-      if (!SLUG.test(asked) || RESERVED.has(asked)) throw new OpError(`not a valid slug: ${asked}`);
-      if (taken.has(asked)) throw new OpError(`another document has the slug ${asked}`);
-      return asked;
-    }
-    return freeSlug(hint, taken);
-  }
-
-  /**
    * Write a copy of a subtree (from this document or another) under `parent`, as it stands:
    * content, authorship, pins and the hashes it was last reconciled with. Must run inside a commit.
    */
-  graft(src: Snap, from: NodeId, parent: NodeId, opts: { index?: number; slug?: string; title?: string } = {}): NodeId {
-    const { index, slug, title } = opts;
+  graft(src: Snap, from: NodeId, parent: NodeId, opts: { index?: number; title?: string } = {}): NodeId {
+    const { index, title } = opts;
     const into = this.node(parent);
     const visit = (id: NodeId, under: LoroTreeNode, at?: number): NodeId => {
       const s = src.nodes[id];
@@ -681,9 +653,6 @@ export class Doc {
     const count = into.children()?.length ?? 0;
     const top = visit(from, into, Math.max(0, Math.min(index ?? count, count)));
     this.mark(parent);
-    const n = this.node(top);
-    const free = this.slugFor(n, slug, (title ?? src.nodes[from].title) || "untitled");
-    if (free) n.data.set("slug", free);
     return top;
   }
 
@@ -732,10 +701,6 @@ export class Doc {
             if (ranges?.length) n.data.set("anchors", this.makeAnchors(parent, ranges) as never);
             else if (op.wanchor) n.data.set("wanchor", checkWikiAnchor(op.wanchor) as never);
             if (op.articles) n.data.set("articles", true);
-            // The container is not a document, so it has no address.
-            const slug = kind === "section" && !op.articles ? this.slugFor(n, op.slug, op.title || "untitled") : undefined;
-            if (op.slug && kind !== "section") throw new OpError("only a document (a section of the library) has a slug");
-            if (slug) n.data.set("slug", slug);
             created.push(n.id);
             authored.add(n.id);
             break;
@@ -761,7 +726,6 @@ export class Doc {
               if (!parent) throw new OpError("the root has nothing to anchor to");
               n.data.set("anchors", this.makeAnchors(parent, op.anchors) as never);
             }
-            if (op.slug !== undefined && op.slug !== n.data.get("slug")) n.data.set("slug", this.slugFor(n, op.slug, "")!);
             if (op.title !== undefined || op.body !== undefined) {
               n.data.set("by", actor);
               n.data.set("pinned", actor === "human");
@@ -803,17 +767,6 @@ export class Doc {
             this.mark(parent.id);
             this.mark(n.id);
             this.tree.move(op.id, op.parent, Math.max(0, Math.min(op.index ?? count, count)));
-            // A section that becomes a document needs an address; one it had before is kept if still free.
-            if (!sameParent && n.data.get("kind") !== "note") {
-              const had = n.data.get("slug") as string | undefined;
-              let slug: string | undefined;
-              try {
-                slug = this.slugFor(n, had, (n.data.get("title") as string) || "untitled");
-              } catch {
-                slug = this.slugFor(n, undefined, (n.data.get("title") as string) || "untitled");
-              }
-              if (slug && slug !== had) n.data.set("slug", slug);
-            }
             break;
           }
           case "copy": {
@@ -901,7 +854,7 @@ export function setNolink(n: LoroTreeNode, phrases: string[]) {
 }
 const sameNode = (a: NodeSnap, b: NodeSnap) =>
   refString(a.ref) === refString(b.ref) && a.articles === b.articles && JSON.stringify(a.wanchor) === JSON.stringify(b.wanchor) && (a.nolink ?? []).join("\u0000") === (b.nolink ?? []).join("\u0000") && a.parent === b.parent && a.kind === b.kind && a.title === b.title && a.body === b.body && a.by === b.by && a.pinned === b.pinned &&
-  a.form === b.form && a.lens === b.lens && a.slug === b.slug && a.seenUp === b.seenUp && a.seenDown === b.seenDown && a.depth === b.depth &&
+  a.form === b.form && a.lens === b.lens && a.seenUp === b.seenUp && a.seenDown === b.seenDown && a.depth === b.depth &&
   a.children.length === b.children.length && a.children.every((c, i) => c === b.children[i]) &&
   a.anchors.length === b.anchors.length && a.anchors.every((x, i) => x.start === b.anchors[i].start && x.end === b.anchors[i].end && x.quote === b.anchors[i].quote && x.text === b.anchors[i].text);
 
@@ -910,7 +863,7 @@ const sameNode = (a: NodeSnap, b: NodeSnap) =>
 const row = (n: NodeSnap) => {
   const r: unknown[] = [n.id, n.parent, n.kind, n.title, n.body, n.by, n.pinned, n.form ?? null, n.lens ?? null, n.anchors.map((a) => [a.start, a.end]), n.seenUp, n.seenDown];
   // Optional fields go last, and only up to the last one set, so commits made before they existed still verify.
-  const tail = [n.slug ?? null, n.ref ? canonRef(n.ref) : null, n.nolink ?? null, n.wanchor ?? null, n.articles ? true : null];
+  const tail = [n.ref ? canonRef(n.ref) : null, n.nolink ?? null, n.wanchor ?? null, n.articles ? true : null];
   while (tail.length && tail[tail.length - 1] === null) tail.pop();
   r.push(...tail);
   return r;
@@ -927,15 +880,18 @@ function subtreeHash(snap: Snap, id: NodeId): string {
 
 // ---- the library ----
 
-/** The library's documents: the root's sections. In a single tree, the root is the one document. */
-export function documents(snap: Snap): NodeId[] {
+/** The root's sections, the tops of the library's branches. In a single tree, the root is the one top. */
+export function tops(snap: Snap): NodeId[] {
   return snap.library ? sections(snap, snap.root) : [snap.root];
 }
 
 export const isLibraryRoot = (snap: Snap, id: NodeId) => snap.library && id === snap.root;
 
-/** The document a node belongs to: its ancestor among the library's sections. None for the library root itself. */
-export function docOf(snap: Snap, id: NodeId): NodeId | null {
+/**
+ * The top of a node's branch: its ancestor (or itself) among the root's children. A relation, not
+ * a kind of node. None for the library root itself; in a single tree, the root.
+ */
+export function topOf(snap: Snap, id: NodeId): NodeId | null {
   let n = snap.nodes[id];
   if (!n) return null;
   if (!snap.library) return snap.root;
@@ -944,30 +900,19 @@ export function docOf(snap: Snap, id: NodeId): NodeId | null {
   return n.id;
 }
 
-/** The document with this slug. If two replicas gave the same slug at once, the first in the library wins. */
-export function findDoc(snap: Snap, slug: string): NodeId | undefined {
-  return documents(snap).find((d) => snap.nodes[d].slug === slug);
-}
-
-/** A free slug made from a hint, numbered if it is taken. */
-export function freeSlug(hint: string, taken: Set<string | undefined>): string {
-  const base = slugify(hint);
-  const free = (s: string) => !RESERVED.has(s) && !taken.has(s);
-  if (free(base)) return base;
-  for (let n = 2; ; n++) {
-    const s = `${base.slice(0, 58)}-${n}`;
-    if (free(s)) return s;
-  }
-}
+/** @deprecated Temporary, for UI files untouched in step 1 (Panes.tsx, Mouse.tsx and others): step 2 removes it. */
+export const docOf = topOf;
+/** @deprecated Temporary, for the UI's document features: step 2 removes it. */
+export const documents = tops;
 
 // ---- staleness: computed, never stored ----
 
-/** A node's sections, in order. The Wikipedia container (article.ts) is nobody's section: it is not a document. */
+/** A node's sections, in order. The Wikipedia container (article.ts) is nobody's section. */
 export const sections = (snap: Snap, id: NodeId) => snap.nodes[id].children.filter((c) => snap.nodes[c].kind === "section" && !snap.nodes[c].articles);
 
 /**
  * Hash of what a node's body should be a summary of: its section children, in order. The
- * library's body is not a summary of its documents, so it has nothing to be stale against.
+ * library's body is not a summary of its children, so it has nothing to be stale against.
  */
 function upInput(snap: Snap, id: NodeId): string {
   if (isLibraryRoot(snap, id)) return "";
@@ -978,7 +923,7 @@ function upInput(snap: Snap, id: NodeId): string {
 
 /**
  * Hash of what a node elaborates: its anchored text, or failing that its parent's title and body.
- * A document does not elaborate the library, so, like a root, it elaborates nothing.
+ * A child of the library root does not elaborate the library, so, like a root, it elaborates nothing.
  */
 function downInput(snap: Snap, id: NodeId): string {
   const n = snap.nodes[id];
@@ -1084,8 +1029,8 @@ export function ancestors(snap: Snap, id: NodeId): NodeId[] {
   return out;
 }
 
-/** Ancestors up to and including the node's document: never the library root. */
-export function ancestorsInDoc(snap: Snap, id: NodeId): NodeId[] {
+/** Ancestors up to and including the node's top: never the library root. */
+export function ancestorsBelowRoot(snap: Snap, id: NodeId): NodeId[] {
   const out = ancestors(snap, id);
   return snap.library ? out.filter((a) => a !== snap.root) : out;
 }
@@ -1106,8 +1051,8 @@ export function label(snap: Snap, id: NodeId): string {
 }
 
 /**
- * Ops that rename a document (the library's section, or a single tree's root). A new name is not
- * new content: the sections under it are declared still consistent with it, and it keeps the pin it had.
+ * Ops that rename a node. A new name is not new content: the sections under it are declared still
+ * consistent with it, and it keeps the pin it had.
  */
 export function retitleOps(snap: Snap, id: NodeId, title: string): Op[] {
   const n = snap.nodes[id];

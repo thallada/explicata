@@ -1,9 +1,9 @@
-/** The seed tree against the prompt it was grown from: the first document of a new library. */
+/** The seed tree against the prompt it was grown from: the first tree of a new library. */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { Doc, descendants, isStale, notesOf, sections } from "../src/core/model";
 import { verifyHistory } from "../src/core/repo";
-import { SEED_SLUG, writeSeed } from "../src/core/seed";
+import { SEED_TITLE, writeSeed } from "../src/core/seed";
 import { overlaps, sentences, wordCount } from "../src/core/text";
 import { seed } from "../src/seed/tree";
 
@@ -14,9 +14,9 @@ const snap = doc.snap();
 const root = snap.nodes[first];
 
 describe("seed tree", () => {
-  it("keeps the prompt verbatim as the document's text, written by a human and pinned, as a section of the library", () => {
+  it("keeps the prompt verbatim as the text of its top, written by a human and pinned, as a section of the library", () => {
     expect(root.body).toBe(prompt.trim());
-    expect(root).toMatchObject({ by: "human", pinned: true, parent: snap.root, slug: SEED_SLUG });
+    expect(root).toMatchObject({ by: "human", pinned: true, parent: snap.root, title: SEED_TITLE });
     expect(snap.library).toBe(true);
   });
 
@@ -47,7 +47,7 @@ describe("seed tree", () => {
     expect(Object.keys(snap.nodes).filter((id) => isStale(snap, id as never))).toEqual([]);
     const v = verifyHistory(doc);
     expect(v.mismatches).toEqual([]);
-    // The library, the document, and one commit per top-level section.
+    // The library, the tree's top, and one commit per section under it.
     expect(v.checked).toBe(seed.length + 2);
   });
 });

@@ -8,9 +8,9 @@
  * agent's tools:
  *
  *   w:Fixed-point combinator          English Wikipedia (w.fr:Point fixe for another language)
- *   /fixed-points/Recursion/How Y works   a node, by document slug and section titles
- *   ./How Y works                     the same, inside the document it is written in
- *   /fixed-points/The idea ^"one repels them"   a note, by its section and its quote
+ *   /Fixed points/Recursion/How Y works   a node, by the titles down to it from the library root
+ *   ./Recursion/How Y works           the same, below the top of the text it is written in
+ *   /Fixed points/The idea ^"one repels them"   a note, by its section and its quote
  *   https://example.org/page "Title"  a web page, with an optional title
  *   "w:Star Wars: Episode IV"         any of them in quotes, when it contains ": "
  *
@@ -21,17 +21,16 @@ import type { NodeId } from "./model";
 export type Ref =
   | { kind: "wiki"; title: string; lang: string; pageId?: number }
   /**
-   * A node in the library. `id` is what counts; `doc` (a document's slug) and `path` (section
-   * titles below the document, and a note's quote) let the link be found again when the id has
-   * gone: undoing a delete re-creates nodes under new ids. A path with no `doc` is relative to the
-   * document it is written in (only in a parsed file, before it is written into the library).
+   * A node in the library. `id` is what counts; `path` (the section titles down to it from the
+   * library root, and a note's quote) lets the link be found again when the id has gone: undoing a
+   * delete re-creates nodes under new ids. With `rel` the path starts below a top instead: the top
+   * of the text it was read from (a file being imported, or what a person or the agent typed).
    */
-  | { kind: "node"; id?: NodeId; doc?: string; path?: string[]; quote?: string }
+  | { kind: "node"; id?: NodeId; path?: string[]; rel?: true; quote?: string }
   | { kind: "url"; url: string; title?: string };
 
 const DEFAULT_LANG = "en";
 const LANG = /^[a-z][a-z0-9-]{1,15}$/;
-const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 /** Characters MediaWiki never allows in a title. */
 const ILLEGAL = /[#<>[\]|{}\u0000-\u001f\u007f]/;
 
@@ -70,17 +69,13 @@ export function validateRef(input: unknown): Ref {
     case "node": {
       const out: Ref = { kind: "node" };
       if (r.id !== undefined && r.id !== "") out.id = str(r.id, "id", 64) as NodeId;
-      if (r.doc !== undefined) {
-        const d = str(r.doc, "document", 64);
-        if (!SLUG.test(d)) throw new RefError(`not a document slug: ${d}`);
-        out.doc = d;
-      }
       if (r.path !== undefined) {
         if (!Array.isArray(r.path) || r.path.length > 64) throw new RefError("a target's path must be a list of titles");
         out.path = r.path.map((t) => str(t, "path", 500));
+        if (r.rel === true) out.rel = true;
       }
       if (r.quote !== undefined) out.quote = str(r.quote, "quote", 2000);
-      if (!out.id && !out.path && !out.doc) throw new RefError("a node target needs an id or a path");
+      if (!out.id && !out.path) throw new RefError("a node target needs an id or a path");
       return out;
     }
     case "url": {
@@ -107,7 +102,7 @@ export function canonRef(r: Ref): unknown[] {
     case "wiki":
       return ["wiki", r.lang, r.title, r.pageId ?? null];
     case "node":
-      return ["node", r.id ?? null, r.doc ?? null, r.path ?? null, r.quote ?? null];
+      return ["node", r.id ?? null, r.path ?? null, r.rel ?? null, r.quote ?? null];
     case "url":
       return ["url", r.url, r.title ?? null];
   }
@@ -120,7 +115,7 @@ export function sameTarget(a: Ref | undefined, b: Ref | undefined): boolean {
   if (a.kind === "url" && b.kind === "url") return a.url === b.url;
   if (a.kind === "node" && b.kind === "node") {
     if (a.id || b.id) return a.id === b.id;
-    return a.doc === b.doc && JSON.stringify(a.path ?? []) === JSON.stringify(b.path ?? []) && (a.quote ?? "") === (b.quote ?? "");
+    return !a.rel === !b.rel && JSON.stringify(a.path ?? []) === JSON.stringify(b.path ?? []) && (a.quote ?? "") === (b.quote ?? "");
   }
   return false;
 }
@@ -151,19 +146,13 @@ export function readQuoted(s: string, i: number): [string, number] | null {
   return null;
 }
 
-/**
- * A target in the text form. A node target is written from its `doc` and `path`, so refresh them
- * first (`nodeRef` in links.ts); `here` is the slug of the document it is written in, which makes
- * a path inside that document relative.
- */
-export function formatTarget(r: Ref, here?: string): string {
+/** A target in the text form. A node target is written from its `path`, so refresh it first (`nodeRef` in links.ts). */
+export function formatTarget(r: Ref): string {
   let s: string;
   if (r.kind === "wiki") s = `${r.lang === DEFAULT_LANG ? "w" : `w.${r.lang}`}:${r.title}`;
   else if (r.kind === "url") return r.url + (r.title ? " " + quoteStr(r.title) : "");
   else {
-    const segs = (r.path ?? []).map(escapeSeg).join("/");
-    const head = !r.doc || r.doc === here ? "." : `/${r.doc}`;
-    s = `${head}${segs || head === "." ? "/" : ""}${segs}`;
+    s = `${r.rel ? "." : ""}/${(r.path ?? []).map(escapeSeg).join("/")}`;
     if (r.quote !== undefined) s += ` ^${quoteStr(r.quote)}`;
   }
   // Unquoted, a target ends at ": " (where a note's text begins), so one that contains that is quoted.
@@ -204,10 +193,7 @@ function parsePath(text: string): Ref | string {
     else cur += c;
   }
   if (cur || body.endsWith("/")) segs.push(cur);
-  if (relative) return { kind: "node", path: segs, ...(quote !== undefined ? { quote } : {}) };
-  const [doc, ...path] = segs;
-  if (!doc || !SLUG.test(doc)) return `not a document slug: “${doc ?? ""}”`;
-  return { kind: "node", doc, path, ...(quote !== undefined ? { quote } : {}) };
+  return { kind: "node", path: segs, ...(relative ? { rel: true as const } : {}), ...(quote !== undefined ? { quote } : {}) };
 }
 
 /** Read the target that starts at s[i]. Returns it and where it ended, or why it is not one. */
@@ -249,7 +235,7 @@ export function readTarget(s: string, i: number, whole = false): { ref: Ref; end
     if (err instanceof RefError) return err.message;
     throw err;
   }
-  return "a target is w:Title, /document/Section, ./Section or an http(s) address";
+  return "a target is w:Title, /Top title/Section, ./Section or an http(s) address";
 }
 
 /** A whole string as a target, or why it is not one. */
@@ -264,7 +250,7 @@ export function parseTarget(text: string): Ref | string {
 /** What a person types: a target in the text form, or else a Wikipedia title. */
 export function parseTargetLoose(text: string): Ref | string {
   const s = text.trim();
-  if (!s) return "give a target: w:Title, /document/Section or an address";
+  if (!s) return "give a target: w:Title, /Top title/Section or an address";
   if (looksLikeTarget(s)) return parseTarget(s);
   try {
     return validateRef({ kind: "wiki", title: s, lang: DEFAULT_LANG });
@@ -277,7 +263,7 @@ export function parseTargetLoose(text: string): Ref | string {
 export function describeTarget(r: Ref): string {
   if (r.kind === "wiki") return `Wikipedia: ${r.title}${r.lang === DEFAULT_LANG ? "" : ` (${r.lang})`}`;
   if (r.kind === "url") return r.title ? `${r.title} (${hostOf(r.url)})` : r.url;
-  return [r.doc, ...(r.path ?? [])].filter(Boolean).join(" › ") || "a node";
+  return (r.path ?? []).filter(Boolean).join(" › ") || "a node";
 }
 
 /** A page's site, for showing: its host without "www.". */

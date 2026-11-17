@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "preact/hooks";
-import { ancestors, ancestorsInDoc, docOf, label, sections, staleness, type Conflict, type NodeId } from "../core/model";
+import { ancestors, ancestorsBelowRoot, docOf, label, sections, staleness, type Conflict, type NodeId } from "../core/model";
 import { verifyHistory, type Commit } from "../core/repo";
 import { clip, plain } from "../core/text";
 import { hostOf } from "../core/ref";
@@ -219,7 +219,7 @@ function Jump() {
         <ul>
           {hits.map((id, k) => {
             const d = docOf(snap, id);
-            const within = ancestorsInDoc(snap, id).reverse().slice(1);
+            const within = ancestorsBelowRoot(snap, id).reverse().slice(1);
             return (
               <li key={id} class={k === i ? "selected" : ""} onClick={() => store.jumpTo(id)}>
                 <span class="t">{label(snap, id)}</span>

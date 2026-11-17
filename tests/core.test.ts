@@ -1,6 +1,6 @@
 import { UndoManager } from "loro-crdt";
 import { describe, expect, it } from "vitest";
-import { Doc, SYSTEM_ORIGIN, docOf, isStale, retitleOps, staleness, sections, notesOf, type NodeId } from "../src/core/model";
+import { Doc, SYSTEM_ORIGIN, ancestorsBelowRoot, isStale, retitleOps, staleness, sections, notesOf, topOf, tops, type NodeId } from "../src/core/model";
 import { healAnchors, history, verifyHistory, revertTo, revertDocTo, mergeBranch, mergeUpdate, resolveConflict, reopenConflict, at, touched, Repo } from "../src/core/repo";
 import { formFor, paragraphs, sentences, sha256, words } from "../src/core/text";
 
@@ -256,9 +256,9 @@ describe("merge", () => {
   });
 });
 
-// ---- the library: documents as sections of one tree ----
+// ---- the library: one tree, whose root's children are nodes like any other ----
 
-/** A library of two documents, each with a part, a leaf, and a note. */
+/** A library of two tops, each with a part, a leaf, and a note. */
 function library() {
   const doc = Doc.library("alice");
   const lib = doc.snap().root;
@@ -304,8 +304,9 @@ describe("library", () => {
     // The library's own text is the reader's; editing it marks no document.
     doc.apply([{ op: "update", id: lib, body: "My library." }], "Write the library's text");
     expect(staleIds(doc).sort()).toEqual(inAlpha);
-    expect(docOf(doc.snap(), lib)).toBeNull();
-    expect(docOf(doc.snap(), aLeaf)).toBe(a);
+    expect(topOf(doc.snap(), lib)).toBeNull();
+    expect(topOf(doc.snap(), aLeaf)).toBe(a);
+    expect(ancestorsBelowRoot(doc.snap(), aLeaf)).toEqual([doc.snap().nodes[aLeaf].parent, a]);
   });
 
   it("moves a node from one document to another with an ordinary move; its notes keep their anchors and undo moves it back", () => {
@@ -315,21 +316,43 @@ describe("library", () => {
     doc.apply([{ op: "move", id: aPart, parent: b }], "Move Alpha's part into Beta");
     let snap = doc.snap();
     expect(snap.nodes[aPart].parent).toBe(b);
-    expect(docOf(snap, aPart)).toBe(b);
+    expect(topOf(snap, aPart)).toBe(b);
     expect(snap.nodes[aNote].anchors[0].text).toBe("a phrase worth a note");
     expect(sections(snap, a)).toEqual([]);
     // Both documents' summaries are now out of date, as with any move.
     expect(staleness(snap, a).up && staleness(snap, b).up).toBe(true);
-    // A moved section was not a document, so it took no slug; one moved to the top level becomes one.
-    expect(snap.nodes[aPart].slug).toBeUndefined();
     expect(verifyHistory(doc).mismatches).toEqual([]);
     expect(undo.undo()).toBe(true);
     doc.touch();
     snap = doc.snap();
     expect(snap.nodes[aPart].parent).toBe(a);
     expect(snap.nodes[aNote].anchors[0].text).toBe("a phrase worth a note");
-    doc.apply([{ op: "move", id: aPart, parent: snap.root }], "Make it a document");
-    expect(doc.snap().nodes[aPart].slug).toBe("alpha-part");
+    // Moved to the root, it is a top like any other: nothing is stored to make it one.
+    doc.apply([{ op: "move", id: aPart, parent: snap.root }], "Move it to the top");
+    expect(topOf(doc.snap(), aPart)).toBe(aPart);
+    expect(tops(doc.snap())).toEqual([a, b, aPart]);
+  });
+
+  it("loads a library whose nodes still carry slugs (and node targets a document slug), ignoring them", () => {
+    const { doc, a, aLeaf, b } = library();
+    // As an older version wrote them: a slug on each top, and a target naming its document.
+    const old = doc.fork();
+    old.apply([{ op: "create", parent: b, kind: "note", quote: "Beta", ref: { kind: "node", id: aLeaf, path: ["Alpha part"] } }], "Link");
+    const link = notesOf(old.snap(), b)[0];
+    const hash = old.stateHash();
+    old.tree.getNodeByID(a)!.data.set("slug", "alpha");
+    old.tree.getNodeByID(b)!.data.set("slug", "beta");
+    old.tree.getNodeByID(link)!.data.set("ref", { kind: "node", id: aLeaf, doc: "alpha", path: ["Alpha part"] } as never);
+    old.loro.commit();
+    const back = Doc.load(old.snapshotBytes(), "reader");
+    const snap = back.snap();
+    expect(Object.keys(snap.nodes[a])).not.toContain("slug");
+    expect(back.shape(snap, a)).toBe(doc.shape(doc.snap(), a));
+    expect(back.stateHash()).toBe(hash);
+    // The old target still goes where it went, and writing works as ever.
+    expect(snap.nodes[link].ref).toMatchObject({ kind: "node", id: aLeaf });
+    back.apply([{ op: "update", id: b, title: "Beta renamed" }], "Rename");
+    expect(back.snap().nodes[b].title).toBe("Beta renamed");
   });
 
   it("copies a subtree whole: content, notes with their anchors, authorship", () => {

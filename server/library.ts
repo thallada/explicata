@@ -3,7 +3,7 @@
  *
  *   <data>/library/<branch>.loro    the library on that branch
  *   <data>/library/migrated.json    what was brought over from the per-document layout, if anything was
- *   <data>/library.json             starter documents already imported, so a deleted one stays deleted
+ *   <data>/library.json             starter files already imported (by file name), so a deleted one stays deleted
  *
  * Branch names are percent-encoded into file names, so no request can name a file outside it.
  * Writes are gathered for a moment before they go to disk: with every document in one file, a
@@ -14,10 +14,10 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join } from "node:path";
 import { FormatError } from "../src/core/format";
 import { listDocs } from "../src/core/library";
-import { Doc, findDoc } from "../src/core/model";
-import { SEED_SLUG, writeText } from "../src/core/seed";
+import { Doc } from "../src/core/model";
+import { writeText } from "../src/core/seed";
 import { slugify } from "../src/core/text";
-import { migrate } from "./migrate";
+import { SEED_KEY, migrate } from "./migrate";
 import { writeAtomic } from "./util";
 
 export const validBranch = (b: string) => b.length > 0 && b.length <= 100 && !/[\u0000-\u001f]/.test(b);
@@ -97,7 +97,7 @@ export class LibraryStore {
     this.save(name);
   }
 
-  // ---- starter documents ----
+  // ---- starter files ----
 
   private libraryFile() {
     return join(this.data, "library.json");
@@ -114,34 +114,33 @@ export class LibraryStore {
     if (!ids.includes(id)) writeFileSync(this.libraryFile(), JSON.stringify({ imported: [...ids, id] }, null, 2) + "\n");
   }
 
-  /** The first document, written once. Like a library document, it is not written again after being deleted. */
+  /** The first tree, written once. Like a starter file, it is not written again after being deleted. */
   seedFirst(write: (doc: Doc) => void) {
-    if (findDoc(this.main.snap(), SEED_SLUG) || this.imported().includes(SEED_SLUG)) return;
+    if (this.imported().includes(SEED_KEY)) return;
     write(this.main);
     this.save("main");
-    this.markImported(SEED_SLUG);
-    this.log("seeded the first document from src/seed");
+    this.markImported(SEED_KEY);
+    this.log("seeded the first tree from src/seed");
   }
 
   /**
-   * Import each starter file whose slug (its file name) has never been imported, as a document at
-   * the end of the library. A file that does not parse is logged and skipped (and tried again next
-   * start); it never stops the server.
+   * Import each starter file that has never been imported (by its file name), as a child of the
+   * root at its end. A file that does not parse is logged and skipped (and tried again next start);
+   * it never stops the server.
    */
   importLibrary(dir: string) {
     if (!existsSync(dir)) return;
     const done = new Set(this.imported());
     let changed = false;
     for (const f of readdirSync(dir).filter((f) => f.endsWith(".md")).sort()) {
-      const slug = slugify(f.slice(0, -3));
-      if (done.has(slug)) continue;
+      const key = slugify(f.slice(0, -3));
+      if (done.has(key)) continue;
       try {
         const text = readFileSync(join(dir, f), "utf8");
-        const free = !findDoc(this.main.snap(), slug);
-        const id = writeText(this.main, text, `library/${f}`, { slug: free ? slug : undefined });
-        this.markImported(slug);
+        const id = writeText(this.main, text, `library/${f}`);
+        this.markImported(key);
         changed = true;
-        this.log(`library: imported ${f} as /doc/${this.main.snap().nodes[id].slug}`);
+        this.log(`library: imported ${f} as “${this.main.snap().nodes[id].title}”`);
       } catch (err) {
         this.log(`library: skipped ${f}:\n  ${err instanceof FormatError ? err.problems.join("\n  ") : String(err)}`);
       }

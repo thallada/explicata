@@ -7,8 +7,8 @@
  *                                                             recall against the labels
  *   IE_DATA=/tmp/x npx tsx scripts/linkEval.ts trace [docs…]   offline: the traces, for labelling
  *
- * The sample is the first SAMPLE sections (in reading order, document text included) of each named
- * document that have at least 40 words. Labels: tests/fixtures/link-labels.json, one entry per
+ * The sample is the first SAMPLE sections (in reading order, the top's own text included) of each
+ * named file's tree (by file name, without .md) that have at least 40 words. Labels: tests/fixtures/link-labels.json, one entry per
  * phrase (by its normalised key) per section, saying whether it is worth linking and to what.
  * `warm` goes to Wikipedia through the client (serial, spaced as it enforces) and stops at a budget
  * of requests (IE_EVAL_BUDGET, default 380); nothing but candidate phrases is sent. The embedding
@@ -17,7 +17,7 @@
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { importDoc } from "../src/core/library";
-import { Doc, ancestorsInDoc, documents, sections, type NodeId, type Snap } from "../src/core/model";
+import { Doc, ancestorsBelowRoot, sections, type NodeId, type Snap } from "../src/core/model";
 import { embedder } from "../server/embed";
 import { extract } from "../server/links/extract";
 import { NodeIndex } from "../server/links/nodeIndex";
@@ -32,15 +32,16 @@ const BUDGET = Number(process.env.IE_EVAL_BUDGET ?? 380);
 const DOCS = rest.length ? rest : ["octopus-minds", "fixed-points", "origin-of-the-elements", "invention-of-writing"];
 const LABELS = resolve("tests/fixtures/link-labels.json");
 
-// The whole starter library, so that titles in other documents can be matched as they would be.
+// The whole starter library, so that titles under other tops can be matched as they would be.
 const doc = Doc.library("eval");
-for (const f of readdirSync("library").filter((x) => x.endsWith(".md")).sort()) importDoc(doc, readFileSync(join("library", f), "utf8"), f, { creator: "eval", slug: f.replace(/\.md$/, "") });
+const byFile = new Map<string, NodeId>();
+for (const f of readdirSync("library").filter((x) => x.endsWith(".md")).sort()) byFile.set(f.replace(/\.md$/, ""), importDoc(doc, readFileSync(join("library", f), "utf8"), f, { creator: "eval" }));
 const snap = doc.snap();
 
 const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
 function sample(snap: Snap, slug: string): NodeId[] {
-  const d = documents(snap).find((x) => snap.nodes[x].slug === slug);
-  if (!d) throw new Error(`no document ${slug}`);
+  const d = byFile.get(slug);
+  if (!d) throw new Error(`no file library/${slug}.md`);
   const out: NodeId[] = [];
   const visit = (id: NodeId) => {
     if (out.length < SAMPLE && words(snap.nodes[id].body) >= 40) out.push(id);
@@ -49,7 +50,7 @@ function sample(snap: Snap, slug: string): NodeId[] {
   visit(d);
   return out;
 }
-const pathOf = (id: NodeId) => [...ancestorsInDoc(snap, id).reverse().slice(1), id].map((x) => snap.nodes[x].title).join(" › ") || snap.nodes[id].title;
+const pathOf = (id: NodeId) => [...ancestorsBelowRoot(snap, id).reverse().slice(1), id].map((x) => snap.nodes[x].title).join(" › ") || snap.nodes[id].title;
 
 // `sample`: the sampled sections' texts only, for labelling before the scanner has seen them.
 if (mode === "sample") {

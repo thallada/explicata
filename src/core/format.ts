@@ -1,8 +1,8 @@
 /**
- * The text format for documents (.md), used for the starter library and for export and import.
+ * The text format for a subtree (.md), used for the starter library and for export and import.
  * No DOM or node dependencies: the server and the browser share it.
  *
- *   # Document title
+ *   # Title of the subtree's top node
  *
  *   Root body: paragraphs separated by blank lines.
  *
@@ -15,10 +15,10 @@
  *     ^ "quote from this note" note: a note nested in the note it is indented under
  *   ^ "other words" link -> w:Fixed-point combinator          a link: a target and no text
  *   ^ "more words" note why -> w:Hoyle state: body            a note that also has a target
- *   ## Section title -> /doc-slug/Section/Child               a section about something elsewhere
+ *   ## Section title -> /Top title/Section/Child              a section about something elsewhere
  *
- * Targets are written as in src/core/ref.ts: w:Title, /document/Section/…, ./Section (in this
- * document), https://… An arrow is only read as a target when what follows looks like one, so
+ * Targets are written as in src/core/ref.ts: w:Title, /Top title/Section/… (from the library root),
+ * ./Section (below this file's top), https://… An arrow is only read as a target when what follows looks like one, so
  * older files with "->" in a lens or a title still read as they did; a title whose "->" would be
  * misread is written with "-\>".
  *
@@ -30,7 +30,7 @@
  */
 import type { SeedNode, SeedNote } from "../seed/types";
 import { nodeRef } from "./links";
-import { anchorLost, descendants, docOf, notesOf, sections, type NodeId, type Snap } from "./model";
+import { anchorLost, ancestors, descendants, notesOf, sections, type NodeId, type Snap } from "./model";
 import { formatTarget, looksLikeTarget, quoteStr, readQuoted, readTarget, type Ref } from "./ref";
 import type { Form } from "./text";
 
@@ -106,7 +106,7 @@ function parseMarker(s: string): { quote: string; form: Form | "link"; lens: str
   if (form !== "link" && !FORMS.includes(form)) return `unknown form "${m[1]}" (expected gloss, note, passage or link)`;
   let tail = rest.slice(m[0].length).trimStart();
   if (form === "link") {
-    if (!tail.startsWith("->")) return "a link needs a target: -> w:Title, -> /document/Section or -> https://…";
+    if (!tail.startsWith("->")) return "a link needs a target: -> w:Title, -> /Top title/Section or -> https://…";
     const r = readArrow(tail);
     if (typeof r === "string") return r;
     if (r.rest) return "a link has no text of its own; write a note (^ \"…\" note -> target: text) to say something about it";
@@ -157,7 +157,7 @@ function joinLines(lines: string[]): string {
 const bodyOf = (p: Para) => p.paras.map(joinLines).join("\n\n");
 
 /**
- * Parse a document. Throws FormatError naming every problem: syntax, with its line, and every
+ * Parse a file. Throws FormatError naming every problem: syntax, with its line, and every
  * quote that is not in its parent's text, with the section it is in.
  */
 export function parseDoc(text: string, name = "document"): SeedNode {
@@ -190,7 +190,7 @@ export function parseDoc(text: string, name = "document"): SeedNode {
         root = sec;
         stack = [sec];
       } else if (depth === 0) {
-        at(n, `a document has one "# " heading; this is a second one`);
+        at(n, `a file has one "# " heading; this is a second one`);
         continue;
       } else if (depth > stack.length) {
         at(n, `this heading is ${depth + 1} deep but the section above it is only ${stack.length}: a level is skipped`);
@@ -311,20 +311,20 @@ export interface Skipped {
 }
 
 /**
- * Write a document (a subtree, by default the whole tree) in the text format. Each note is written with the current text of its anchor.
+ * Write a subtree (by default the whole tree) in the text format. Each note is written with the current text of its anchor.
  * Orphaned notes, and sections under notes, are left out and counted.
  */
 export function serializeDoc(snap: Snap, from = snap.root): { text: string; skipped: Skipped } {
   const out: string[] = [];
   const skipped: Skipped = { orphans: 0, inNotes: 0 };
   const push = (...ls: string[]) => out.push(...ls);
-  const here = snap.nodes[from].slug;
-  // A node target is written from where its node is now, relative when it is in this document.
+  // A node target is written from where its node is now: below this subtree's top relative to it ("./"), else from the library root.
+  const depth = ancestors(snap, from).length;
   const target = (r: Ref) => {
-    if (r.kind !== "node") return formatTarget(r);
-    const live = r.id && snap.nodes[r.id] ? nodeRef(snap, r.id) : r;
-    const inside = r.id && snap.nodes[r.id] ? docOf(snap, r.id) === (snap.library ? from : snap.root) : !!here && r.doc === here;
-    return formatTarget(inside ? { ...live, doc: undefined } : live, here);
+    if (r.kind !== "node" || !r.id || !snap.nodes[r.id]) return formatTarget(r);
+    const live = nodeRef(snap, r.id);
+    const inside = r.id === from || ancestors(snap, r.id).includes(from);
+    return formatTarget(inside ? { ...live, path: live.path!.slice(depth), rel: true } : live);
   };
 
   const note = (id: NodeId, level: number, parentBody: string) => {

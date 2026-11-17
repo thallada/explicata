@@ -16,7 +16,7 @@
  * of its nodes, and writes new ones under the first in library order, which every replica agrees
  * on. So they read as one, with nothing rewritten.
  */
-import { docOf, type NodeId, type Op, type Snap } from "./model";
+import { topOf, type NodeId, type Op, type Snap } from "./model";
 import { wikiTitle } from "./ref";
 import type { Range } from "./text";
 
@@ -132,9 +132,9 @@ export function containers(snap: Snap): NodeId[] {
   return snap.library ? snap.nodes[snap.root].children.filter((c) => snap.nodes[c].articles) : [];
 }
 
-/** Whether a node is the Wikipedia container or anything in it: never a document's text. */
+/** Whether a node is the Wikipedia container or anything in it: never the library's own text. */
 export function inArticles(snap: Snap, id: NodeId): boolean {
-  const d = docOf(snap, id);
+  const d = topOf(snap, id);
   return !!d && !!snap.nodes[d].articles;
 }
 

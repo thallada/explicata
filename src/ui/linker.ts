@@ -15,7 +15,7 @@ import type { Related as RelatedRow, Suggestion as Sugg } from "../../server/lin
 import { inArticles } from "../core/article";
 import { applyLinks, nodeRef, phraseKey } from "../core/links";
 import type { Mark } from "../core/marks";
-import { ancestors, docOf, isLink, label, notesOf, type Doc, type NodeId, type Op, type Snap } from "../core/model";
+import { ancestors, isLink, topOf, label, notesOf, type Doc, type NodeId, type Op, type Snap } from "../core/model";
 import { describeTarget, sameTarget, type Ref } from "../core/ref";
 import { clip, overlaps, type Range } from "../core/text";
 import type { Nearby } from "../llm/prompts";
@@ -255,13 +255,13 @@ export class Linker {
   /** The request a scan sends: the node's own text and context, from this replica, which may be ahead of the server's. */
   private request(snap: Snap, id: NodeId, forced: Mark[]) {
     const n = snap.nodes[id];
-    const d = docOf(snap, id);
+    const d = topOf(snap, id);
     return {
       node: id,
       text: n.body,
       title: n.title,
-      doc: d,
-      docTitle: d ? snap.nodes[d].title : "",
+      top: d,
+      topTitle: d ? snap.nodes[d].title : "",
       ancestors: ancestors(snap, id),
       occupied: notesOf(snap, id).flatMap((c) => snap.nodes[c].anchors.map((a) => [a.start, a.end, !!snap.nodes[c].ref])),
       rejected: n.nolink ?? [],
@@ -455,8 +455,8 @@ export class Linker {
       const snap = this.host.doc().snap();
       if (!entry || !snap.nodes[id]) continue;
       this.relatedBusy++;
-      const { node, text, title, doc, docTitle, ancestors: up } = this.request(snap, id, []);
-      void post("related", { node, text, title, doc, docTitle, ancestors: up })
+      const { node, text, title, top, topTitle, ancestors: up } = this.request(snap, id, []);
+      void post("related", { node, text, title, top, topTitle, ancestors: up })
         .then(async (res) => {
           const r = res.ok ? ((await res.json()) as { related: RelatedRow[] }) : { related: [] };
           if (this.related.get(id)?.body === entry.body) {

@@ -4,8 +4,8 @@
  *
  *   forced     a [[mark]] the writer typed: verified, then linked (or reported as not found)
  *   library    a phrase that is another section's title (normalised), never the node itself or
- *              an ancestor, other documents preferred
- *   meaning    a section of another document close in meaning to this node, when a phrase here
+ *              an ancestor, other tops' trees preferred
+ *   meaning    a section under another top close in meaning to this node, when a phrase here
  *              names it; when nothing here names it, it is only listed as Related (never forced
  *              onto arbitrary words)
  *   wikipedia  a batched lookup of the candidates; disambiguation pages resolved by embedding fit
@@ -16,9 +16,12 @@
  * is dropped. Then Wikipedia's own manners: first mention only, a few links a paragraph, the
  * strongest kept. See judge() for the rule. Only phrases and search queries go to Wikipedia;
  * embeddings are local.
+ *
+ * "The same text" here means the tree under one top (a child of the library root, `topOf`): the
+ * rule was tuned with that as the unit, for centrality, first mention and "meaning from elsewhere".
  */
 import { inArticles } from "../../src/core/article";
-import { docOf, notesOf, sections, ancestors as ancestorsOf, descendants, type Doc, type NodeId, type Snap } from "../../src/core/model";
+import { notesOf, sections, topOf, ancestors as ancestorsOf, descendants, type Doc, type NodeId, type Snap } from "../../src/core/model";
 import { nodeRef, targetKey } from "../../src/core/links";
 import type { Mark } from "../../src/core/marks";
 import type { Nearby } from "../../src/llm/prompts";
@@ -77,7 +80,8 @@ export interface Decision {
 export interface Related {
   node: NodeId;
   title: string;
-  doc: string;
+  /** Where it is: the title of the top it is under. */
+  top: string;
   score: number;
   why: string;
 }
@@ -87,8 +91,9 @@ export interface ScanInput {
   /** The node's text; by default the server's copy. A browser sends its own, which may be newer. */
   text?: string;
   title?: string;
-  doc?: NodeId | null;
-  docTitle?: string;
+  /** The top the node is under, and its title (a page sends them for a node the server may not have yet). */
+  top?: NodeId | null;
+  topTitle?: string;
   ancestors?: NodeId[];
   /** Spans already under a note: [start, end, linked]. */
   occupied?: [number, number, boolean][];
@@ -118,7 +123,7 @@ export interface TraceRow {
   chosen: boolean;
   why: string;
   /** What judge() saw. */
-  features: { words: number; rarity: number; exact: boolean; redirect: boolean; sense: boolean; margin: number | null; searched: boolean; central: boolean; firstInDoc: boolean; sentenceStart: boolean };
+  features: { words: number; rarity: number; exact: boolean; redirect: boolean; sense: boolean; margin: number | null; searched: boolean; central: boolean; firstInTop: boolean; sentenceStart: boolean };
 }
 
 export interface ScanResult {
@@ -203,14 +208,14 @@ interface Hit {
   /** Found by title search, not by lookup. */
   searched: boolean;
   central: boolean;
-  firstInDoc: boolean;
-  /** A library target in the same document as the node. */
-  sameDoc?: boolean;
+  firstInTop: boolean;
+  /** A library target under the same top as the node. */
+  sameTop?: boolean;
 }
 
 /** A hit with the defaults most sources share: an exact title, no description or fit yet, nothing special about it. */
 const hitOf = (c: Candidate, target: Ref, source: Source, title: string, more: Partial<Hit> = {}): Hit => ({
-  c, target, source, title, description: null, fit: null, exact: true, redirect: false, sense: false, searched: false, central: false, firstInDoc: true, ...more,
+  c, target, source, title, description: null, fit: null, exact: true, redirect: false, sense: false, searched: false, central: false, firstInTop: true, ...more,
 });
 
 const keyWords = (key: string) => key.split(" ").filter(Boolean).length;
@@ -235,12 +240,12 @@ const NOT_A_CONCEPT = /^(surname|given name|family name|index of|list of|topics 
  *            ("Old World", "Sun"), from fit 0.55; never a country, a surname page or a list
  *   noun     (one lower-case word) only if rare (rank ≥ 8,000); auto only when very rare (≥ 15,000),
  *            the exact title, and fit ≥ 0.70
- *   library  a section title: in the same document from fit 0.72 (auto) or 0.64 (suggest); in
- *            another document only a multi-word or uncommon title, and never auto below 0.72
+ *   library  a section title: under the same top from fit 0.72 (auto) or 0.64 (suggest); under
+ *            another top only a multi-word or uncommon title, and never auto below 0.72
  *
  * Never auto: a disambiguation sense chosen by fit (suggested only for names and terms, with a
  * clear margin), a title found by search, a redirect to a differently named page from one word, and
- * a concept central to the document (linked once, at its first mention, and only suggested).
+ * a concept central to the top's tree (linked once, at its first mention, and only suggested).
  */
 export function judge(h: Hit, t: Tuning = TUNING): Judgement {
   const c = h.c;
@@ -251,28 +256,28 @@ export function judge(h: Hit, t: Tuning = TUNING): Judgement {
     const ok = fit === null ? !h.sense : fit >= t.suggest.term - 0.1;
     return { score: fit ?? 0.7, tier: ok ? "auto" : null, why: `marked by the writer; ${fit === null ? "found" : f}` };
   }
-  if (h.central && !h.firstInDoc) return { score: 0, tier: null, why: "central to the document: linked once, at its first mention" };
+  if (h.central && !h.firstInTop) return { score: 0, tier: null, why: "central to the text: linked once, at its first mention" };
   const tierBy = (autoOk: boolean, autoAt: number, suggestAt: number): Tier | null => {
     // Text only (no embeddings): the strongest are suggested, nothing is applied unasked.
     if (fit === null) return autoOk ? "suggest" : null;
-    // Unasked, a concept is linked once per document, where it is first mentioned; later mentions are only suggested.
-    if (autoOk && fit >= autoAt && !h.central && h.firstInDoc) return "auto";
+    // Unasked, a concept is linked once per top's tree, where it is first mentioned; later mentions are only suggested.
+    if (autoOk && fit >= autoAt && !h.central && h.firstInTop) return "auto";
     return fit >= suggestAt ? "suggest" : null;
   };
   const done = (tier: Tier | null, why: string[]) => ({ score: Math.round((fit ?? 0.6) * 1000) / 1000, tier, why: why.filter(Boolean).join("; ") });
 
   if (h.source === "library") {
     const strong = c.words > 1 || c.rarity >= t.nounRank.auto;
-    if (!h.sameDoc && !strong) return done(null, ["a common word that titles a section elsewhere"]);
+    if (!h.sameTop && !strong) return done(null, ["a common word that titles a section elsewhere"]);
     // A one-word title ("The comma", "Pythagorean") is a heading more often than the concept itself: suggested at most.
-    const tier = tierBy(keyWords(c.key) > 1, t.auto.library, h.sameDoc ? t.suggest.library : t.auto.library - 0.06);
+    const tier = tierBy(keyWords(c.key) > 1, t.auto.library, h.sameTop ? t.suggest.library : t.auto.library - 0.06);
     return done(h.central && tier ? "suggest" : tier, [`the title of “${h.title}” in this library`, f]);
   }
 
   const desc = h.description ?? "";
   if (NOT_A_CONCEPT.test(desc)) return done(null, [`“${h.title}” is ${desc.toLowerCase()}`]);
   const why = [f];
-  if (h.central) why.push("central to the document: first mention only");
+  if (h.central) why.push("central to the text: first mention only");
   if (h.sense) {
     // A sense chosen by fit: offered for names and terms when it clearly beats the next one.
     why.push(`one of the senses of “${c.text}”`);
@@ -338,11 +343,11 @@ function titleIndex(snap: Snap): Map<string, NodeId[]> {
   return ix;
 }
 
-/** For each document: its sections in reading order, each with its normalised text. */
-const docCache = new WeakMap<object, { id: NodeId; text: string }[]>();
-function docTexts(snap: Snap, doc: NodeId): { id: NodeId; text: string }[] {
-  const d = snap.nodes[doc];
-  let out = docCache.get(d);
+/** For each top: the sections of its tree in reading order, each with its normalised text. */
+const topCache = new WeakMap<object, { id: NodeId; text: string }[]>();
+function topTexts(snap: Snap, top: NodeId): { id: NodeId; text: string }[] {
+  const d = snap.nodes[top];
+  let out = topCache.get(d);
   if (out) return out;
   out = [];
   const visit = (id: NodeId) => {
@@ -350,8 +355,8 @@ function docTexts(snap: Snap, doc: NodeId): { id: NodeId; text: string }[] {
     out!.push({ id, text: ` ${phraseKey(`${n.title} ${n.body}`)} ` });
     for (const c of sections(snap, id)) visit(c);
   };
-  visit(doc);
-  docCache.set(d, out);
+  visit(top);
+  topCache.set(d, out);
   return out;
 }
 
@@ -376,8 +381,8 @@ export class Linker {
     const n = snap.nodes[input.node];
     const text = input.text ?? n?.body ?? "";
     const title = input.title ?? n?.title ?? "";
-    const docId = input.doc !== undefined ? input.doc : n ? docOf(snap, input.node) : null;
-    const docTitle = input.docTitle ?? (docId && snap.nodes[docId] ? snap.nodes[docId].title : "");
+    const topId = input.top !== undefined ? input.top : n ? topOf(snap, input.node) : null;
+    const topTitle = input.topTitle ?? (topId && snap.nodes[topId] ? snap.nodes[topId].title : "");
     const ancestors = new Set(input.ancestors ?? (n ? ancestorsOf(snap, input.node) : []));
     const occupied = input.occupied ?? (n ? notesOf(snap, input.node).flatMap((c) => snap.nodes[c].anchors.map((a): [number, number, boolean] => [a.start, a.end, !!snap.nodes[c].ref])) : []);
     const rejected = new Set(input.rejected ?? n?.nolink ?? []);
@@ -396,16 +401,16 @@ export class Linker {
     // Targets already linked in this node: first mention means they are not offered again.
     const linkedHere = new Set(n ? notesOf(snap, input.node).map((c) => snap.nodes[c].ref).filter((r): r is Ref => !!r).map(targetKey) : []);
 
-    // Centrality: in the document's title, or in many of its sections.
-    const doc = docId && snap.nodes[docId] ? docTexts(snap, docId) : [];
-    const docTitleKey = ` ${phraseKey(docTitle)} `;
+    // Centrality: in the top's title, or in many of its tree's sections.
+    const tree = topId && snap.nodes[topId] ? topTexts(snap, topId) : [];
+    const topTitleKey = ` ${phraseKey(topTitle)} `;
     const owner = n?.kind === "note" ? [...ancestors].find((a) => snap.nodes[a]?.kind === "section") ?? input.node : input.node;
     const centrality = (key: string) => {
       const k = ` ${key} `;
-      const holders = doc.filter((d) => d.text.includes(k));
-      const central = docTitleKey.includes(k) || (doc.length >= 6 && holders.length >= Math.max(3, doc.length * 0.3));
-      const firstInDoc = !holders.length || holders[0].id === owner;
-      return { central, firstInDoc };
+      const holders = tree.filter((d) => d.text.includes(k));
+      const central = topTitleKey.includes(k) || (tree.length >= 6 && holders.length >= Math.max(3, tree.length * 0.3));
+      const firstInTop = !holders.length || holders[0].id === owner;
+      return { central, firstInTop };
     };
 
     const exceptSelf = new Set<NodeId>([input.node, ...ancestors]);
@@ -429,15 +434,15 @@ export class Linker {
       if (resolved.has(c)) continue;
       const ids = (titles.get(c.key) ?? []).filter((id) => !exceptSelf.has(id) && snap.nodes[id]);
       if (!ids.length) continue;
-      const pick = ids.find((id) => docOf(snap, id) !== docId) ?? ids[0];
-      const { central, firstInDoc } = centrality(c.key);
-      const d = docOf(snap, pick);
-      hits.push(hitOf(c, nodeRef(snap, pick), c.kind === "forced" ? "forced" : "library", `${snap.nodes[pick].title}${d && d !== pick && d !== docId ? ` (${snap.nodes[d].title})` : ""}`, { central, firstInDoc, sameDoc: d === docId }));
+      const pick = ids.find((id) => topOf(snap, id) !== topId) ?? ids[0];
+      const { central, firstInTop } = centrality(c.key);
+      const d = topOf(snap, pick);
+      hits.push(hitOf(c, nodeRef(snap, pick), c.kind === "forced" ? "forced" : "library", `${snap.nodes[pick].title}${d && d !== pick && d !== topId ? ` (${snap.nodes[d].title})` : ""}`, { central, firstInTop, sameTop: d === topId }));
       resolved.add(c);
     }
 
-    // The text a target must fit: the node in its document.
-    const context = `${docTitle}. ${title}.\n${plain(text)}`.slice(0, 2000);
+    // The text a target must fit: the node under its top.
+    const context = `${topTitle}. ${title}.\n${plain(text)}`.slice(0, 2000);
     const ctx = this.o.embedder ? await this.o.embedder.embed([context]) : null;
     const ctxVec = ctx?.[0] ?? null;
     if (!ctxVec) degraded.push("embeddings unavailable: matched by text only");
@@ -471,8 +476,8 @@ export class Linker {
           continue;
         }
         const key = phraseKey(stripParen(item.title));
-        const { central, firstInDoc } = centrality(c.key);
-        hits.push(hitOf(c, { kind: "wiki", title: item.title, lang: wiki.lang }, "wikipedia", item.title, { description: item.description, exact: key === c.key, redirect: item.redirect, central, firstInDoc }));
+        const { central, firstInTop } = centrality(c.key);
+        hits.push(hitOf(c, { kind: "wiki", title: item.title, lang: wiki.lang }, "wikipedia", item.title, { description: item.description, exact: key === c.key, redirect: item.redirect, central, firstInTop }));
       }
       // Disambiguation pages: the most promising few, by the phrase's own worth.
       const worth = (c: Candidate) => (c.kind === "forced" ? 3 : c.kind === "name" ? 2 : c.kind === "term" ? 1.5 : c.rarity > 15_000 ? 1 : 0);
@@ -489,10 +494,10 @@ export class Linker {
         const scored = await this.fit(ctxVec, r.value.map((s) => ({ title: s.title, description: s.description })));
         if (!scored?.length) continue;
         const [best, next] = scored;
-        const { central, firstInDoc } = centrality(c.key);
+        const { central, firstInTop } = centrality(c.key);
         hits.push(
           hitOf(c, { kind: "wiki", title: best.title, lang: wiki.lang }, "wikipedia", best.title, {
-            description: best.description, fit: best.fit, exact: phraseKey(stripParen(best.title)) === c.key, sense: true, margin: best.fit - (next?.fit ?? 0), central, firstInDoc,
+            description: best.description, fit: best.fit, exact: phraseKey(stripParen(best.title)) === c.key, sense: true, margin: best.fit - (next?.fit ?? 0), central, firstInTop,
           }),
         );
       }
@@ -508,8 +513,8 @@ export class Linker {
         if (!r.ok) continue;
         const match = r.value.find((s) => phraseKey(stripParen(s.title)) === c.key);
         if (!match) continue;
-        const { central, firstInDoc } = centrality(c.key);
-        hits.push(hitOf(c, { kind: "wiki", title: match.title, lang: wiki.lang }, "wikipedia", match.title, { description: match.description, searched: true, central, firstInDoc }));
+        const { central, firstInTop } = centrality(c.key);
+        hits.push(hitOf(c, { kind: "wiki", title: match.title, lang: wiki.lang }, "wikipedia", match.title, { description: match.description, searched: true, central, firstInTop }));
       }
       // Fit for every article hit that has none yet.
       if (ctxVec) {
@@ -519,11 +524,11 @@ export class Linker {
       }
     }
 
-    // 4. Meaning: sections of other documents close to this node.
+    // 4. Meaning: sections under other tops close to this node.
     const related: Related[] = [];
     if (ctxVec) {
       const exclude = new Set<NodeId>([...exceptSelf, ...(n ? descendants(snap, input.node) : [])]);
-      const near = (await this.o.index.near(context, { exclude, doc: docId, snap, vector: ctxVec, k: 8 })) ?? [];
+      const near = (await this.o.index.near(context, { exclude, top: topId, snap, vector: ctxVec, k: 8 })) ?? [];
       for (const hit of near) {
         if (hit.score < t.relatedAt) continue;
         const m = snap.nodes[hit.id as NodeId];
@@ -531,13 +536,12 @@ export class Linker {
         const mRef = m.ref?.kind === "wiki" ? m.ref.title : null;
         // A phrase here names it: its title's head ("the triple-alpha process" ← "triple-alpha process"), or what it is about.
         const namer = cands.find((c) => !resolved.has(c) && ((c.words > 1 && (` ${mKey}`.endsWith(` ${c.key}`) || ` ${mKey} `.includes(` ${c.key} `))) || (mRef && phraseKey(stripParen(mRef)) === c.key)));
-        const d = docOf(snap, m.id);
-        const where = d && d !== m.id ? snap.nodes[d].title : "its own document";
+        const where = whereIs(snap, m.id);
         if (namer) {
           hits.push(hitOf(namer, nodeRef(snap, m.id), "meaning", `${m.title} (${where})`, { fit: hit.score }));
           resolved.add(namer);
         } else if (related.length < 5) {
-          related.push({ node: m.id, title: m.title, doc: where, score: Math.round(hit.score * 1000) / 1000, why: `close in meaning (${hit.score.toFixed(2)})${shared(context, `${m.title} ${m.body}`)}` });
+          related.push({ node: m.id, title: m.title, top: where, score: Math.round(hit.score * 1000) / 1000, why: `close in meaning (${hit.score.toFixed(2)})${shared(context, `${m.title} ${m.body}`)}` });
         }
       }
     }
@@ -594,7 +598,7 @@ export class Linker {
       const picked = new Set(chosen.map((x) => x.h));
       for (const h of best.values()) {
         const j = judge(h, t);
-        input.trace.push({ phrase: h.c.text, key: h.c.key, start: h.c.start, kind: h.c.kind, source: h.source, target: h.target.kind === "wiki" ? `w:${h.target.title}` : `node:${h.title}`, description: h.description, fit: h.fit, score: j.score, tier: picked.has(h) ? j.tier : null, chosen: picked.has(h), why: j.why, features: { words: h.c.words, rarity: h.c.rarity, exact: h.exact, redirect: h.redirect, sense: h.sense, margin: h.margin ?? null, searched: h.searched, central: h.central, firstInDoc: h.firstInDoc, sentenceStart: h.c.sentenceStart } });
+        input.trace.push({ phrase: h.c.text, key: h.c.key, start: h.c.start, kind: h.c.kind, source: h.source, target: h.target.kind === "wiki" ? `w:${h.target.title}` : `node:${h.title}`, description: h.description, fit: h.fit, score: j.score, tier: picked.has(h) ? j.tier : null, chosen: picked.has(h), why: j.why, features: { words: h.c.words, rarity: h.c.rarity, exact: h.exact, redirect: h.redirect, sense: h.sense, margin: h.margin ?? null, searched: h.searched, central: h.central, firstInTop: h.firstInTop, sentenceStart: h.c.sentenceStart } });
       }
     }
     const suggestions = chosen
@@ -625,29 +629,28 @@ export class Linker {
   }
 
   /**
-   * Sections of other documents close in meaning to a node, for its Related list: derived, never
+   * Sections under other tops close in meaning to a node, for its Related list: derived, never
    * stored. Ones the node already links to are left out.
    */
-  async related(node: NodeId, k = 5, given: Pick<ScanInput, "text" | "title" | "doc" | "docTitle" | "ancestors"> = {}): Promise<{ related: Related[]; degraded: string[] }> {
+  async related(node: NodeId, k = 5, given: Pick<ScanInput, "text" | "title" | "top" | "topTitle" | "ancestors"> = {}): Promise<{ related: Related[]; degraded: string[] }> {
     const snap = this.o.doc().snap();
     const n = snap.nodes[node];
     // A node the server has not seen yet (its replica is a moment behind the browser's) is described by the request.
     if (!n && given.text === undefined) return { related: [], degraded: [] };
-    const docId = given.doc !== undefined ? given.doc : docOf(snap, node);
-    const docTitle = given.docTitle ?? (docId && snap.nodes[docId] ? snap.nodes[docId].title : "");
-    const context = `${docTitle}. ${given.title ?? n?.title ?? ""}.\n${plain(given.text ?? n!.body)}`.slice(0, 2000);
+    const topId = given.top !== undefined ? given.top : topOf(snap, node);
+    const topTitle = given.topTitle ?? (topId && snap.nodes[topId] ? snap.nodes[topId].title : "");
+    const context = `${topTitle}. ${given.title ?? n?.title ?? ""}.\n${plain(given.text ?? n!.body)}`.slice(0, 2000);
     const vec = this.o.embedder ? (await this.o.embedder.embed([context]))?.[0] ?? null : null;
     if (!vec) return { related: [], degraded: ["embeddings unavailable: no Related list"] };
     const linked = new Set(n ? notesOf(snap, node).map((c) => snap.nodes[c].ref).flatMap((r) => (r?.kind === "node" && r.id ? [r.id] : [])) : []);
     const exclude = new Set<NodeId>([node, ...(given.ancestors ?? (n ? ancestorsOf(snap, node) : [])), ...(n ? descendants(snap, node) : [])]);
-    const near = (await this.o.index.near(context, { exclude, doc: docId, snap, vector: vec, k: k + linked.size + 3 })) ?? [];
+    const near = (await this.o.index.near(context, { exclude, top: topId, snap, vector: vec, k: k + linked.size + 3 })) ?? [];
     const related = near
       .filter((h) => h.score >= this.tuning.relatedAt && !linked.has(h.id as NodeId))
       .slice(0, k)
       .map((h): Related => {
         const m = snap.nodes[h.id as NodeId];
-        const d = docOf(snap, m.id);
-        return { node: m.id, title: m.title, doc: d && d !== m.id ? snap.nodes[d].title : "its own document", score: Math.round(h.score * 1000) / 1000, why: `close in meaning (${h.score.toFixed(2)})${shared(context, `${m.title} ${m.body}`)}` };
+        return { node: m.id, title: m.title, top: whereIs(snap, m.id), score: Math.round(h.score * 1000) / 1000, why: `close in meaning (${h.score.toFixed(2)})${shared(context, `${m.title} ${m.body}`)}` };
       });
     return { related, degraded: [] };
   }
@@ -665,8 +668,8 @@ export class Linker {
     const hits = await this.o.index.hybrid(query, k, (id) => !exclude.has(id as NodeId) && !!snap.nodes[id as NodeId]);
     return hits.map((h) => {
       const m = snap.nodes[h.id as NodeId];
-      const d = docOf(snap, m.id);
-      return { handle: m.id, title: m.title, document: d ? snap.nodes[d].title : "" };
+      const d = topOf(snap, m.id);
+      return { handle: m.id, title: m.title, top: d ? snap.nodes[d].title : "" };
     });
   }
 
@@ -685,6 +688,12 @@ export class Linker {
     const out = items.map((i, k) => ({ ...i, fit: this.calibrate(dot(ctx, this.senseVectors.vectorOf(texts[k].id)!)) }));
     return sorted ? out.sort((a, b) => b.fit - a.fit) : out;
   }
+}
+
+/** Where a related section is, in words: the title of the top it is under, or "the library" for a top itself. */
+function whereIs(snap: Snap, id: NodeId): string {
+  const d = topOf(snap, id);
+  return d && d !== id ? snap.nodes[d].title : "the library";
 }
 
 /** The uncommon words two texts share, for saying why they are related. */

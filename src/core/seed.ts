@@ -1,6 +1,6 @@
 /**
- * Writes a hand-written tree into the library as a new document: the first document (the project
- * describing itself, grown from the verbatim prompt), and every document read from the text
+ * Writes a hand-written tree into the library as a new child of the root: the first one (the
+ * project describing itself, grown from the verbatim prompt), and every file read from the text
  * format (src/core/format.ts).
  */
 import { healLinks } from "./links";
@@ -10,41 +10,36 @@ import type { SeedNode, SeedNote } from "../seed/types";
 import { parseDoc } from "./format";
 import { clip } from "./text";
 
-const ROOT_TITLE = "Infinispand";
-/** The first document's slug, which the single-document version's links and routes still mean. */
-export const SEED_SLUG = "infinite-expand";
+export const SEED_TITLE = "Infinispand";
 
 export interface BuildOptions {
-  /** Name on the commit that creates the document ("seed" by default, as on the commits under it). */
+  /** Name on the commit that creates the tree's top ("seed" by default, as on the commits under it). */
   creator?: string;
-  /** Who wrote the document's own text. A human one is pinned; a model one may be rewritten. */
+  /** Who wrote the top's own text. A human one is pinned; a model one may be rewritten. */
   rootActor?: Actor;
   /** First word of each commit message: "Pre-generate “Section”". */
   verb?: string;
-  /** The document's slug; by default one is made from its title. */
-  slug?: string;
 }
 
 /**
- * Write a tree into a library as a new document at its end, through the op API: one commit for
- * the document itself, one for its notes and one per top-level section. Everything was written
- * together, so everything is blessed and nothing starts out stale; below the document it is
- * authored as the model, so a model may later rewrite it. Returns the document's node.
+ * Write a tree into a library as a new child of the root, at its end, through the op API: one
+ * commit for the tree's top, one for its notes and one per section under it. Everything was
+ * written together, so everything is blessed and nothing starts out stale; below the top it is
+ * authored as the model, so a model may later rewrite it. Returns the top's node.
  */
 export function writeTree(doc: Doc, top: SeedNode, opts: BuildOptions = {}): NodeId {
   const verb = opts.verb ?? "Pre-generate";
+  // A path written relative to the file's top ("./Section") is stored from the library root.
+  const place = (r: Ref | undefined): Ref | undefined => (r?.kind === "node" && r.rel ? { kind: "node", path: [top.title, ...(r.path ?? [])], ...(r.quote !== undefined ? { quote: r.quote } : {}) } : r);
   const [root] = doc.as(opts.creator ?? "seed", () =>
     doc.apply(
-      [{ op: "create", parent: doc.snap().root, title: top.title, body: top.body, slug: opts.slug, ref: top.target }],
-      `${verb} document “${clip(top.title, 60)}”`,
+      [{ op: "create", parent: doc.snap().root, title: top.title, body: top.body, ref: place(top.target) }],
+      `${verb} “${clip(top.title, 60)}”`,
       { actor: opts.rootActor ?? "llm", tag: "seed" },
     ).created,
   );
   return doc.as("seed", () => {
     const rootBody = doc.snap().nodes[root].body;
-    // A path written relative to the document ("./Section") names this document, now that it has a slug.
-    const slug = doc.snap().nodes[root].slug;
-    const place = (r: Ref | undefined): Ref | undefined => (r?.kind === "node" && !r.doc && slug ? { ...r, doc: slug } : r);
 
     const commit = (message: string, fill: (ops: Op[], next: () => NodeId) => void) => {
       const ops: Op[] = [];
@@ -84,18 +79,19 @@ export function writeTree(doc: Doc, top: SeedNode, opts: BuildOptions = {}): Nod
       });
     }
     // Node targets are found now that everything they could name exists (and links elsewhere in
-    // the library that were waiting for this document find it too).
+    // the library that were waiting for this tree find it too). Where another top has the same
+    // title, a link is found in its own tree first.
     healLinks(doc);
     return root;
   });
 }
 
-/** The first document: the prompt, verbatim and written by a person, with the pre-generated tree under it. */
+/** The first tree: the prompt, verbatim and written by a person, with the pre-generated tree under it. */
 export function writeSeed(doc: Doc, prompt: string, tree: SeedNode[]): NodeId {
-  return writeTree(doc, { title: ROOT_TITLE, body: prompt.trim(), children: tree }, { creator: "tyler", rootActor: "human", slug: SEED_SLUG });
+  return writeTree(doc, { title: SEED_TITLE, body: prompt.trim(), children: tree }, { creator: "tyler", rootActor: "human" });
 }
 
-/** A document from the text format. Throws FormatError listing every problem in the file, writing nothing. */
+/** A tree from the text format. Throws FormatError listing every problem in the file, writing nothing. */
 export function writeText(doc: Doc, text: string, name: string, opts: BuildOptions = {}): NodeId {
   return writeTree(doc, parseDoc(text, name), opts);
 }

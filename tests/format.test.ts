@@ -43,7 +43,7 @@ Deep.
 Last.
 `;
 
-/** A document written into a fresh library: the library, and the document's node. */
+/** A tree written into a fresh library: the library, and the tree's top. */
 function build(top: SeedNode) {
   const doc = Doc.library("test");
   return { doc, id: writeTree(doc, top) };
@@ -125,7 +125,7 @@ describe("parsing", () => {
     expect(p[3]).toMatch(/^doc\.md:9: expected a "quoted" text/);
     expect(p[4]).toMatch(/^doc\.md:10: .*no note above it/);
     expect(p[5]).toMatch(/^doc\.md:11: expected ':'/);
-    expect(p[6]).toMatch(/^doc\.md:13: a document has one "# " heading/);
+    expect(p[6]).toMatch(/^doc\.md:13: a file has one "# " heading/);
     expect(problems("Just text.\n")[0]).toMatch(/text before the "# Title" heading/);
     expect(problems("")).toEqual([`doc.md: no "# Title" heading`]);
   });
@@ -210,9 +210,9 @@ function randomTree(seed: number): SeedNode {
     return n;
   };
   const top = node(0);
-  // A node target names a section of this document by its titles (relative, as the format writes
-  // one inside its own document). Only sections reachable by unique titles: a path is read by the
-  // first title that matches, so a duplicate title names its first holder.
+  // A node target names a section of this tree by its titles below the top (relative, as the format
+  // writes one inside the subtree it exports). Only sections reachable by unique titles: a path is
+  // read by the first title that matches, so a duplicate title names its first holder.
   const paths: string[][] = [[]];
   const walk = (n: SeedNode, path: string[]) => {
     const seen = new Set<string>();
@@ -225,7 +225,7 @@ function randomTree(seed: number): SeedNode {
     }
   };
   walk(top, []);
-  for (const h of pending) h.target = { kind: "node", path: r.pick(paths) };
+  for (const h of pending) h.target = { kind: "node", path: r.pick(paths), rel: true };
   return top;
 }
 
@@ -290,5 +290,46 @@ describe("export and import", () => {
     const count = (d: Doc, id: NodeId, kind: string) => descendants(d.snap(), id).filter((x) => d.snap().nodes[x].kind === kind).length;
     expect(count(back.doc, back.id, "note")).toBe(count(doc, first, "note"));
     expect(count(back.doc, back.id, "section")).toBe(count(doc, first, "section"));
+  });
+});
+
+describe("node targets in the text format", () => {
+  const A = `# Alpha\n\nAlpha text, which mentions Beta.\n\n^ "Beta" link -> /Beta/Gamma\n\n## Part\n\nThe part, which mentions the leaf.\n\n^ "the leaf" link -> ./Part/Leaf\n\n### Leaf\n\nThe leaf.\n`;
+  const B = `# Beta\n\nBeta text.\n\n## Gamma\n\nGamma text.\n`;
+
+  it("writes a path from the library root, or below the exported subtree's top with ./, and reads both back", () => {
+    const doc = Doc.library("test");
+    const b = writeText(doc, B, "beta.md");
+    const a = writeText(doc, A, "alpha.md");
+    let snap = doc.snap();
+    const part = sections(snap, a)[0];
+    const leaf = sections(snap, part)[0];
+    const gamma = sections(snap, b)[0];
+    const [toBeta] = notesOf(snap, a);
+    const [toLeaf] = notesOf(snap, part);
+    expect(snap.nodes[toBeta].ref).toEqual({ kind: "node", id: gamma, path: ["Beta", "Gamma"] });
+    expect(snap.nodes[toLeaf].ref).toEqual({ kind: "node", id: leaf, path: ["Alpha", "Part", "Leaf"] });
+    expect(serializeDoc(snap, a).text).toBe(A);
+    // Exported from lower down, a path inside the subtree is relative to it; one outside it is from the root.
+    const lower = serializeDoc(snap, part).text;
+    expect(lower).toContain(`^ "the leaf" link -> ./Leaf`);
+    // Moved elsewhere, the target is written from where it is now.
+    doc.apply([{ op: "move", id: gamma, parent: a }], "Move");
+    snap = doc.snap();
+    expect(serializeDoc(snap, a).text).toContain(`^ "Beta" link -> ./Gamma`);
+  });
+
+  it("reads a relative path in its own tree, even where another top has the same titles", () => {
+    const doc = Doc.library("test");
+    const first = writeText(doc, A, "alpha.md");
+    const second = writeText(doc, A, "alpha-again.md");
+    const snap = doc.snap();
+    const leafOf = (top: NodeId) => sections(snap, sections(snap, top)[0])[0];
+    const linkIn = (top: NodeId) => snap.nodes[notesOf(snap, sections(snap, top)[0])[0]].ref;
+    expect(linkIn(first)).toMatchObject({ id: leafOf(first) });
+    expect(linkIn(second)).toMatchObject({ id: leafOf(second) });
+    // A path to a tree that is not there yet is kept, and found when it arrives.
+    const b = writeText(doc, B, "beta.md");
+    expect(doc.snap().nodes[notesOf(doc.snap(), first)[0]].ref).toMatchObject({ id: sections(doc.snap(), b)[0] });
   });
 });

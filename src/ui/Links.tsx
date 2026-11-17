@@ -76,7 +76,7 @@ export function LinkCard({ r, compact }: { r: Ref; compact?: boolean }) {
       return (
         <div class="lcard l-node broken">
           <div class="lhead"><span class="lmark l-node">§</span> broken link</div>
-          <div class="lsub">The note this pointed to is gone{r.path?.length ? `: it was “${r.path.join(" › ")}”${r.doc ? ` in ${r.doc}` : ""}` : ""}.</div>
+          <div class="lsub">The note this pointed to is gone{r.path?.length ? `: it was “${r.path.join(" › ")}”` : ""}.</div>
         </div>
       );
     }
@@ -221,7 +221,7 @@ export function NodeRelated({ id }: { id: NodeId }) {
           <li key={r.node} class={forkMark?.(`n:${r.node}`) || undefined} data-related={r.node}>
             <span class="bl-key">{i + 1}</span>
             <span class="bl-title">{r.title}</span>
-            <span class="bl-doc">{r.doc}</span>
+            <span class="bl-doc">{r.top}</span>
             <span class="bl-quote">{r.why}</span>
           </li>
         ))}

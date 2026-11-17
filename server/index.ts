@@ -6,15 +6,15 @@
  * In development it also hosts Vite; in production it serves the built files.
  *
  * The whole library is one database: /api/tree, /api/ops, /api/sync… act on all of it, and
- * /api/docs lists its documents, with a few routes scoped to one. See README.md for the list.
+ * /api/docs lists the root's children, with a few routes scoped to one. See README.md for the list.
  */
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { userInfo } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { VersionVector } from "loro-crdt";
-import { IMPORT_MAX, createDoc, deleteDoc, duplicateDoc, importDoc, listDocs, renameDoc } from "../src/core/library";
-import { Doc, OpError, docOf, findDoc, SLUG, descendants, type NodeId, type Op, type Snap } from "../src/core/model";
+import { IMPORT_MAX, createDoc, deleteDoc, duplicateDoc, findTop, importDoc, listDocs, renameDoc, topName } from "../src/core/library";
+import { Doc, OpError, descendants, topOf, type NodeId, type Op, type Snap } from "../src/core/model";
 import { encodeVV, history } from "../src/core/repo";
 import { FormatError, serializeDoc } from "../src/core/format";
 import { writeSeed } from "../src/core/seed";
@@ -308,7 +308,7 @@ async function libraryApi(req: IncomingMessage, res: ServerResponse, url: URL, a
   }
 
   // …and write to it with the same ops everyone else uses. Node ids are the library's, so one
-  // batch can work across documents (moving a node from one to another is a move).
+  // batch can work anywhere in it (moving a node from one place to another is a move).
   if (action === "ops" && method === "POST") return opsApi(req, res, name);
 
   json(res, 404, { error: "not found" });
@@ -331,8 +331,8 @@ async function opsApi(req: IncomingMessage, res: ServerResponse, name: string) {
 }
 
 /**
- * /api/docs: the library's documents, by slug. Creating, renaming, copying and deleting one are
- * ordinary commits on main, made here for agents that think in documents; the browser makes the
+ * /api/docs: the root's children, by node id or name (TEMPORARY: step 3 removes it). Creating,
+ * renaming, copying and deleting one are ordinary commits on main; the browser makes the
  * same commits in its own replica.
  */
 async function docsApi(req: IncomingMessage, res: ServerResponse, url: URL, parts: string[]) {
@@ -368,12 +368,11 @@ async function docsApi(req: IncomingMessage, res: ServerResponse, url: URL, part
       throw err;
     }
   }
-  if (!SLUG.test(slug)) return json(res, 400, { error: `not a document slug: ${slug}` });
   const name = branch || "main";
   if (!validBranch(name)) return json(res, 400, { error: "not a branch name" });
   const doc = store.branches.get(name);
   if (!doc) return json(res, 404, { error: `no such branch: ${name}` });
-  const id = findDoc(doc.snap(), slug);
+  const id = findTop(doc.snap(), slug);
   if (!id) return json(res, 404, { error: `no such document: ${slug}`, missing: "document" });
 
   if (!action) {
@@ -402,14 +401,14 @@ async function docsApi(req: IncomingMessage, res: ServerResponse, url: URL, part
     const { text, skipped } = serializeDoc(doc.snap(), id);
     res.writeHead(200, {
       "content-type": "text/markdown; charset=utf-8",
-      "content-disposition": `attachment; filename="${slug}${name === "main" ? "" : `-${encodeURIComponent(name)}`}.md"`,
+      "content-disposition": `attachment; filename="${topName(doc.snap().nodes[id].title)}${name === "main" ? "" : `-${encodeURIComponent(name)}`}.md"`,
       "x-skipped": JSON.stringify(skipped),
     });
     return res.end(text);
   }
   if (action === "tree" && method === "GET") {
     const snap = doc.snap();
-    return json(res, 200, { ...subtree(snap, id), conflicts: doc.conflicts().filter((c) => [c.node, c.parent].some((x) => x && snap.nodes[x] && docOf(snap, x) === id)) });
+    return json(res, 200, { ...subtree(snap, id), conflicts: doc.conflicts().filter((c) => [c.node, c.parent].some((x) => x && snap.nodes[x] && topOf(snap, x) === id)) });
   }
   if (action === "ops" && method === "POST") return opsApi(req, res, name);
   json(res, 404, { error: "not found" });
@@ -482,7 +481,7 @@ createServer(async (req, res) => {
 }).listen(PORT, "127.0.0.1", () => {
   const nodes = Object.keys(store.main.snap().nodes).length;
   console.log(`Infinispand  http://localhost:${PORT}   model: ${llm ? `${llm.kind}${llm.model ? `: ${llm.model}` : ""}` : "off (set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN to generate)"}   data: ${DATA}`);
-  console.log(`library: ${store.list().length} documents, ${nodes} nodes, opened in ${startMs} ms`);
+  console.log(`library: ${store.list().length} top-level sections, ${nodes} nodes, opened in ${startMs} ms`);
   console.log(`web research: ${web.on ? `on (at most ${web.searches} searches and ${web.fetches} pages read per request)` : `off${web.why ? ` (${web.why})` : ""}`}`);
   console.log(
     `wikipedia: ${wikiMode === "live" ? `live (${wikiState.lang}.wikipedia.org, ${wikiState.contact ? "with" : "without"} a contact)` : wikiMode === "mock" ? "mock (fixtures, no network)" : "off"}`,

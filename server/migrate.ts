@@ -9,7 +9,7 @@
  * document's ops keep their ids, so its notes stay anchored, its open conflicts stay open, and
  * every commit it ever made can still be checked out and verified (a checkout from before the
  * library shows that document alone, as it stood). One commit then makes the Library root and
- * moves each document's root under it, with its old id as its slug. A document that shares
+ * moves each document's root under it, in order. A document that shares
  * history with one already imported (a duplicate, which began as a byte copy) cannot be imported
  * beside it without merging into it, so it is copied in as content instead.
  *
@@ -21,9 +21,14 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { LoroDoc } from "loro-crdt";
-import { Doc, LIBRARY_TITLE, SLUG, initRoot, randomPeer, type NodeId } from "../src/core/model";
+import { Doc, LIBRARY_TITLE, initRoot, randomPeer, type NodeId } from "../src/core/model";
 import { encodeVV } from "../src/core/repo";
-import { SEED_SLUG } from "../src/core/seed";
+
+/** The first document's old id (its directory, and its entry in library.json). */
+export const SEED_KEY = "infinite-expand";
+const SEED_SLUG = SEED_KEY;
+/** An old document id: also a directory name, so nothing that could leave its directory. */
+const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
 interface Source {
   id: string;
@@ -105,12 +110,8 @@ export function migrate(data: string, log: (m: string) => void): boolean {
   root.data.set("library", true);
   lib.loro.getMap("meta").set("library", randomPeer().toString(36));
   for (const p of plan) {
-    if (p.kept) {
-      tree.move(p.root, root.id, root.children()?.length ?? 0);
-      tree.getNodeByID(p.root)!.data.set("slug", p.src.id);
-    } else {
-      lib.graft(p.snap, p.snap.root, root.id, { slug: p.src.id });
-    }
+    if (p.kept) tree.move(p.root, root.id, root.children()?.length ?? 0);
+    else lib.graft(p.snap, p.snap.root, root.id);
   }
   lib.reread();
   lib.commit(message, "human", "migrate");
@@ -118,8 +119,8 @@ export function migrate(data: string, log: (m: string) => void): boolean {
   // Every document must have come across whole before anything is written. A copied one can
   // differ only by anchors that were already lost (an orphaned note's empty span is not copied).
   const snap = lib.snap();
-  for (const p of plan) {
-    const id = snap.nodes[root.id].children.find((c) => snap.nodes[c].slug === p.src.id);
+  for (const [i, p] of plan.entries()) {
+    const id = snap.nodes[root.id].children[i];
     const same = !!id && lib.shape(snap, id) === lib.shape(p.snap, p.snap.root);
     if (!same && (p.kept || !id)) throw new Error(`migration: “${p.src.id}” did not come across intact; nothing was changed on disk`);
     if (!same) log(`migration: “${p.src.id}” was copied without the empty spans of its orphaned notes`);
@@ -162,7 +163,7 @@ export function migrate(data: string, log: (m: string) => void): boolean {
   log(`migration: built ${join(data, "library", "main.loro")} from ${plan.length} document${plan.length > 1 ? "s" : ""}:`);
   for (const d of record.docs) {
     log(
-      `  /doc/${d.slug}  “${d.title}”  ${d.nodes} nodes, ${d.history === "kept" ? `history kept (${d.commits} changes)` : "copied as content (it shares history with another document, so its history is not carried)"}${d.openConflicts ? `, ${d.openConflicts} open conflict${d.openConflicts > 1 ? "s" : ""}` : ""}`,
+      `  ${d.slug}  “${d.title}”  ${d.nodes} nodes, ${d.history === "kept" ? `history kept (${d.commits} changes)` : "copied as content (it shares history with another document, so its history is not carried)"}${d.openConflicts ? `, ${d.openConflicts} open conflict${d.openConflicts > 1 ? "s" : ""}` : ""}`,
     );
   }
   if (record.branchesNotCarried.length) {
