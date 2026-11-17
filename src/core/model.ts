@@ -222,13 +222,13 @@ export class Doc {
   }
 
   /** An empty library. Its id is kept in the database, so a replica of another library is never mistaken for it. */
-  static library(author: string, id = randomPeer().toString(36)): Doc {
+  static library(author: string, id = randomPeer().toString(36), title = LIBRARY_TITLE): Doc {
     const loro = new LoroDoc();
     loro.setPeerId(randomPeer());
     const doc = new Doc(loro, author);
     doc.begin("Create the library", "human");
     const root = loro.getTree("tree").createNode();
-    initRoot(root, LIBRARY_TITLE, "", "human");
+    initRoot(root, title, "", "human");
     root.data.set("library", true);
     loro.getMap("meta").set("library", id);
     doc.commit("Create the library", "human");
@@ -622,14 +622,22 @@ export class Doc {
 
   /**
    * Write a copy of a subtree (from this document or another) under `parent`, as it stands:
-   * content, authorship, pins and the hashes it was last reconciled with. Must run inside a commit.
+   * content, authorship, locks, targets, declined phrases, the Wikipedia flags and the hashes it was
+   * last reconciled with. Must run inside a commit.
+   *
+   * The top's anchors are offsets into its parent's text, so they are kept only where that text is
+   * the same: when the copy lands beside the original, or when the caller says the new parent's
+   * text is a copy of the old one's (`keepAnchors`). `ids`, if given, is filled with each copied
+   * node's new id by its old one. Targets are copied as they are; a caller copying between
+   * libraries rewrites the node targets through `ids`.
    */
-  graft(src: Snap, from: NodeId, parent: NodeId, opts: { index?: number; title?: string } = {}): NodeId {
+  graft(src: Snap, from: NodeId, parent: NodeId, opts: { index?: number; title?: string; keepAnchors?: boolean; ids?: Map<NodeId, NodeId> } = {}): NodeId {
     const { index, title } = opts;
     const into = this.node(parent);
     const visit = (id: NodeId, under: LoroTreeNode, at?: number): NodeId => {
       const s = src.nodes[id];
       const n = at === undefined ? under.createNode() : under.createNode(at);
+      opts.ids?.set(id, n.id);
       n.data.set("kind", s.kind);
       n.data.set("title", id === from && title !== undefined ? title : s.title);
       (n.data.setContainer("body", new LoroText()) as LoroText).insert(0, s.body);
@@ -639,12 +647,14 @@ export class Doc {
       if (s.lens) n.data.set("lens", s.lens);
       if (s.ref) n.data.set("ref", s.ref as never);
       if (s.wanchor) n.data.set("wanchor", s.wanchor as never);
+      // Only a section of the library root can be the Wikipedia container, as `create` has it.
+      if (s.articles && under.data.get("library")) n.data.set("articles", true);
       if (s.nolink?.length) setNolink(n, s.nolink);
       n.data.set("up", s.seenUp);
       n.data.set("down", s.seenDown);
       // The copy's anchors are offsets into its parent's body, which is a copy too; except at the
       // top, where they would be offsets into a different text unless it lands beside the original.
-      const kept = id !== from || parent === s.parent ? s.anchors.filter((a) => a.end > a.start) : [];
+      const kept = id !== from || parent === s.parent || opts.keepAnchors ? s.anchors.filter((a) => a.end > a.start) : [];
       if (kept.length) n.data.set("anchors", this.makeAnchors(under, kept.map((a) => [a.start, a.end]), kept.map((a) => a.quote)) as never);
       this.mark(n.id);
       for (const c of s.children) visit(c, n);
