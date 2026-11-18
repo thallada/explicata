@@ -265,8 +265,8 @@ Press `?` for every key. The short version:
   length), on an amber ground under ↗ and its site, with its author and date where it gives them
   and where it is from at its foot. A page that cannot be read here (robots.txt, a bot check, a PDF,
   a page that needs JavaScript) says why and offers the original. `W` opens the original in a new
-  tab. An address on wikipedia.org opens as the article. Nothing is written on a page's text: its
-  annotations are not kept (docs/pages.md).
+  tab. An address on wikipedia.org opens as the article. Its text takes notes as an article's does
+  (below; docs/pages.md §12).
 - A page with **no headings** of its own is first shown divided by length, and the model is asked
   once, by itself, for sections of its choosing and a short summary (within `EX_PAGE_CALLS` calls a
   day, never while the plan's limits are nearly used; `EX_PAGES_ARRANGE=manual` leaves it to `s`).
@@ -299,16 +299,22 @@ Press `?` for every key. The short version:
   the app itself, video files over https, frames from those two players' addresses only.
 - Under an open node, **Linked from** lists what links to it; under an article, **Mentioned in**
   lists the library's nodes that link to it.
-- **Notes on an article.** In an article's text the keys are a node's: `i` selects a sentence, then
-  a word, `j` `k` `H` `L` move and widen, `Tab` walks links and notes, and `e` `d` `y` `x` `c` `:`
-  write a note on the words, which is a note like any other (`Enter` steps into it; `c`, `D`, `f`,
-  `u`, `:` the editor). Wikipedia's text itself cannot be edited: keys that would edit it say why not. The notes
-  belong to the article, so they show wherever it is opened. The library keeps a node per annotated
-  article in a container that is not one of the root's sections (not listed, never scanned for links, never
-  reconciled); the article text stays in the server's cache. Each note records its section, its
-  words, a little text either side and the revision; in a later revision it is found again (its
-  section first, then anywhere, then ignoring case and punctuation), and if its words are gone it
-  is listed at the top of its section as detached, with a link to the old revision. Tables and
+- **Notes on an article or a web page.** In an article's text, or a web page's, the keys are a
+  node's: `i` selects a sentence, then a word, `j` `k` `H` `L` move and widen, `Tab` walks links and
+  notes, and `e` `d` `y` `x` `c` `:` write a note on the words (the selection bar and the
+  right-click menu offer the same), which is a note like any other (`Enter` steps into it; `c`,
+  `D`, `f`, `u`, `:` the editor). The text itself cannot be edited, nor its words linked by hand:
+  keys that would say why not. The notes belong to the article or page, so they show wherever it
+  is opened (its own pane, the column's page, a section that is only a link to it). The library
+  keeps a node per annotated article (by language and title) or page (by address) in a container
+  that is not one of the root's sections (not listed, never scanned for links, never reconciled);
+  the text stays in the server's cache. Each note records its section, its words, a little text
+  either side and the revision (for a page, a number from its text's digest); in a later revision,
+  or a page read again (`R`) or arranged by a model (`s`), it is found again (its section first,
+  then wherever the words and their surroundings best agree, then ignoring case and punctuation),
+  and if its words are gone it is listed at the top of its section as detached, with a link to the
+  old revision on Wikipedia. A page that can no longer be shown lists every note kept on it. A
+  page's text goes to the model fenced as untrusted, as it does for arranging. Tables and
   preformatted blocks are shown but cannot be selected; a formula is selected whole.
 - To link by hand, select words (`i`, widen with `H` `L`) and press `w`: the picker offers library
   sections and notes, Wikipedia articles and, for a pasted address, the web page.
@@ -501,7 +507,7 @@ npm run migrate              # the same, then writes it
 Both take another directory as an argument (`npm run migrate -- --check /path/to/data`); without
 one, `EX_DATA`, else `.data`. The migration copies the tree into a new library (a new id, a history
 of one commit): titles, bodies, notes with their anchors, locks, authorship, targets, declined
-phrases, the Wikipedia container with its articles' notes, the order of everything, and what each
+phrases, the container of notes on articles and web pages, the order of everything, and what each
 node was last reconciled with, so nothing turns stale. Every node target is rewritten to the new
 ids (a target already naming nothing keeps its titles as a hint), open conflicts come along, and
 the reviewer's verdicts and your decisions (`links/pending.json`) are re-keyed; vectors are rebuilt
@@ -572,7 +578,7 @@ Node ids are the library's, so one batch of ops can work anywhere in it.
 
 | | |
 |---|---|
-| `GET /api/libraries` | `{ libraries: [{ id, title, created, nodes, branches }] }`, in order; `nodes` counts what is under the root (not the root, nor the Wikipedia container) |
+| `GET /api/libraries` | `{ libraries: [{ id, title, created, nodes, branches }] }`, in order; `nodes` counts what is under the root (not the root, nor the container of notes on articles and pages) |
 | `POST /api/libraries` `{ title }` | a new library, its root alone, at the end: 201 `{ library }` |
 | `PATCH /api/libraries/<id>` `{ title }` | rename it (a commit on its root's title) |
 | `DELETE /api/libraries/<id>` | `{ deleted, movedTo }`: moved aside whole to `libraries/.deleted/` (see Deleting a library); 409 for the last one |

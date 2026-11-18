@@ -4,7 +4,7 @@ The findings and decisions behind `server/pageFetch.ts`, `server/pageHtml.ts`, `
 and `server/pageRoutes.ts`: how a node whose target is a web address (`Ref { kind: "url" }`) gets
 its page read, split into a lead and sections, and shown like a Wikipedia article (§9 is the
 browser's side: `src/ui/web.ts` and `src/ui/Web.tsx`; §10 is arranging a page with a model,
-`server/pageArrange.ts`). The survey in §1 was made while planning,
+`server/pageArrange.ts`; §12 is notes on a page's words). The survey in §1 was made while planning,
 once per page, with the same honest User-Agent the server sends.
 
 ## 1. What real pages look like
@@ -239,9 +239,9 @@ Known misfires, accepted: an **arXiv abstract page** is split at its interface's
 README** (74 words on the repository page) links out as too short.
 
 Deliberately left out: a headless browser for pages that need JavaScript; PDF parsing; per-site
-adapters (arXiv, GitHub, HN, Reddit); login or paywall handling; annotations and backlinks on web
-pages (the annotation store is keyed by Wikipedia's numeric page and revision ids); automatic
-refresh. Video and Wikipedia's pictures came later (§11; docs/wikipedia.md §3).
+adapters (arXiv, GitHub, HN, Reddit); login or paywall handling; backlinks to web pages ("Mentioned
+in" is Wikipedia's only); automatic refresh. Video and Wikipedia's pictures came later (§11;
+docs/wikipedia.md §3), and so did notes on a page's words (§12).
 
 ## 7. Mock
 
@@ -276,10 +276,9 @@ A web page is a third kind of pane, `{ kind: "web", url, sec? }` beside a node's
 keyed `u:<normUrl(url)>#<sec>` (the section ids are the server's strings: `h3`, `p2`, `c1`). The
 seam is the article view's host, not the pane: an aux focus names a view (`p<i>`, `f<id>`, `n<id>`,
 `col`), and `Store.viewHost` says what it shows, a Wikipedia article or a web page. Everything that
-walks a view (rows, j k h l, Tab, i, Enter, forks and curves, the panes' history, reload) goes
-through it; what only Wikipedia's text allows (annotations, senses, "Mentioned in") asks
-`Store.wikiHost`, which is null for a page, and the keys that would write say so in plain words
-instead. The view reuses the article view's structure and classes (`.wiki`, `.wiki-head`,
+walks a view (rows, j k h l, Tab, i, Enter, notes on its words, forks and curves, the panes'
+history, reload) goes through it; what only Wikipedia's allows (senses, "Mentioned in") asks
+`Store.wikiHost`, which is null for a page. The view reuses the article view's structure and classes (`.wiki`, `.wiki-head`,
 `.wiki-text`, `.wrows`) with a `.web` modifier, which swaps Wikipedia's ground and rule tokens for
 `--web-bg` and `--web-rule` (amber).
 
@@ -488,4 +487,47 @@ privacy-enhanced player still plays with no referrer (it has been reported to re
 that send none; if so, `strict-origin-when-cross-origin`, which sends only the app's origin, is
 the next thing to try), and whether `i.ytimg.com/vi/<id>/hqdefault.jpg` answers the server's
 User-Agent and robots.txt.
+
+## 12. Notes on a page's words
+
+The owner's request: the selection on a page's text offers what it offers on Wikipedia's, and the
+notes behave the same. They do, through the same code: `src/core/article.ts` files notes on an
+article or a page, `Store.hostSource` gives either as a `Source`, and `ArticleTextView` and
+`Detached` (src/ui/Wiki.tsx) draw both. Where the two differ:
+
+- **Filing.** A page's node sits in the same hidden container as the articles' (a section of the
+  library root flagged `articles`; one made before pages could be annotated is titled "Wikipedia"
+  and is used as it is, a new one is titled "Articles and pages"). It is keyed by the page's
+  address as `normUrl` compares them (no fragment, no trailing slash), its target a `url` ref with
+  that address and the page's title. The address is the one the view shows the page at (the link's,
+  not the one redirects ended at), so a section that is only a link to a page and the page's own
+  pane show the same notes. Everything that skips the container (the outline, search, links, the
+  scanner and reviewer, Related, export, the library's node count, "Linked from") skips a page's
+  node as it skips an article's, by the container's flag, not by the kind of target.
+- **The anchor** is an article's (`WikiAnchor`: the section's headings, the words, 32 characters
+  either side). A page has no revisions, so `rev` is `pageRev(hash)`: the first 48 bits of the
+  copy's content hash (§2), a whole number as the anchor's check requires, so nothing about the
+  stored shape changed and earlier Wikipedia notes read as they did.
+- **Finding it again.** A page's sections are cut anew more often than an article's: a Reload whose
+  text changed re-divides a page divided by length (`c1`…), and arranging it replaces those with the
+  model's (`m1`…), whose headings are the model's. So a section's headings name it only loosely, and
+  `reanchor` is given every section's text (`pageSectionTexts`, the lead first); when the words are
+  not in the section named, they are taken wherever they and their surroundings agree best, in any
+  section (articles gained this too: before, the first section in order with the words won), and the
+  note shows in whichever section now holds them. Words not found, even ignoring case and
+  punctuation, leave the note detached: listed at the top of the page (or of its section, while one
+  with its headings is still there), "not in the page as it now reads", with no link, since no older
+  copy is kept.
+- **A page that cannot be shown** (robots, refused, offline, a Reload that found it unusable) lists
+  every note kept on it under the reason, each a note like any other (a click focuses it), so none
+  is lost; they are placed in the text again when it can be read.
+- **The model.** A lens sends what it sends for an article (the lead up to 6,000 characters, or 2,000
+  and up to 3,000 characters either side of the words in their section), with the usual limits and
+  no budget of its own. The prompt is built where an article's is (`src/llm/prompts.ts`; the server's
+  `/api/llm/stream` passes prompts through), and every piece of the page in it (title, site, lead,
+  section heading and passage, the words) is inside `<page_text>…</page_text>` with the page's own
+  copies of the markers disarmed; the system prompt (`PAGE_NOTE_SYSTEM`) adds the paragraph
+  `server/pageArrange.ts` uses: untrusted text from a web page, never an instruction.
+- **Linking by hand** is not offered on a page's words, as on an article's: the text is not the
+  reader's.
 

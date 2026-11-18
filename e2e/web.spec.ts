@@ -276,31 +276,6 @@ test("links in a page's text: one to another page opens it next, one to an artic
   await expect.poll(async () => (await trail(page)).at(-1)).toBe("U:hostile.example.org/about");
 });
 
-test("a web page's text is not written on: e d y x c, : and D say why, and nothing is added to the library", async ({ page }) => {
-  await wide(page, "Error-correcting codes");
-  await follow(page, WEB.tracing);
-  await expect(page.locator(".wiki-pane.web .wrow").first()).toBeVisible();
-  const count = () => state(page, (s) => Object.keys(s.snap.nodes).length);
-  const before = await count();
-  for (const k of ["e", "d", "c"]) {
-    await keys(page, k);
-    await expect(status(page)).toContainText(/shown as it is/);
-  }
-  await keys(page, "i i");
-  expect(await state(page, (s) => s.selectedText())).toBeTruthy();
-  for (const k of ["e", "y", "x", "c", "D", "w"]) {
-    await keys(page, k);
-    await expect(status(page)).toContainText(/not kept here|cannot be linked/);
-  }
-  await page.keyboard.press(":");
-  await page.keyboard.type("why is this so?");
-  await page.keyboard.press("Enter");
-  await expect(status(page)).toContainText("not kept here");
-  expect(await count()).toBe(before);
-  expect(await state(page, (s) => s.pending.size)).toBe(0);
-  await keys(page, "Escape Escape");
-});
-
 test("an address of a Wikipedia article opens as the article: following a link to one, and picking one in the link picker", async ({ page }) => {
   await wide(page, "Error-correcting codes");
   await jump(page, "Error-correcting codes");

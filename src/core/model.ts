@@ -56,11 +56,11 @@ export interface NodeSnap {
    */
   nolink?: string[];
   /**
-   * The Wikipedia container (see article.ts): a section of the library root that holds a node per
-   * annotated article. It is listed nowhere and never reconciled.
+   * The container of annotated text (see article.ts): a section of the library root that holds a
+   * node per annotated Wikipedia article or web page. It is listed nowhere and never reconciled.
    */
   articles?: boolean;
-  /** An annotation on a Wikipedia article: where in the article it attaches (its parent is the article's node). */
+  /** An annotation on a Wikipedia article or a web page: where in its text it attaches (its parent is the article's or page's node). */
   wanchor?: WikiAnchor;
   anchors: Anchor[];
   seenUp: string;
@@ -97,9 +97,9 @@ export type Op =
       lens?: string;
       /** What the node is about, elsewhere. A note with a target and no body is a link. */
       ref?: Ref;
-      /** Make this section of the library root the Wikipedia container (article.ts). */
+      /** Make this section of the library root the container of annotated articles and pages (article.ts). */
       articles?: boolean;
-      /** For an annotation on an article: where in the article it attaches, in place of anchors. */
+      /** For an annotation on an article or a page: where in its text it attaches, in place of anchors. */
       wanchor?: WikiAnchor;
     }
   /** `ref: null` removes the target. Changing a target is not a change of content: it leaves authorship and staleness alone. */
@@ -695,7 +695,7 @@ export class Doc {
               ranges = [[at, at + op.quote.length]];
             }
             if (kind === "note" && !ranges?.length && !op.wanchor) throw new OpError("a note needs an anchor or a quote");
-            if (op.articles && (kind !== "section" || !parent.data.get("library"))) throw new OpError("only a section of the library can be the Wikipedia container");
+            if (op.articles && (kind !== "section" || !parent.data.get("library"))) throw new OpError("only a section of the library can be the container of annotated articles and pages");
             const count = parent.children()?.length ?? 0;
             const n = parent.createNode(Math.max(0, Math.min(op.index ?? count, count)));
             this.mark(parent.id);

@@ -267,5 +267,20 @@ describe("a web page's menus", () => {
     expect(keys).toContain(`store.onWeb && (k === "R" || k === "s")`);
     expect(find(paneEntries({ article: "A page", web: true, arrange: false, pinned: false }, act), "Arrange with a model").disabled).toBe(true);
   });
+
+  it("words of a page's text take what words of an article take: the lenses on the bar and in the menu, Delete on a note; no linking by hand", () => {
+    const { act } = recorder();
+    const web = sel({ article: true, web: true });
+    const bar = (c: SelCtx) => barItems(c, act).map((g) => g.map((i) => `${i.label} ${i.key}`));
+    expect(bar(web)).toEqual(bar(sel({ article: true })));
+    expect(barItems(web, act).flat().map((i) => i.key)).toEqual(["e", "d", "y", "x", "c", ":"]);
+    const menu = labels(selectionEntries(web, act));
+    for (const l of ["Copy", "Open the original", "Expand", "Define", "Why?", "An example", "An objection", "Ask your own question…"]) expect(menu).toContain(l);
+    expect(menu).not.toContain("Link to…");
+    const onNote = labels(selectionEntries(sel({ article: true, web: true, note: true }), act));
+    expect(onNote).toContain("Open the note");
+    expect(onNote).toContain("Delete the note");
+    expect(onNote).not.toContain("Link it…");
+  });
 });
 
