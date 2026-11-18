@@ -277,7 +277,8 @@ re-read through `article?full=1`, whose answer always carries `revisionId` and `
 `summary` may not). A note records the revision it was made against; when the cached copy expires
 (7 d) and Wikipedia has a newer revision, the note is found again in it, or shown as detached with
 a link to the old revision. The browser keeps articles in
-memory for the page's life only, never in IndexedDB.
+memory for the page's life only, never in IndexedDB. Notes on web pages are kept the same way, in
+the same container (docs/pages.md §12).
 
 ## 8. Link discovery as built
 

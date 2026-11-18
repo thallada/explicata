@@ -22,12 +22,12 @@ import {
 } from "../core/repo";
 import { clip, formFor, plain, rangeAt, sentences, slugify, words, type Form, type Range } from "../core/text";
 import { applyLinks, linkIndex, nodeRef, ownerSection, resolveNode } from "../core/links";
-import { annotationsOf, articleNodes, inArticles, makeAnchor, reanchor, type ArticleKey } from "../core/article";
+import { annotationsOf, articleNodes, inArticles, makeAnchor, pageRev, reanchor, type ArticleKey, type SectionText } from "../core/article";
 import { asOpened, describeTarget, formatTarget, hostOf, parseTargetLoose, wikiKey, type Ref } from "../core/ref";
 import { article as wikiArticle, articleText, cachedExtract, sectionPath, sectionsUnder, sectionTexts, configureWiki, sensesOf as wikiSenses, wikiUrl, type Article, type WikiConfig } from "./wiki";
 import type { ArticleText } from "./articleText";
-import { arrangePage, article as webArticle, canArrange, configurePages, knownArticle, reloadPage, sectionsUnder as webSectionsUnder, siteOf, webKey, type PagesConfig } from "./web";
-import { LENSES } from "../llm/prompts";
+import { arrangePage, article as webArticle, canArrange, configurePages, knownArticle, pageSectionPath, pageSectionTexts, reloadPage, sectionsUnder as webSectionsUnder, siteOf, webKey, type PagesConfig, type WebArticle } from "./web";
+import { LENSES, type ArticleContext } from "../llm/prompts";
 import {
   cascade, commitArticleNote, commitExpansion, deepen, reconcile, resolveConflicts, runAgent, scanContradictions, streamArticleNote, streamExpansion,
   type AgentEvent, type ExpansionRequest, type WriteHooks,
@@ -119,7 +119,7 @@ export type ViewHost =
  * it shows), or words in the text that row shows (a grain and a range, as in a node's body: a
  * sentence, words, a link or an annotation's words), a node's target, or a "Linked from" row. The
  * node focus stays where it was, so leaving the aux focus returns to it. `kind: "wiki"` is any
- * article view; what only Wikipedia's text allows (annotations) asks Store.wikiHost.
+ * article view; what only Wikipedia's allows (senses, "Mentioned in") asks Store.wikiHost.
  */
 export type Aux =
   | { kind: "wiki"; host: string; row: WRow; grain?: "sentence" | "word"; range?: Range }
@@ -146,8 +146,6 @@ export interface Picker {
 }
 
 export const sameAux = (a: Aux | null, b: Aux | null): boolean => JSON.stringify(a) === JSON.stringify(b);
-/** Why the keys that write (e d y x c :, D) do nothing on a web page's text. */
-const WEB_TEXT = "A web page's text is shown as it is: notes on its words are not kept here (annotations are for Wikipedia articles and your own text). Its links open with Enter; W opens the original.";
 /** Page layout: one column with a margin, or panes side by side. Auto picks panes on wide windows. */
 export type View = "auto" | "column" | "panes";
 /** Where a fork's colour shows in the panes view: along its curves and title rules, across its panes' tops, down their left edges, or nowhere. */
@@ -162,8 +160,8 @@ export interface Pending {
   node: NodeId;
   kind: "note" | "sections";
   range?: Range;
-  /** A note being written on words of an article: which article (its key) and section. */
-  art?: { key: string; sec: number };
+  /** A note being written on words of an article or a web page: which (sourceId) and section. */
+  art?: { key: string; sec: SecId };
   form?: Form;
   lens?: string;
   text: string;
@@ -207,19 +205,46 @@ function storedSettings(): Partial<Store["settings"]> {
   return s;
 }
 
-/** Article text an aux focus is in (Store.auxSpot). */
+/**
+ * The text an article view shows, as notes on it need it: a Wikipedia article in its language, or
+ * a web page as it was read, by the address the view shows it at.
+ */
+export type Source = { kind: "wiki"; article: Article; lang: string } | { kind: "web"; page: WebArticle; url: string };
+/** A section of an article view's text: a Wikipedia article's number (0 the lead), or a web page's id ("h3", "c2"; null the lead). */
+export type SecId = number | string | null;
+
+/** How the library files notes on a source (src/core/article.ts). */
+export const sourceKey = (src: Source): ArticleKey => (src.kind === "wiki" ? { lang: src.lang, title: src.article.title, pageId: src.article.pageId } : { url: src.url, title: src.page.title });
+/** A source as a pending note's `art.key` names it: as its pane's key does. */
+export const sourceId = (src: Source): string => (src.kind === "wiki" ? wikiKey(src.lang, src.article.title) : webKey(src.url));
+/** Its lead's section id. */
+export const leadOf = (src: Source): SecId => (src.kind === "wiki" ? 0 : null);
+/** Every section's text with its headings, the lead first, and their ids: what anchors are found again in. */
+export const sourceTexts = (src: Source): { ids: SecId[]; secs: SectionText[] } => (src.kind === "wiki" ? sectionTexts(src.article) : pageSectionTexts(src.page));
+/** The headings down to a section. */
+const pathIn = (src: Source, sec: SecId): string[] => (src.kind === "wiki" ? sectionPath(src.article, sec as number) : pageSectionPath(src.page, sec as string | null));
+/** The copy an anchor is made against: an article's revision; for a page, its content's pageRev. */
+const revOf = (src: Source): number => (src.kind === "wiki" ? src.article.revisionId : pageRev(src.page.hash));
+/** A piece of a source's HTML as text to select in. */
+export const textOf = (src: Source, html: string): ArticleText => articleText(html, src.kind === "web");
+/** A section's HTML, or the lead's. */
+const htmlIn = (src: Source, sec: SecId): string | undefined =>
+  sec === leadOf(src) ? (src.kind === "wiki" ? src.article.lead : src.page.lead) : ((src.kind === "wiki" ? src.article.sections : src.page.sections) as { id: SecId; html: string }[]).find((x) => x.id === sec)?.html;
+
+/** Article text an aux focus is in (Store.auxSpot): the lead or a section of an article's or a page's text. */
 export interface Spot {
   at: ArticleText;
-  /** The section's id; 0 the lead. */
-  sec: number;
-  article: Article;
+  /** The section's id (leadOf: the lead). */
+  sec: SecId;
+  src: Source;
+  /** The language its links to articles default to. */
   lang: string;
   host: string;
 }
-/** An article's annotations found again in the revision at hand (Store.annotations). */
+/** A source's annotations found again in the copy at hand (Store.annotations); a detached one is listed in its own section while that is still there, else at the lead. */
 export interface Placements {
-  at: Map<NodeId, { sec: number; range: Range }>;
-  detached: { id: NodeId; sec: number | null }[];
+  at: Map<NodeId, { sec: SecId; range: Range }>;
+  detached: { id: NodeId; sec: SecId }[];
 }
 
 /** Lower-cased title and body, remembered per node entry, for searching a large library on every keystroke. */
@@ -2336,12 +2361,11 @@ class Store {
 
   remove() {
     if (!this.writable()) return;
-    if (this.onWeb) return this.say(WEB_TEXT);
     const s = this.snap;
     const sel = this.articleSelection();
     if (sel) {
       const note = this.annotationAt(sel.spot, sel.range);
-      if (!note) return this.say("No annotation on these words to delete; Wikipedia's text itself cannot be deleted.");
+      if (!note) return this.say(`No annotation on these words to delete; ${sel.spot.src.kind === "web" ? "the page's" : "Wikipedia's"} text itself cannot be deleted.`);
       this.apply([{ op: "delete", id: note }], `Delete note on “${clip(s.nodes[note].wanchor!.q, 40)}”`);
       this.open.delete(note);
       return this.say("Note deleted. u to undo.");
@@ -2681,8 +2705,7 @@ class Store {
     if (verb.startsWith("/") && builtin[verb.slice(1)]) return builtin[verb.slice(1)]();
     const lens = LENSES.find((l) => l === text.toLowerCase());
     if (this.inArticleText) return this.expandArticle(lens ?? "elaborate", lens ? undefined : text);
-    if (this.onWeb) return this.say(WEB_TEXT);
-    if (this.aux?.kind === "wiki") return this.say("Select words of the article first (i), then : asks about them. The editor works on your own nodes.");
+    if (this.aux?.kind === "wiki") return this.say(`Select words of the ${this.onWeb ? "page" : "article"} first (i), then : asks about them. The editor works on your own nodes.`);
     if (this.focus.grain !== "node") {
       // A question about the selection becomes a note answering it.
       return this.generateNote(this.focus.node, this.focus.range!, lens ?? "elaborate", lens ? undefined : text);
@@ -2692,42 +2715,50 @@ class Store {
 
   // ---- keys on aux rows: Wikipedia views, targets, "Linked from" ----
 
-  /** Whether the aux focus is on a web page's view, where nothing is written (no annotations: the library has no place for them). */
+  /** Whether the aux focus is on a web page's view (R reads it again there, s has a model arrange it). */
   get onWeb(): boolean {
     return this.aux?.kind === "wiki" && this.isWeb(this.aux.host);
   }
 
+  /** The text an aux focus on an article view is in (auxSpot), and the language its links to articles default to. */
+  private auxText(a: Aux | null): { at: ArticleText; lang: string } | null {
+    const spot = this.auxSpot(a);
+    return spot && { at: spot.at, lang: spot.lang };
+  }
+
+  /**
+   * What a view shows, as notes on it need it, once it has arrived: a Wikipedia article or a web
+   * page (by the address the view shows it at). Null while it loads, when it cannot be shown, or for
+   * a host that shows neither.
+   */
+  hostSource(host: string): Source | null {
+    const h = this.viewHost(host);
+    if (!h) return null;
+    if (h.src === "web") {
+      const art = webArticle(h.url);
+      return art.state === "ready" ? { kind: "web", page: art.value, url: h.url } : null;
+    }
+    const art = wikiArticle(h.title, h.lang);
+    return art.state === "ready" ? { kind: "wiki", article: art.value, lang: h.lang } : null;
+  }
+
   /**
    * The text an aux focus on an article view is in, Wikipedia's or a web page's: the lead or the
-   * section its row shows (articleText; a web page's cleaned as one), and the language its article
-   * links default to. None while it loads, or on a row that shows no text.
+   * section its row shows (articleText; a web page's cleaned as one), with what it is from. None
+   * while it loads, or on a row that shows no text.
    */
-  private auxText(a: Aux | null): { at: ArticleText; lang: string } | null {
-    if (a?.kind !== "wiki") return null;
-    const h = this.viewHost(a.host);
-    if (h?.src !== "web") {
-      const spot = this.auxSpot(a);
-      return spot && { at: spot.at, lang: spot.lang };
-    }
-    const art = webArticle(h.url);
-    if (art.state !== "ready") return null;
-    const sec = a.row.t === "head" ? (this.folded(h.embedded) ? undefined : h.sec) : a.row.t === "sec" && h.nested && this.secOpen(a.host, a.row.id) ? String(a.row.id) : undefined;
-    const html = sec === undefined ? undefined : sec === null ? art.value.lead : art.value.sections.find((x) => x.id === sec)?.html;
-    return html === undefined ? null : { at: articleText(html, true), lang: this.wiki.lang };
-  }
-
-  /** The article text an aux focus is in: the lead or the section its row shows, with the article. None while it loads, on a row that shows no text, or on a web page. */
   private auxSpot(a: Aux | null): Spot | null {
     if (a?.kind !== "wiki") return null;
-    const h = this.wikiHost(a.host);
-    const art = h ? wikiArticle(h.title, h.lang) : null;
-    if (!h || art?.state !== "ready") return null;
-    const sec = a.row.t === "head" ? (this.folded(h.embedded) ? -1 : h.sec) : a.row.t === "sec" && h.nested && this.secOpen(a.host, a.row.id) ? Number(a.row.id) : -1;
-    const html = sec === 0 ? art.value.lead : art.value.sections.find((x) => x.id === sec)?.html;
-    return sec < 0 || html === undefined ? null : { at: articleText(html), sec, article: art.value, lang: h.lang, host: a.host };
+    const h = this.viewHost(a.host);
+    const src = this.hostSource(a.host);
+    if (!h || !src) return null;
+    const row: SecId | undefined = a.row.t === "sec" ? (src.kind === "wiki" ? Number(a.row.id) : String(a.row.id)) : undefined;
+    const sec = a.row.t === "head" ? (this.folded(h.embedded) ? undefined : h.sec) : row !== undefined && h.nested && this.secOpen(a.host, row as string | number) ? row : undefined;
+    const html = sec === undefined ? undefined : htmlIn(src, sec);
+    return sec === undefined || html === undefined ? null : { at: textOf(src, html), sec, src, lang: src.kind === "wiki" ? src.lang : this.wiki.lang, host: a.host };
   }
 
-  /** Tab on a Wikipedia view: the next (or previous) annotation or link in the text the focus is on, selected as words. */
+  /** Tab on an article view: the next (or previous) annotation or link in the text the focus is on, selected as words. */
   auxTab(delta: number) {
     const a = this.aux;
     if (!a || a.kind !== "wiki") return;
@@ -2740,9 +2771,8 @@ class Store {
     }
     if (art?.state === "failed") return this.say(`${this.isWeb(a.host) ? "The page is not shown here" : "The article could not be loaded"}: ${art.message}`);
     const spot = this.auxSpot(a);
-    const seen = new Set<string>();
-    const spans = spot ? this.spansIn(spot) : (this.auxText(a)?.at.links.map((l) => l.range) ?? []).filter((r) => !seen.has(r.join()) && !!seen.add(r.join()));
-    if (!spans.length) return this.say(a.row.t === "head" || a.row.t === "sec" ? (spot ? "No links to other articles or notes here." : "No links here.") : "");
+    const spans = spot ? this.spansIn(spot) : [];
+    if (!spans.length) return this.say(a.row.t === "head" || a.row.t === "sec" ? (spot ? (spot.src.kind === "web" ? "No links or notes here." : "No links to other articles or notes here.") : "No links here.") : "");
     const at = a.range?.[0] ?? (delta > 0 ? -1 : Infinity);
     const next = delta > 0 ? spans.find((r) => r[0] > at) ?? spans[0] : [...spans].reverse().find((r) => r[0] < at) ?? spans[spans.length - 1];
     this.setFocus(this.focus, { ...a, grain: "word", range: next });
@@ -2766,36 +2796,44 @@ class Store {
     return r?.kind === "wiki" ? { title: r.title, lang: r.lang } : null;
   }
 
-  // ---- annotating articles (src/core/article.ts) ----
+  // ---- annotating articles and web pages (src/core/article.ts) ----
 
-  private placed = new WeakMap<Article, { entries: unknown[]; value: Placements }>();
+  private placed = new WeakMap<Article | WebArticle, { entries: unknown[]; value: Placements }>();
   /**
-   * An article's annotations, found again in the revision at hand: where each is (a section's id
-   * and a range in its text), and those whose words are gone. Worked out again only when the
-   * article or one of its annotations changes.
+   * An article's or a page's annotations, found again in the copy at hand: where each is (a
+   * section's id and a range in its text), and those whose words are gone. A page's words are
+   * looked for in every section, so a note follows them when the page is arranged or read again
+   * and its sections are cut differently. Worked out again only when the copy or one of its
+   * annotations changes.
    */
-  annotations(article: Article, lang: string): Placements {
+  annotations(src: Source): Placements {
     const s = this.snap;
-    const ids = annotationsOf(s, { lang, title: article.title, pageId: article.pageId });
+    const ids = annotationsOf(s, sourceKey(src));
     const entries = ids.map((id) => s.nodes[id]);
-    const had = this.placed.get(article);
+    const copy = src.kind === "wiki" ? src.article : src.page;
+    const had = this.placed.get(copy);
     if (had && had.entries.length === entries.length && had.entries.every((e, i) => e === entries[i])) return had.value;
     const value: Placements = { at: new Map(), detached: [] };
     if (ids.length) {
-      const { ids: secIds, secs } = sectionTexts(article);
+      const { ids: secIds, secs } = sourceTexts(src);
       for (const id of ids) {
         const p = reanchor(s.nodes[id].wanchor!, secs);
-        if ("detached" in p) value.detached.push({ id, sec: p.sec === null ? null : secIds[p.sec] });
+        if ("detached" in p) value.detached.push({ id, sec: p.sec === null ? leadOf(src) : secIds[p.sec] });
         else value.at.set(id, { sec: secIds[p.sec], range: p.range });
       }
     }
-    this.placed.set(article, { entries, value });
+    this.placed.set(copy, { entries, value });
     return value;
+  }
+
+  /** The annotations of a web page that cannot be shown (or not yet): all of them, none found again. */
+  pageNotes(url: string): NodeId[] {
+    return annotationsOf(this.snap, { url });
   }
 
   /** What Tab stops at in a piece of article text: its annotations' words and its links, in reading order. */
   private spansIn(spot: Spot): Range[] {
-    const notes = [...this.annotations(spot.article, spot.lang).at.values()].filter((p) => p.sec === spot.sec).map((p) => p.range);
+    const notes = [...this.annotations(spot.src).at.values()].filter((p) => p.sec === spot.sec).map((p) => p.range);
     const seen = new Set<string>();
     return [...notes, ...spot.at.links.map((l) => l.range)].sort((a, b) => a[0] - b[0] || a[1] - b[1]).filter((r) => !seen.has(r.join()) && !!seen.add(r.join()));
   }
@@ -2803,7 +2841,7 @@ class Store {
   /** The annotation on exactly these words of a piece of article text. */
   private annotationAt(spot: Spot, range: Range | undefined): NodeId | undefined {
     if (!range) return;
-    for (const [id, p] of this.annotations(spot.article, spot.lang).at) if (p.sec === spot.sec && p.range[0] === range[0] && p.range[1] === range[1]) return id;
+    for (const [id, p] of this.annotations(spot.src).at) if (p.sec === spot.sec && p.range[0] === range[0] && p.range[1] === range[1]) return id;
   }
 
   /** The selection in article text, when the focus is one: where it is, and its range. */
@@ -2837,11 +2875,10 @@ class Store {
     return { text: this.snap.nodes[f.node].body, grain: f.grain, range: f.range, set: (grain, range) => this.setFocus({ node: f.node, grain, range }) };
   }
 
-  /** e d y x c and : on words of an article: open the annotation already there, or have one written. */
+  /** e d y x c and : on words of an article or a page: open the annotation already there, or have one written. */
   private expandArticle(lens: string, question?: string) {
-    if (this.onWeb) return this.say(WEB_TEXT);
     const sel = this.articleSelection();
-    if (!sel) return this.say("Select words first: i, then e d y x c or :. An article itself is never deepened or rewritten.");
+    if (!sel) return this.say(`Select words first: i, then e d y x c or :. ${this.onWeb ? "A page" : "An article"} itself is never deepened or rewritten.`);
     const existing = this.annotationAt(sel.spot, sel.range);
     if (existing && lens === "elaborate" && !question) {
       if (this.open.has(existing)) this.open.delete(existing);
@@ -2871,17 +2908,17 @@ class Store {
     if (!this.generating) return this.say("No model is configured to write a note. Start the server with ANTHROPIC_API_KEY set.");
     const quote = spot.at.text.slice(range[0], range[1]);
     if (!quote.trim()) return;
-    const a = spot.article;
+    const src = spot.src;
     const form = formFor(quote);
     const req = {
-      article: { lang: spot.lang, title: a.title, pageId: a.pageId },
-      anchor: makeAnchor(spot.at.text, range, sectionPath(a, spot.sec), a.revisionId),
+      article: sourceKey(src),
+      anchor: makeAnchor(spot.at.text, range, pathIn(src, spot.sec), revOf(src)),
       form,
       lens,
       question,
       context: this.articleContext(spot, range),
     };
-    const p: Pending = { key: `p${++this.seq}`, node: "" as NodeId, kind: "note", range, form, lens: question ?? lens, text: "", art: { key: wikiKey(spot.lang, a.title), sec: spot.sec } };
+    const p: Pending = { key: `p${++this.seq}`, node: "" as NodeId, kind: "note", range, form, lens: question ?? lens, text: "", art: { key: sourceId(src), sec: spot.sec } };
     const doc = this.doc;
     this.pending.set(p.key, p);
     this.busy++;
@@ -2895,18 +2932,24 @@ class Store {
     );
   }
 
-  /** What a note on words of an article is written from: the lead, the section around the words (trimmed), and the reader's own sentence if the article was opened from one. */
-  private articleContext(spot: Spot, range: Range) {
-    const a = spot.article;
+  /**
+   * What a note on words of an article or a page is written from: the lead, the section around the
+   * words (trimmed), and the reader's own sentence if the view was opened from one; for a page, its
+   * site too, which marks it as a web page's text (the prompt fences it as untrusted).
+   */
+  private articleContext(spot: Spot, range: Range): ArticleContext {
+    const src = spot.src;
     const text = spot.at.text;
     const from = Math.max(0, range[0] - 3000);
+    const inLead = spot.sec === leadOf(src);
     return {
-      title: a.title,
-      lead: clip(articleText(a.lead).text, spot.sec ? 2000 : 6000),
-      heading: spot.sec ? sectionPath(a, spot.sec).join(" › ") : null,
-      section: spot.sec ? `${from ? "… " : ""}${text.slice(from, range[1] + 3000)}${range[1] + 3000 < text.length ? " …" : ""}` : "",
+      title: src.kind === "wiki" ? src.article.title : src.page.title,
+      lead: clip(textOf(src, src.kind === "wiki" ? src.article.lead : src.page.lead).text, inLead ? 6000 : 2000),
+      heading: inLead ? null : pathIn(src, spot.sec).join(" › "),
+      section: inLead ? "" : `${from ? "… " : ""}${text.slice(from, range[1] + 3000)}${range[1] + 3000 < text.length ? " …" : ""}`,
       selection: text.slice(range[0], range[1]),
       from: this.fromSentence(spot.host),
+      ...(src.kind === "web" ? { page: { site: src.page.attribution.site } } : {}),
     };
   }
 
@@ -2931,10 +2974,11 @@ class Store {
     for (let x: NodeId | null = id; x && s.nodes[x]; x = s.nodes[x].parent) if (s.nodes[x].parent && s.nodes[s.nodes[x].parent!].articles) return x;
   }
 
-  /** The article a host shows, keyed as the library files it: by its loaded title and page id when it has arrived. */
+  /** The article or page a host shows, keyed as the library files it: an article by its loaded title and page id when it has arrived, a page by its address. */
   private hostArticle(host: string): ArticleKey | null {
-    const h = this.wikiHost(host);
+    const h = this.viewHost(host);
     if (!h) return null;
+    if (h.src === "web") return { url: h.url };
     const art = wikiArticle(h.title, h.lang);
     return art.state === "ready" ? { lang: h.lang, title: art.value.title, pageId: art.value.pageId } : { lang: h.lang, title: h.title };
   }
@@ -2960,31 +3004,29 @@ class Store {
     return mine && this.shows(mine, id) ? mine : this.hosts().find((h) => this.shows(h, id));
   }
 
-  /** h on an annotation: back to its words in the article. */
+  /** h on an annotation: back to its words in the article or page. */
   private leaveAnnotation(id: NodeId) {
     const host = this.hostOf(id);
-    const k = host ? this.hostArticle(host) : null;
-    const art = k ? wikiArticle(k.title, k.lang) : null;
-    const p = k && art?.state === "ready" ? this.annotations(art.value, k.lang).at.get(id) : undefined;
-    if (!host) return this.say("Its article is not on screen.");
+    if (!host) return this.say("Its article or page is not on screen.");
+    const src = this.hostSource(host);
+    const p = src ? this.annotations(src).at.get(id) : undefined;
     if (host.startsWith("p")) this.paneAt = +host.slice(1);
     const node = this.focusFor(host);
-    // A detached annotation has no words to return to: back to the article.
-    if (!p) return this.setFocus(node, { kind: "wiki", host, row: { t: "head" } });
-    const h = this.wikiHost(host)!;
-    const row: WRow = p.sec === h.sec ? { t: "head" } : { t: "sec", id: p.sec };
-    if (row.t === "sec") this.openSec(host, p.sec);
+    const h = this.viewHost(host)!;
+    // A detached annotation has no words to return to: back to the article. Nor has one in the lead seen from a pane on a section.
+    if (!p || (p.sec !== h.sec && p.sec === leadOf(src!))) return this.setFocus(node, { kind: "wiki", host, row: { t: "head" } });
+    const row: WRow = p.sec === h.sec ? { t: "head" } : { t: "sec", id: p.sec as number | string };
+    if (row.t === "sec") this.openSec(host, row.id);
     this.setFocus(node, { kind: "wiki", host, row, grain: "word", range: p.range });
   }
 
-  /** j k on an annotation: the next or previous open annotation of the same article, in reading order. */
+  /** j k on an annotation: the next or previous open annotation of the same article or page, in reading order. */
   private moveAnnotation(id: NodeId, delta: number) {
     const host = this.hostOf(id);
-    const k = host ? this.hostArticle(host) : null;
-    const art = k ? wikiArticle(k.title, k.lang) : null;
-    if (!k || art?.state !== "ready") return;
-    const order = sectionTexts(art.value).ids;
-    const list = [...this.annotations(art.value, k.lang).at].filter(([x]) => this.open.has(x)).sort(([, a], [, b]) => order.indexOf(a.sec) - order.indexOf(b.sec) || a.range[0] - b.range[0]);
+    const src = host ? this.hostSource(host) : null;
+    if (!src) return;
+    const order = sourceTexts(src).ids;
+    const list = [...this.annotations(src).at].filter(([x]) => this.open.has(x)).sort(([, a], [, b]) => order.indexOf(a.sec) - order.indexOf(b.sec) || a.range[0] - b.range[0]);
     const next = list[list.findIndex(([x]) => x === id) + delta];
     if (next) this.setFocus({ node: next[0], grain: "node" });
   }
@@ -3019,9 +3061,8 @@ class Store {
 
   /** A click on an annotation's words: it opens or closes, and the words are selected. */
   toggleAnnotation(host: string, row: WRow, id: NodeId) {
-    const k = this.hostArticle(host);
-    const art = k ? wikiArticle(k.title, k.lang) : null;
-    const p = k && art?.state === "ready" ? this.annotations(art.value, k.lang).at.get(id) : undefined;
+    const src = this.hostSource(host);
+    const p = src ? this.annotations(src).at.get(id) : undefined;
     if (this.open.has(id)) this.open.delete(id);
     else this.open.add(id);
     this.saveView();
@@ -3029,25 +3070,23 @@ class Store {
     else this.emit();
   }
 
-  /** Why a key that works on a node does nothing on Wikipedia's text (or a web page's), for the status line; null for a key that does work there. */
+  /**
+   * Why a key that works on a node does nothing on Wikipedia's text or a web page's, for the status
+   * line; null for a key that does work there. The two are alike: neither is the reader's to edit,
+   * and both take annotations. A page's own keys (R reads it again, s arranges it) are taken before.
+   */
   articleRefuses(k: string, selecting: boolean): string | null {
-    if (this.onWeb) {
-      if (["r", "a", "A", "J", "K", ">", "<", "p", "b", "o", "O", "z", "f"].includes(k) && !(selecting && (k === "J" || k === "K"))) return "A web page's text is shown as it is: it cannot be edited, renamed, moved, locked, reconciled or rewritten here. R reads it again; s has a model arrange it.";
-      if (["e", "d", "y", "x", "c", "D", ":"].includes(k)) return WEB_TEXT;
-      if (k === "w") return "Words of a web page cannot be linked from here; W opens the original in a new tab.";
-      if (k === "S" || k === "n") return "Link suggestions are for your own text, not a web page's.";
-      if (/^[1-5]$/.test(k)) return "Related is listed under your own nodes, not under a web page.";
-      return null;
-    }
-    const own = "Wikipedia's text is shown as it is: it cannot be edited, renamed, moved, locked, reconciled or rewritten here. Annotations on it can: i selects words, e d y x c writes one.";
+    const web = this.onWeb;
+    const whose = web ? "A web page's text" : "Wikipedia's text";
+    const own = `${whose} is shown as it is: it cannot be edited, renamed, moved, locked, reconciled or rewritten here.${web ? " R reads it again; s has a model arrange it." : ""} Annotations on it can: i selects words, e d y x c writes one.`;
     if (["r", "a", "A", "J", "K", ">", "<", "p", "R", "b", "o", "O", "z"].includes(k) && !(selecting && (k === "J" || k === "K"))) return own;
-    if (k === "c" && !selecting) return "Wikipedia's text cannot be edited here. Select words (i) and press c to challenge them, or e d y x to annotate them.";
-    if (["e", "d", "y", "x"].includes(k) && !selecting) return "Select words first: i, then e d y x c or :. An article itself is never deepened or rewritten.";
-    if (k === "D" && !selecting) return "An article cannot be deleted. D on an annotation's words deletes the annotation.";
-    if (k === "w") return "Words of an article cannot be linked from here; W opens it on wikipedia.org.";
+    if (k === "c" && !selecting) return `${whose} cannot be edited here. Select words (i) and press c to challenge them, or e d y x to annotate them.`;
+    if (["e", "d", "y", "x"].includes(k) && !selecting) return `Select words first: i, then e d y x c or :. ${web ? "A page" : "An article"} itself is never deepened or rewritten.`;
+    if (k === "D" && !selecting) return `${web ? "A web page" : "An article"} cannot be deleted. D on an annotation's words deletes the annotation.`;
+    if (k === "w") return web ? "Words of a web page cannot be linked from here; W opens the original in a new tab." : "Words of an article cannot be linked from here; W opens it on wikipedia.org.";
     if (k === "f") return "f changes an annotation's form: Enter on its words, Enter again, then f.";
-    if (k === "S" || k === "n") return "Link suggestions are for your own text, not Wikipedia's.";
-    if (/^[1-5]$/.test(k)) return "Related is listed under your own nodes, not under an article.";
+    if (k === "S" || k === "n") return `Link suggestions are for your own text, not ${web ? "a web page's" : "Wikipedia's"}.`;
+    if (/^[1-5]$/.test(k)) return `Related is listed under your own nodes, not under ${web ? "a web page" : "an article"}.`;
     return null;
   }
 
@@ -3216,7 +3255,7 @@ class Store {
     if (link) return this.follow(link);
     const row = a.row;
     if ((row.t === "back" || row.t === "sense") && h.src !== "wiki") return;
-    if (row.t === "back" && h.src === "wiki") return this.openLinking(this.mentionsOf(h.lang, this.hostArticle(a.host)!.title)[row.i]);
+    if (row.t === "back" && h.src === "wiki") return this.openLinking(this.mentionsOf(h.lang, (this.hostArticle(a.host) as { title: string }).title)[row.i]);
     if (row.t === "sense" && h.src === "wiki") {
       const ss = wikiSenses(h.title, h.lang);
       if (ss.state === "ready" && ss.value[row.i]) this.follow({ kind: "wiki", title: ss.value[row.i].title, lang: h.lang });
@@ -3301,7 +3340,7 @@ class Store {
       const h = this.viewHost(a.host);
       const k = this.hostArticle(a.host);
       if (h?.src === "web") target = { kind: "url", url: h.url };
-      else if (k) target = { kind: "wiki", title: k.title, lang: k.lang };
+      else if (k && k.url === undefined) target = { kind: "wiki", title: k.title, lang: k.lang };
     }
     if (!target) {
       const f = this.focus;

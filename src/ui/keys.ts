@@ -53,8 +53,8 @@ export const HELP: [string, [string, string][]][] = [
       ["y n", "on a suggested link (a faint dashed underline; Tab reaches it): link it / decline it (a declined phrase is not suggested again in that node)"],
       ["S", "the links list of the node you are on and everything under it (on the library root, the whole library): every link found or made, with who decided and the reviewer's reason. 1 2 3 show or hide linked · rejected · pending (rejected is hidden at first); j k move (the words are selected in the text); y links (also a rejected one: you overrule); n declines, or on a link removes it for good; Y links all the pending shown; Enter goes to the words; Esc closes"],
       ["1–5", "the node's Related list (sections elsewhere in the library close in meaning, numbered under its text): with words selected, link them to that one; on the node, go there"],
-      ["l h j k", "in an article: sections are rows, as in a node; l opens one, h goes back"],
-      ["i e d y x c :", "in an article: select words of its text as in a node, and write a note on them; the note belongs to the article and shows wherever it is opened (one whose words are gone from a newer revision is listed as detached)"],
+      ["l h j k", "in an article or a web page: sections are rows, as in a node; l opens one, h goes back"],
+      ["i e d y x c :", "in an article or a web page: select words of its text as in a node, and write a note on them; the note belongs to the article or page and shows wherever it is opened (one whose words are gone from a newer revision, or from a page read again, is listed as detached)"],
     ],
   ],
   [

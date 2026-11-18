@@ -27,6 +27,8 @@
  *   offline      the fetch fails as with no network
  *   huge         a 6 MB page
  *   vanishing    a short note that answers once, then 410 Gone (for Reload: the copy kept, marked stale)
+ *   changing     a headingless page whose text changes after its first read (for notes on its words: one
+ *                detached by Reload, the others found again in parts cut elsewhere)
  * Images under figures.example.org/img/ and videos.example.org/img/, and YouTube's stills on
  * i.ytimg.com, are one tiny real PNG; img/ticket.png answers HTML. Video files are never served:
  * nothing here reads them, and the browser asks only after a click (the tests refuse that request).
@@ -57,6 +59,7 @@ export const MOCK_PAGES = {
   offline: "https://down.example.org/",
   huge: "https://huge.example.org/",
   vanishing: "https://gone.example.org/notes/harbour-wall",
+  changing: "https://changing.example.org/notes/harbour-log",
 } as const;
 
 /** A 1×1 PNG. */
@@ -281,6 +284,16 @@ const vanishing = page(`<title>Notes on the harbour wall</title><meta name="auth
 
 const plain = `Notes on the harbour wall\n\n${prose(80, 2)}\n\n${prose(90, 6)}\n\n${prose(60, 13)}\n`;
 
+/** A sentence in `changing`'s first copy only. */
+export const MOCK_CHANGING_LINE = "The tide table pinned inside the harbour office was last corrected in a year nobody can now remember.";
+const changingParas = Array.from({ length: 8 }, (_, i) => prose(110, 3 + i * 3));
+/** Headingless, so divided by length; the second copy has a new opening paragraph (the parts are cut elsewhere) and lacks MOCK_CHANGING_LINE. */
+const changing = (second: boolean) =>
+  page(
+    `<title>Keeping the harbour log</title><meta name="author" content="Ines Marr">`,
+    `<article><h1>Keeping the harbour log</h1>${second ? `<p>${prose(90, 21)}</p>` : ""}${changingParas.map((p, i) => `<p>${i === 4 && !second ? `${MOCK_CHANGING_LINE} ` : ""}${p}</p>`).join("")}</article>`,
+  );
+
 // ---- answering ----
 
 const html = (body: string, status = 200, headers: Record<string, string> = {}) =>
@@ -313,9 +326,10 @@ const PAGES: Record<string, () => Response> = {
   "https://figures.example.org/img/ticket.png": () => html("<p>not an image</p>"),
 };
 
-/** A fetch that answers like the pages above; anything else is 404. Each fetch made has its own `vanishing` page, there once. */
+/** A fetch that answers like the pages above; anything else is 404. Each fetch made has its own `vanishing` page, there once, and its own `changing` page, changed after its first read. */
 export function makeMockPageFetch(): typeof fetch {
   let vanished = false;
+  let changed = false;
   return (async (input: string | URL | Request, init?: RequestInit) => {
     init?.signal?.throwIfAborted();
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -325,6 +339,11 @@ export function makeMockPageFetch(): typeof fetch {
       if (vanished) return html("<!DOCTYPE html><title>Gone</title><p>This note has been taken down.</p>", 410);
       vanished = true;
       return html(vanishing);
+    }
+    if (href === MOCK_PAGES.changing) {
+      const second = changed;
+      changed = true;
+      return html(changing(second));
     }
     const loop = /^https:\/\/short\.example\.net\/loop\/(\d+)$/.exec(href);
     if (loop) return redirect(`/loop/${Number(loop[1]) + 1}`);

@@ -10,17 +10,18 @@
  * with a `.web` modifier: an amber ground and a ↗ at the head instead of Wikipedia's W, so it is
  * always clear whose text this is. Its head names the site, the title and who wrote it; its foot
  * says where it is from, when it was read and what was changed. A page that cannot be shown says
- * why in plain words and offers the original. Nothing is written on it: annotations are for
- * Wikipedia's text and the reader's own. What a model made of it at the reader's request (s) is
- * marked as the model's: its summary above the lead (the page's own opening still follows), a
- * line when the sections are the model's, and the foot.
+ * why in plain words and offers the original. Its text takes annotations as Wikipedia's does (the
+ * same keys, the same notes, kept under the page's node in the library: src/core/article.ts); a
+ * note whose words a newer copy lacks is listed as detached, and on a page that cannot be shown
+ * every note is. What a model made of it at the reader's request (s) is marked as the model's: its
+ * summary above the lead (the page's own opening still follows), a line when the sections are the
+ * model's, and the foot.
  */
 import { useContext } from "preact/hooks";
-import { clip, type Range } from "../core/text";
+import { clip } from "../core/text";
 import { PaneCtx, useForkMark } from "./Links";
-import { sameAux, store, type WRow } from "./store";
-import { Blocks, Problem, WikiPage, WikiView, backLabel } from "./Wiki";
-import { articleText } from "./wiki";
+import { sameAux, store, type SecId, type Source, type WRow } from "./store";
+import { ArticleTextView, Detached, Problem, WikiPage, WikiView, backLabel, detachedIn } from "./Wiki";
 import { article, attributionText, byline, cachedSummary, sectionsUnder, siteOf, webKey, type WebArticle, type WebProblem } from "./web";
 
 /**
@@ -49,18 +50,13 @@ export function ArticlePage() {
   );
 }
 
-/** A piece of the page's text (the lead or a section) as text the keys select in, as an article's is; it carries no annotations. */
-function WebText({ host, row, html }: { host: string; row: WRow; html: string }) {
-  const at = articleText(html, true);
-  const a = store.aux;
-  const here = a?.kind === "wiki" && a.host === host && sameAux({ ...a, grain: undefined, range: undefined }, { kind: "wiki", host, row });
-  const sel = here && a.grain && a.range ? { grain: a.grain, range: a.range } : null;
-  const link: Range | null = sel && at.links.some((l) => l.range[0] === sel.range[0] && l.range[1] === sel.range[1]) ? sel.range : null;
-  const fork = useForkMark();
+/** A piece of the page's text (the lead or a section), with its detached notes above it: as an article's is, with its annotations. */
+function WebText({ host, row, sec, html, src }: { host: string; row: WRow; sec: SecId; html: string; src: Source }) {
   return (
-    <div class="wiki-text" data-wtext={row.t === "sec" ? row.id : "head"}>
-      <Blocks bs={at.blocks} c={{ text: at.text, notes: [], sel, link, fork }} />
-    </div>
+    <>
+      <Detached ids={detachedIn(src, sec)} src={src} />
+      <ArticleTextView host={host} row={row} sec={sec} html={html} src={src} />
+    </>
   );
 }
 
@@ -165,10 +161,12 @@ export function WebView({ host, own, headFocused }: { host: string } & ViewOpts)
       <section class={`${cls} unusable`} data-host={host} data-reason={art.reason}>
         <Head url={h.url} title={art.title ?? knownTitle(host, h.url)} line={art.site && art.site !== siteOf(h.url) ? art.site : undefined} focused={at({ t: "head" })} mark={mark} />
         <Unusable url={h.url} p={art} />
+        <Detached ids={store.pageNotes(h.url)} src={null} />
       </section>
     );
   }
   const v = art.value;
+  const src: Source = { kind: "web", page: v, url: h.url };
   const at0 = v.attribution;
   const sec = h.sec !== null ? v.sections.find((x) => x.id === h.sec) : undefined;
   const line = byline({ author: at0.author, site: at0.site, published: at0.published });
@@ -188,16 +186,16 @@ export function WebView({ host, own, headFocused }: { host: string } & ViewOpts)
       <Head url={h.url} title={v.title} sub={sec?.heading} line={line} focused={at({ t: "head" })} mark={mark} />
       {at0.stale && <p class="wiki-wait">The page no longer answers; this is the copy read before. R tries again.</p>}
       {!sec && v.model?.summary && <ModelSummary m={v.model} />}
-      {sec || v.lead ? <WebText host={host} row={{ t: "head" }} html={sec ? sec.html : v.lead} /> : null}
+      {sec || v.lead ? <WebText host={host} row={{ t: "head" }} sec={h.sec} html={sec ? sec.html : v.lead} src={src} /> : <Detached ids={detachedIn(src, null)} src={src} />}
       {!sec && v.outline === "model" && <p class="web-model-label web-arranged">Sections arranged by a model at your request; the page has no headings of its own.</p>}
-      <Rows article={v} host={host} parent={h.sec} nested={!!h.nested} at={at} showing={showing} />
+      <Rows article={v} src={src} host={host} parent={h.sec} nested={!!h.nested} at={at} showing={showing} />
       <Attribution a={at0} />
     </section>
   );
 }
 
-function Rows(props: { article: WebArticle; host: string; parent: string | null; nested: boolean; at: (r: WRow) => boolean; showing: (id: string) => string | undefined }) {
-  const { article: v, host, parent, nested, at, showing } = props;
+function Rows(props: { article: WebArticle; src: Source; host: string; parent: string | null; nested: boolean; at: (r: WRow) => boolean; showing: (id: string) => string | undefined }) {
+  const { article: v, src, host, parent, nested, at, showing } = props;
   const kids = sectionsUnder(v, parent);
   if (!kids.length) return null;
   return (
@@ -215,7 +213,7 @@ function Rows(props: { article: WebArticle; host: string; parent: string | null;
             </div>
             {open && (
               <div class="content">
-                <WebText host={host} row={row} html={x.html} />
+                <WebText host={host} row={row} sec={x.id} html={x.html} src={src} />
                 <Rows {...props} parent={x.id} />
               </div>
             )}

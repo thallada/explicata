@@ -415,20 +415,14 @@ function StatusLine() {
   // Where a focused link in an article's text goes, as Enter's hint names it: the article, or the page's host.
   const auxToName = !auxTo ? "" : auxTo.kind === "wiki" ? `“${clip(auxTo.title, 40)}”` : clip(hostOf(auxTo.kind === "url" ? auxTo.url : ""), 40);
   const hint: Hint = store.aux
-    ? store.aux.kind === "wiki" && store.onWeb
-      ? store.inArticleText
-        ? auxTo
-          ? [["Enter", `opens ${auxToName}`], ["W", "the original"], ["Escape", "widen"]]
-          : [["H L", "select less, more"], ["Escape", "widen"]]
-        : ["web page · j k rows", ["l", "open"], ["h", "back"], ["i", "select words"], ["Tab", "links"], ["W", "the original"], ...(store.panes ? [["q", "close"] as [string, string]] : [])]
-    : store.aux.kind === "wiki"
+    ? store.aux.kind === "wiki"
       ? store.inArticleText
         ? store.articleNoteHere()
           ? [["Enter", "open/enter the note"], ["e", "toggle"], ["D", "delete note"], ["Tab", "next"]]
           : auxTo
             ? [["Enter", `opens ${auxToName}`], "e d y x c annotate", ["W", auxTo.kind === "wiki" ? "on wikipedia.org" : "the original"]]
             : [...lensHint, ["Escape", "widen"]]
-        : ["Wikipedia · j k rows", ["l", "open"], ["h", "back"], ["i", "select words"], ["Tab", "links and notes"], ["W", "on wikipedia.org"], ...(store.panes ? [["q", "close"] as [string, string]] : [])]
+        : [store.onWeb ? "web page · j k rows" : "Wikipedia · j k rows", ["l", "open"], ["h", "back"], ["i", "select words"], ["Tab", "links and notes"], ["W", store.onWeb ? "the original" : "on wikipedia.org"], ...(store.panes ? [["q", "close"] as [string, string]] : [])]
       : store.aux.kind === "target" ? [["Enter", "opens what this is about"]]
       : [["Enter", "goes to the linking note"]]
     : store.preview

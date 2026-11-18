@@ -71,9 +71,9 @@ const quote = (s: string, n = 60) => {
 export interface SelCtx {
   /** The words, for Copy and the menu's head. */
   text: string;
-  /** In Wikipedia's text (or a web page's): no linking by hand, no Related. */
+  /** In Wikipedia's text or a web page's: the lenses write annotations; no linking by hand, no Related. */
   article: boolean;
-  /** In a web page's text: nothing is written on it, so no lenses either. */
+  /** In a web page's text: its original opens at its own address (W). */
   web?: boolean;
   /** A link on exactly these words: where it goes. */
   link?: "wiki" | "node" | "url";
@@ -100,9 +100,8 @@ function lenses(act: Act): Item[] {
   ];
 }
 
-/** The selection bar: the lenses, then linking (not in an article). Its ⋯ opens `selectionEntries`. */
+/** The selection bar: the lenses, then linking (not in an article's or a page's text). Its ⋯ opens `selectionEntries`. */
 export function barItems(c: SelCtx, act: Act): Item[][] {
-  if (c.web) return [[key(act, c.link ? "Open the link" : "Open the original", c.link ? "Enter" : "W", { short: c.link ? "open" : "original" })]];
   const ls = lenses(act);
   return c.article ? [ls] : [ls, [key(act, "Link to…", "w", { short: "link…" })]];
 }
@@ -122,10 +121,10 @@ export function selectionEntries(c: SelCtx, act: Act): Entry[] {
     c.suggestion && key(act, `Link to ${c.suggestion}`, "y", { sub: "a suggested link" }),
     c.suggestion && key(act, "Decline the suggestion", "n"),
     (c.link || c.note) && !c.article && key(act, c.link ? "Retarget…" : "Link it…", "w"),
-    (c.link || c.note) && !c.web && key(act, c.link && !c.note ? "Remove the link" : "Delete the note", "D", c.link && !c.note ? { sub: "and do not link these words again here" } : {}),
+    (c.link || c.note) && key(act, c.link && !c.note ? "Remove the link" : "Delete the note", "D", c.link && !c.note ? { sub: "and do not link these words again here" } : {}),
     c.link && c.note && !c.article && { t: "item", label: "Remove the link, keep the note", keyText: "/unlink", run: () => act.command("/unlink") },
     SEP,
-    ...(c.web ? [] : lenses(act)),
+    ...lenses(act),
     SEP,
     !c.article && !c.link && !c.note && key(act, "Link to…", "w"),
     related.length > 0 && head("Link to a related section"),

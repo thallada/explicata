@@ -11,7 +11,9 @@
  * Arrange (a model's summary, and sections for a page divided only by length).
  */
 import type { WebArticle, WebSection, WebSummary, WebUnusable } from "../../server/page";
+import type { SectionText } from "../core/article";
 import { normUrl } from "../llm/web";
+import { articleText } from "./wiki";
 
 export type { WebArticle, WebSection, WebSummary, WebUnusable };
 
@@ -186,6 +188,28 @@ export const webKey = (url: string, sec?: string) => `u:${normUrl(url)}${sec ? `
 /** The sections directly under one (null: the top level). */
 export function sectionsUnder(a: WebArticle, parent: string | null): WebSection[] {
   return a.sections.filter((x) => x.parent === parent);
+}
+
+/** The headings down to a section of a page (null: the lead, []): how a note on its words names where it is. */
+export function pageSectionPath(a: WebArticle, id: string | null): string[] {
+  const out: string[] = [];
+  for (let s = a.sections.find((x) => x.id === id); s; s = a.sections.find((x) => x.id === s!.parent)) out.unshift(s.heading);
+  return out;
+}
+
+/**
+ * Every section's text with its headings, the lead first: what notes on a page are found again in
+ * (src/core/article.ts reanchor). Its text as the view draws it (wiki.ts articleText, `web` set);
+ * `text` stands in for that where there is no DOM (the tests). Remembered per copy of the page.
+ */
+const sectionLists = new WeakMap<WebArticle, { ids: (string | null)[]; secs: SectionText[] }>();
+export function pageSectionTexts(a: WebArticle, text: (html: string) => string = (html) => articleText(html, true).text): { ids: (string | null)[]; secs: SectionText[] } {
+  let out = sectionLists.get(a);
+  if (!out) {
+    out = { ids: [null, ...a.sections.map((s) => s.id)], secs: [{ path: [], text: text(a.lead) }, ...a.sections.map((s) => ({ path: pageSectionPath(a, s.id), text: text(s.html) }))] };
+    sectionLists.set(a, out);
+  }
+  return out;
 }
 
 /** What a page goes by: its title once it has arrived, else its site. */
