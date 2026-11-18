@@ -65,6 +65,8 @@ test("peeking in a busy forest: every other curve leaves the peeking pane's plac
     }),
   );
   expect(cut.length).toBeGreaterThan(1);
+  // Shift held, as the mouse comes onto each.
+  await page.keyboard.down("Shift");
   for (const c of cut) {
     await page.mouse.move(c.x, c.y);
     await expect(page.locator(`.pane[data-tid="${c.tid}"]`)).toHaveAttribute("data-peek", "");
@@ -76,6 +78,7 @@ test("peeking in a busy forest: every other curve leaves the peeking pane's plac
     await expect(page.locator(`.pane[data-tid="${c.tid}"]`)).not.toHaveAttribute("data-peek", "");
     await noFaults(page, `after ${c.tid}`);
   }
+  await page.keyboard.up("Shift");
 });
 
 test("a pane's title and its tab never show together, and the curve lands in whichever shows, as a crowded column scrolls through its panes", async ({ page }) => {

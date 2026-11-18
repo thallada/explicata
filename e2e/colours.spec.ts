@@ -3,7 +3,7 @@
  * drawn by the curve into it, in the pane's colour, as one stroke (measured in the pixels, at several
  * device pixel ratios); a pane folded or scrolled past its title shows its tab and the curve lands in
  * the tab's foot, and a curve out of a folded pane leaves from that foot; a pane's colour depends on
- * the forest only; a covered pane peeks out across and down at once, and the wheel scrolls it; the
+ * the forest only; a covered pane peeks out across and down at once with Shift held, and the wheel scrolls it; the
  * selection bar sits at its pane's level. Same build, mock model and mock Wikipedia as the others.
  */
 import { expect, test, type Page } from "@playwright/test";
@@ -268,7 +268,7 @@ test("a pane folded or scrolled past its title shows its tab, and its curve land
   expect(near(l.end.y, l.rule!.y)).toBe(true);
 });
 
-test("a pane covered across and down peeks out whole on both axes; the wheel scrolls it and it stays out; the selection bar of a pane under it is covered", async ({ page }) => {
+test("a pane covered across and down peeks out whole on both axes with Shift held (not on a plain hover); the wheel scrolls it and it stays out; the selection bar of a pane under it is covered", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 760 });
   await library(page);
   for (const t of ["The tides", "What a proof is", "The invention of writing", "Fixed points"]) await clickOpen(page, "Library", t);
@@ -283,7 +283,13 @@ test("a pane covered across and down peeks out whole on both axes; the wheel scr
   await expect(tides).toHaveAttribute("data-covered", "");
   const tb = (await tides.boundingBox())!;
   const sp = { x: tb.x + 4, y: tb.y - 45, width: 20 };
+  // A plain hover, however long, leaves it covered.
   await page.mouse.move(sp.x + sp.width / 2, sp.y + 60);
+  await page.waitForTimeout(450);
+  await expect(col).not.toHaveAttribute("data-peek", "");
+  await expect(tides).not.toHaveAttribute("data-peek", "");
+  // Shift pressed with the mouse resting there: out.
+  await page.keyboard.down("Shift");
   await expect(col).toHaveAttribute("data-peek", "");
   await expect(tides).toHaveAttribute("data-peek", "");
   const vp = page.viewportSize()!;
@@ -306,6 +312,7 @@ test("a pane covered across and down peeks out whole on both axes; the wheel scr
   // Away: back.
   await page.mouse.move(vp.width - 10, vp.height / 2);
   await expect(col).not.toHaveAttribute("data-peek", "");
+  await page.keyboard.up("Shift");
 
   // The selection bar: shown in its pane; a pane peeking over it covers it.
   const rec = pane(page, "Recursion without names");
@@ -322,7 +329,8 @@ test("a pane covered across and down peeks out whole on both axes; the wheel scr
   const b = (await bar.boundingBox())!;
   const at = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
   expect(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest(".selbar"), at)).toBe(true);
-  // Peek the top-level trees' column (to the left, covered): it slides out over the pane with the bar.
+  // Peek the top-level trees' column (to the left, covered), Shift held as the mouse comes onto it: it slides out over the pane with the bar.
+  await page.keyboard.down("Shift");
   await page.mouse.move(sp.x + sp.width / 2, sp.y + 60);
   await expect(col).toHaveAttribute("data-peek", "");
   const over = await page.evaluate(({ x, y }) => {
@@ -333,4 +341,7 @@ test("a pane covered across and down peeks out whole on both axes; the wheel scr
   expect(at.x).toBeLessThan(cb.x + cb.width);
   expect(over).toEqual({ bar: false, peeked: true });
   expect(await state(page, (s) => s.selectedText())).not.toBeNull();
+  // Shift let go: back.
+  await page.keyboard.up("Shift");
+  await expect(col).not.toHaveAttribute("data-peek", "");
 });

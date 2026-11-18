@@ -443,7 +443,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 /* A pane or column covered down to its tab or spine has nothing else on show: it is not painted, until it peeks. */
 .col[data-buried]:not([data-peek]) .pane-scroll, .col.crowded > .pane[data-buried]:not([data-peek]) > .pane-scroll { content-visibility: hidden; }
 
-/* Peeking: a covered pane or column, the mouse resting on it, raised over its neighbours whole. */
+/* Peeking: a covered pane or column, the mouse on it with Shift or Control held, raised over its neighbours whole. */
 .col[data-peek], .pane[data-peek] { z-index: 6; box-shadow: 0 3px 18px 0 var(--shade); outline: 1px solid var(--edge-strong); outline-offset: -1px; }
 /* A pane peeking down its column is shown as tall as its text needs; the extra height takes no room, so nothing around it moves. */
 .pane[data-peek-h] { height: var(--peek-h) !important; margin-bottom: calc(-1 * var(--peek-extra, 0px)); }

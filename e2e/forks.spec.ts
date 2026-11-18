@@ -480,12 +480,16 @@ test("a crowded column stacks its panes as the strip stacks columns: covered par
   expect(b[kids[0]].whole).toBe(true);
 });
 
-test("a pane resting covered peeks out under the mouse, over its neighbours without moving them; a click makes it active", async ({ page }) => {
+test("a covered pane peeks out under the mouse only with Shift or Control held, over its neighbours without moving them; letting go puts it back; a click makes it active", async ({ page }) => {
   const kids = await five(page);
   const before = await boxes(page);
   const tab = pane(page, kids[1]).locator(".tabline");
+  // A plain hover, however long, peeks nothing.
   await tab.hover();
-  // Not at once: passing the mouse across does not flicker.
+  await page.waitForTimeout(450);
+  expect(await pane(page, kids[1]).getAttribute("data-peek")).toBeNull();
+  // Shift pressed with the mouse resting on it: out (not at once, so a capital typed does not flash it).
+  await page.keyboard.down("Shift");
   expect(await pane(page, kids[1]).getAttribute("data-peek")).toBeNull();
   await expect(pane(page, kids[1])).toHaveAttribute("data-peek", "");
   const peeked = (await pane(page, kids[1]).boundingBox())!;
@@ -494,15 +498,35 @@ test("a pane resting covered peeks out under the mouse, over its neighbours with
   // Nothing else moved.
   const after = await boxes(page);
   for (const t of kids) if (t !== kids[1]) expect(after[t].y).toBeCloseTo(before[t].y, 0);
-  // Leaving puts it back.
-  await page.mouse.move(5, 500);
+  // Letting go puts it back.
+  await page.keyboard.up("Shift");
   await expect(pane(page, kids[1])).not.toHaveAttribute("data-peek", "");
-  // A click on it makes it the active pane, whole.
+  // Control works as Shift does; any other key, or the window losing the focus, puts it back too.
+  await page.keyboard.down("Control");
+  await expect(pane(page, kids[1])).toHaveAttribute("data-peek", "");
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await expect(pane(page, kids[1])).not.toHaveAttribute("data-peek", "");
+  await page.keyboard.up("Control");
+  // Held as the mouse comes onto it: out; leaving puts it back.
+  await page.mouse.move(5, 500);
+  await page.keyboard.down("Shift");
   await tab.hover();
   await expect(pane(page, kids[1])).toHaveAttribute("data-peek", "");
+  await page.keyboard.press("Shift+Escape");
+  await expect(pane(page, kids[1])).not.toHaveAttribute("data-peek", "");
+  await page.mouse.move(5, 500);
+  await page.keyboard.up("Shift");
+  // A click on it makes it the active pane, whole, and it goes back: the column laid out for it once it is back.
+  await tab.hover();
+  await page.keyboard.down("Control");
+  await expect(pane(page, kids[1])).toHaveAttribute("data-peek", "");
   await pane(page, kids[1]).locator(".pane-head").click();
+  await page.keyboard.up("Control");
   await expect(page.locator(".pane.active .pane-head h2")).toHaveText(kids[1]);
+  await expect(pane(page, kids[1])).not.toHaveAttribute("data-peek", "");
+  await still(page);
   expect((await boxes(page))[kids[1]].whole).toBe(true);
+  expect(await pane(page, kids[1]).evaluate((el) => ["data-tab", "data-covered", "data-buried"].filter((a) => el.hasAttribute(a)))).toEqual([]);
   // A column covered across the strip peeks too, raised over the columns past it.
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.evaluate(() => localStorage.clear());
@@ -511,7 +535,45 @@ test("a pane resting covered peeks out under the mouse, over its neighbours with
   await expect.poll(async () => (await columns(page)).length).toBe(4);
   await expect.poll(() => page.evaluate(() => document.querySelectorAll(".strip > .col")[0].hasAttribute("data-covered"))).toBe(true);
   await page.locator(".strip > .col").nth(0).locator(".spine-title").hover();
+  await page.waitForTimeout(300);
+  await expect(page.locator(".strip > .col").nth(0)).not.toHaveAttribute("data-peek", "");
+  await page.keyboard.down("Shift");
   await expect(page.locator(".strip > .col").nth(0)).toHaveAttribute("data-peek", "");
+  await page.keyboard.up("Shift");
+});
+
+test("a Shift- or Ctrl-click on a row of a peeking pane does what it does on any pane: Shift opens in place, Ctrl beside", async ({ page }) => {
+  const kids = await five(page);
+  /** Peek a covered pane, the modifier held, and click one of its rows with it. */
+  const peekRow = async (mod: "Shift" | "Control", inPane: string, row: string) => {
+    await page.mouse.move(5, 500);
+    // On what shows of it, below its grip.
+    const at = await pane(page, inPane).evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const c = el.parentElement!.getBoundingClientRect();
+      return { x: r.left + 60, y: Math.max(r.top, c.top) + 22 };
+    });
+    await page.mouse.move(at.x, at.y);
+    await page.keyboard.down(mod);
+    await expect(pane(page, inPane)).toHaveAttribute("data-peek", "");
+    await pane(page, inPane).locator(".row", { hasText: row }).first().click({ modifiers: [mod] });
+    await page.keyboard.up(mod);
+    await still(page);
+  };
+  const a = await childTitles(page, kids[1]);
+  const b = await childTitles(page, kids[3]);
+  // Shift: in place of the focused branch's pane in the next column (none there yet: it opens there).
+  await peekRow("Shift", kids[1], a[0]);
+  expect(await trail(page)).toEqual(["Explicata", kids[1], a[0]]);
+  expect((await columns(page))[2]).toEqual([a[0]]);
+  // Ctrl, in another pane covered in that column: beside what is open there, a fork of its own.
+  await peekRow("Control", kids[3], b[0]);
+  expect(await trail(page)).toEqual(["Explicata", kids[3], b[0]]);
+  expect((await columns(page))[2]).toEqual([a[0], b[0]]);
+  // Shift, back in the first: in place of its pane there; the other fork stays.
+  await peekRow("Shift", kids[1], a[1]);
+  expect(await trail(page)).toEqual(["Explicata", kids[1], a[1]]);
+  expect((await columns(page))[2]).toEqual([a[1], b[0]]);
 });
 
 test("a pane is dragged by its grip, or its tab, up or down its column; the order is kept, and Esc cancels", async ({ page }) => {
@@ -939,4 +1001,41 @@ test("side by side, a crowded column's edges resize too: the column is laid out 
   expect(Math.abs(c.panes[n - 2].h - (shown[n - 2] + 200))).toBeLessThanOrEqual(1.5);
   for (let i = 0; i < n - 2; i++) expect(Math.abs(c.panes[i].h - shown[i])).toBeLessThanOrEqual(1.5);
   for (let i = 1; i < n; i++) expect(Math.abs(c.panes[i].top - (c.panes[i - 1].top + c.panes[i - 1].h))).toBeLessThanOrEqual(1);
+});
+
+test("an edge stays an edge with Shift held: resting on it, or pressing Shift there, peeks nothing, and it drags as without", async ({ page }) => {
+  await five(page);
+  let c = (await measured(page))[1];
+  const x = c.left + c.w / 2;
+  const n = c.panes.length;
+  const peeking = () => page.evaluate(() => document.querySelectorAll("[data-peek]").length);
+  // Plain hover on a covered pane, then Shift pressed on the edge between two of the column's tabs: no peek.
+  await page.mouse.move(x, c.panes[1].top + 12);
+  await page.waitForTimeout(300);
+  expect(await peeking()).toBe(0);
+  expect(await cursorAt(page, x, c.panes[2].top)).toBe("row-resize");
+  await page.keyboard.down("Shift");
+  await page.waitForTimeout(300);
+  expect(await peeking()).toBe(0);
+  // Moving along the edges with Shift held: still none.
+  const y = c.panes[n - 1].top;
+  expect(await cursorAt(page, x, y)).toBe("row-resize");
+  await page.waitForTimeout(300);
+  expect(await peeking()).toBe(0);
+  // Dragged with Shift still held: the edge follows, nothing peeks on the way or after.
+  const shown = c.panes.map((p, i) => (i < n - 1 ? c.panes[i + 1].top : c.bottom) - p.top);
+  await page.mouse.down();
+  await page.mouse.move(x, y + 100, { steps: 4 });
+  await page.waitForTimeout(250);
+  expect(await peeking()).toBe(0);
+  await page.mouse.move(x, y + 200, { steps: 4 });
+  await page.mouse.up();
+  await frames(page);
+  await page.waitForTimeout(250);
+  expect(await peeking()).toBe(0);
+  await page.keyboard.up("Shift");
+  c = (await measured(page))[1];
+  expect(c.sized).toBe(true);
+  expect(Math.abs(c.panes[n - 1].top - (y + 200))).toBeLessThanOrEqual(1.5);
+  expect(Math.abs(c.panes[n - 2].h - (shown[n - 2] + 200))).toBeLessThanOrEqual(1.5);
 });

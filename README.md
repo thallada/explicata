@@ -189,11 +189,19 @@ Press `?` for every key. The short version:
   A pane scrolled past its own title shows the same tab at its top, over its text; a pane shows its
   tab only while the rule under its title does not show, never both. A click anywhere
   in a pane that is not text, a row or a link makes it the active pane; a click anywhere else, or
-  Esc, clears a selection. Mouse resting on a pane that is cut off for any reason (covered across
-  or down, too small a share of its column, past its foot): after a moment it peeks out whole over
-  its neighbours, its column across and the pane down its column, as tall as its text needs (a pane
-  longer than its column: the column less a tab for each other pane, clear of their tabs; one shown
-  that tall already does not peek down its column), and stays out while the pointer is on it (the wheel scrolls it); a click makes it the active pane. A
+  Esc, clears a selection. A pane made the active one, however (a click in it, `[` `]`, `Alt+k`
+  `Alt+j`, the keys moving along the branch), is laid out again in its column: it has what its text
+  needs, up to the column less a tab for each other pane, and the others give way down to their
+  tabs (a pinned one keeps its height). With Shift or Control held, the mouse on a pane that is
+  cut off for any reason (covered across or down, too small a share of its column, past its foot)
+  peeks it out whole over its neighbours, its column across and the pane down its column, as tall
+  as its text needs (a pane longer than its column: the column less a tab for each other pane,
+  clear of their tabs; one shown that tall already does not peek down its column): pressed with
+  the mouse resting on it, or held as the mouse comes onto it. It stays out while the key is held
+  and the pointer is on it (the wheel, with Shift, scrolls it); letting go of both keys, any other
+  key, or the pointer leaving puts it back. A plain hover never peeks, so the text being read does
+  not jump, and an edge between panes (below) never peeks. A click on a peeking pane makes it the
+  active pane; a Shift- or Ctrl-click on a row or link in it does what it does anywhere. A
   pane's grip (the band above its title, by the pin and x, shown when pointed at) or its tab drags
   it up or down its column; Esc cancels; `Alt+Shift+k` `Alt+Shift+j` (or the pane menu's Move this
   pane up and down) move the active pane a place; the column keeps that order, and a pane opened
@@ -203,7 +211,8 @@ Press `?` for every key. The short version:
   dragged, the edge follows it, as a finger drags a pane's top edge on a phone: down a column the
   panes either side give and take (a tab at the limit pushed along, never less than a tab, a pane
   left barely taller than its tab folds), across the strip the column after the edge gives what the
-  one before takes (never narrower than 240 px, one at the limit pushed along). The column's top
+  one before takes (never narrower than 240 px, one at the limit pushed along). Nothing peeks over
+  an edge, or while one is dragged, Shift held or not. The column's top
   and foot, the strip's outer edges and an edge a column covers are not edges. Esc while dragging
   puts the edge back; a double click on an edge lays its column (across, the strip) out
   automatically again. Only a pinned pane's size sticks: once another pane is the active one, or a

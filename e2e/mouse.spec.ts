@@ -349,7 +349,7 @@ test.describe("panes", () => {
     // A Shift-click on a row opens it in place of the pane there.
     await paneOf(page, "Tuning and temperament").locator(".row", { hasText: "The comma" }).click({ modifiers: ["Shift"] });
     await expect.poll(() => trail(page)).toEqual(["Tuning and temperament", "The comma"]);
-    // Five panes in one column: a covered one peeks under the mouse; with room, a pane drags by its grip (the ⋯ beside it does not drag).
+    // Five panes in one column: a covered one peeks under the mouse with Shift held; with room, a pane drags by its grip (the ⋯ beside it does not drag).
     await page.evaluate(() => localStorage.clear());
     await open(page);
     await keys(page, "z j Enter j Enter j Enter j Enter j Enter");
@@ -359,7 +359,10 @@ test.describe("panes", () => {
     const covered = col.locator(":scope > .pane[data-covered]").first();
     await expect(covered).toHaveCount(1);
     await covered.locator(".tabline").hover();
+    await page.keyboard.down("Shift");
     await expect(covered).toHaveAttribute("data-peek", "");
+    await page.keyboard.up("Shift");
+    await expect(covered).not.toHaveAttribute("data-peek", "");
     await page.mouse.move(5, 500);
     await page.setViewportSize({ width: 1920, height: 2000 });
     await expect.poll(() => col.getAttribute("class")).not.toContain("crowded");

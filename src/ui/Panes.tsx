@@ -378,8 +378,8 @@ const HOLD_MS = 380;
 /** The touch drag's move handler (Panes' effect sets it); the handles call it from their own, blocking, touchmove listeners. */
 let handleMove: ((e: TouchEvent) => void) | null = null;
 const onHandleMove = (e: TouchEvent) => handleMove?.(e);
-/** How long the mouse rests on a covered pane before it peeks out. */
-const PEEK_MS = 200;
+/** How long Shift or Control is held, with the mouse on a covered pane, before it peeks out (so a capital typed, or Ctrl+C, does not flash it). */
+const PEEK_MS = 120;
 
 /** As pages, how far a finger moves on a pane's handle before its direction is known: up or down resizes the pane, sideways is the browser's (the page turns). */
 const LOCK_PX = 8;
@@ -537,6 +537,8 @@ export function Panes() {
   const fingers = useRef(false);
   /** The layout last drawn: pages or side by side. */
   const wasPages = useRef<boolean | null>(null);
+  /** The columns were laid out while something peeked: lay them out again once it is back (the effect's `settled`). */
+  const peekLaid = useRef(false);
 
   const branch = store.branchNodes;
   const onBranch = new Set(branch.map((n) => n.id));
@@ -558,6 +560,8 @@ export function Panes() {
     const colEls = [...el.children].filter((c): c is HTMLElement => c.classList.contains("col"));
     if (!colEls.length) return;
     clearTimeout(later.current);
+    // A pane or column peeking skews what is measured here (its height, the offset that keeps that from moving the panes under it, its lift).
+    if (el.querySelector("[data-peek]")) peekLaid.current = true;
     const activeCol = activeId === undefined ? null : paneEls(el).get(activeId)?.parentElement;
     const spine = colEls[0].querySelector<HTMLElement>(".spine")?.offsetWidth ?? 0;
     // With no scrollbar under the panes (none needed, or one drawn over them) their last bottom edge meets the status line's: one line, not two.
@@ -925,10 +929,14 @@ export function Panes() {
 
     /*
      * Peeking: a pane the stacks have covered, wholly or in part (its column across the strip, or
-     * the pane down a crowded column), slides out over its neighbours while the mouse rests on it
-     * (after PEEK_MS, so passing across does not flicker), raised and, if it runs past the column's
-     * foot, lifted into view; nothing else moves. A click makes it the active pane, which uncovers
-     * it for good. Not for touch, the keyboard, or while dragging.
+     * the pane down a crowded column), slides out over its neighbours while the mouse is on it with
+     * Shift or Control held (after PEEK_MS, so a capital typed or a Ctrl+C does not flash it):
+     * pressed with the mouse resting on it, or held as the mouse comes onto it. It is raised and, if
+     * it runs past the column's foot, lifted into view; nothing else moves. Letting go of both keys,
+     * any other key, the mouse leaving or the window losing the focus puts it back. A plain hover
+     * never peeks, so text being read does not jump and an edge stays where it is to be dragged. A
+     * click makes it the active pane, which uncovers it for good. Not for touch, or while dragging
+     * a grip or an edge.
      */
     /** What peeks (its column across, the pane down its column, or both) and the pane it is for. */
     let peeked: HTMLElement[] = [];
@@ -942,12 +950,18 @@ export function Panes() {
       it.style.removeProperty("--peek-extra");
       it.style.transform = "";
     };
+    /** Once something has come back: the curves drawn again; and if the columns were laid out while it was out (a click on it made it the active pane, say), laid out again, since its height, offset and lift skewed what was measured (a column's scroll, the panes' marks). */
+    const settled = () => {
+      if (!peekLaid.current) return schedule();
+      peekLaid.current = false;
+      relayout();
+    };
     function hide() {
       if (!peeked.length) return;
       for (const it of peeked) lower(it);
       peeked = [];
       peekedFor = null;
-      schedule();
+      settled();
     }
     function unpeek() {
       clearTimeout(timer);
@@ -1016,11 +1030,12 @@ export function Panes() {
       }
       schedule();
     };
-    const onMove = (e: PointerEvent) => {
-      if (e.pointerType !== "mouse" || e.buttons || drag) return;
-      // On an edge between panes (below): it is pressed to resize, not peeked through.
-      if (wrap.dataset.edge) return unpeek();
-      const pane = (e.target as HTMLElement).closest<HTMLElement>(".pane");
+    /** Where the mouse last was over the strip (a modifier pressed with it resting there peeks what is under it); null once it has left. */
+    let mouse: { x: number; y: number } | null = null;
+    /** Shift or Control held: what makes a covered pane peek. */
+    const held = (e: { shiftKey: boolean; ctrlKey: boolean }) => e.shiftKey || e.ctrlKey;
+    /** Peek this pane, the pointer on it with a modifier held, after PEEK_MS (or put back what peeks, if it is none, or has nothing covered). */
+    const consider = (pane: HTMLElement | null) => {
       if (pane && (pane === peekedFor || pane === pending)) return;
       clearTimeout(timer);
       pending = null;
@@ -1032,7 +1047,7 @@ export function Panes() {
         for (const it of gone) lower(it);
         peeked = [col];
         peekedFor = pane;
-        if (gone.length) schedule();
+        if (gone.length) settled();
       } else hide();
       if (!pane || !its.some((x) => !peeked.includes(x))) return;
       pending = pane;
@@ -1043,8 +1058,40 @@ export function Panes() {
         if (now.length) peek(pane, now);
       }, PEEK_MS);
     };
-    el.addEventListener("pointerleave", unpeek, { signal });
-    window.addEventListener("keydown", unpeek, { capture: true, signal });
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse") return;
+      mouse = { x: e.clientX, y: e.clientY };
+      if (e.buttons || drag || edging) return;
+      // On an edge between panes (below): it is pressed to resize, not peeked through. Without Shift or Control, nothing peeks.
+      if (wrap.dataset.edge || !held(e)) return unpeek();
+      consider((e.target as HTMLElement).closest<HTMLElement>(".pane"));
+    };
+    /** Typing in a field: Shift is for capitals there. */
+    const typing = () => store.mode === "edit" || !!(document.activeElement as HTMLElement | null)?.closest?.("input, textarea, [contenteditable]");
+    // Shift or Control pressed: the covered pane under the resting mouse peeks. Any other key puts back what peeks (so does Shift or Control pressed off a covered pane).
+    const onPeekKey = (e: KeyboardEvent) => {
+      if (e.key !== "Shift" && e.key !== "Control") return unpeek();
+      if (!mouse || drag || edging || wrap.dataset.edge || typing()) return;
+      const t = document.elementFromPoint(mouse.x, mouse.y);
+      consider(t && el.contains(t) ? t.closest<HTMLElement>(".pane") : null);
+    };
+    // Both let go: it goes back.
+    const onPeekKeyUp = (e: KeyboardEvent) => !held(e) && unpeek();
+    // The wheel with Shift held over what peeks scrolls its text up and down (the browser would scroll sideways, and nothing there moves).
+    const onPeekWheel = (e: WheelEvent) => {
+      if (!e.shiftKey || e.ctrlKey || !peeked.length) return;
+      const t = e.target as HTMLElement;
+      const box = peeked.some((p) => p.contains(t)) ? t.closest<HTMLElement>(".pane-scroll") : null;
+      if (!box) return;
+      const d = e.deltaY || e.deltaX;
+      e.preventDefault();
+      box.scrollTop += e.deltaMode === 1 ? d * 16 : e.deltaMode === 2 ? d * box.clientHeight : d;
+    };
+    el.addEventListener("wheel", onPeekWheel, { passive: false, signal });
+    el.addEventListener("pointerleave", () => ((mouse = null), unpeek()), { signal });
+    window.addEventListener("keydown", onPeekKey, { capture: true, signal });
+    window.addEventListener("keyup", onPeekKeyUp, { capture: true, signal });
+    window.addEventListener("blur", unpeek, { signal });
 
     /*
      * Dragging a pane up or down its column, by its grip (the band above its title, beside the pin
