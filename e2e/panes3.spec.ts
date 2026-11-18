@@ -1,7 +1,8 @@
 /**
  * The panes view: a click anywhere in a pane makes it active and anywhere clears a
  * selection; a column's panes stand in the order of their sources; every pane in a crowded column
- * shows at least its tab, above or below; a pane cut off for any reason peeks out whole; the curves
+ * shows at least its tab, above or below; the active pane is never cut short by its share of a
+ * column; a pane cut off for any reason peeks out whole; the curves
  * keep to their sources and landing lines through every kind of layout change (curveFaults); the
  * selection bar keeps clear of a tab; a dotted curve turns toward its source; Alt with h j k l moves
  * between panes. Same build, mock model and mock Wikipedia as the others.
@@ -142,6 +143,67 @@ test("every pane of a crowded column shows at least its tab, above or below the 
   expect(stubs).toBe(0);
 });
 
+test("the active pane is never cut short by its share of a column: the others give way, folding to their tabs, as its Wikipedia card arrives; once the active pane is elsewhere, the column shares again", async ({ page }) => {
+  await library(page);
+  await clickOpen(page, "Library", "Octopus minds");
+  await clickOpen(page, "Octopus minds", "A separate experiment");
+  await clickOpen(page, "Octopus minds", "A body with many minds");
+  await clickOpen(page, "A body with many minds", "Counting neurons");
+  // A definition beside it, active: its line and then, once it has arrived, the article's card.
+  await clickOpen(page, "A separate experiment", "cephalopod", ".lnk, .anchor");
+  await page.mouse.move(5, 500);
+  /** The panes of the column holding Counting neurons: what each needs, its height, what shows of it. */
+  const column = () =>
+    pane(page, "Counting neurons").evaluate((el) => {
+      const col = el.parentElement!;
+      const c = col.getBoundingClientRect();
+      const ps = [...col.querySelectorAll<HTMLElement>(":scope > .pane")];
+      return {
+        crowded: col.classList.contains("crowded"),
+        h: c.height,
+        panes: ps.map((p, i) => {
+          const r = p.getBoundingClientRect();
+          const sc = getComputedStyle(p.querySelector(".pane-scroll")!);
+          return {
+            t: p.querySelector(".pane-head h2, .top h1")?.textContent?.trim(),
+            active: p.classList.contains("active"),
+            height: r.height,
+            shown: Math.min(ps[i + 1]?.getBoundingClientRect().top ?? Infinity, c.bottom) - Math.max(r.top, c.top),
+            need: p.querySelector<HTMLElement>(".pane-body")!.offsetHeight + parseFloat(sc.paddingTop) + parseFloat(sc.paddingBottom),
+          };
+        }),
+      };
+    });
+  /** The active pane shows all it needs, up to the column less a tab for each other pane; every other pane shows at least its tab. */
+  const whole = async (label: string) => {
+    await still(page);
+    await expect
+      .poll(async () => {
+        const c = await column();
+        const a = c.panes.find((p) => p.active)!;
+        return a.shown >= Math.min(a.need, c.h - (c.panes.length - 1) * TAB) - 2 && c.panes.every((p) => p.shown >= TAB - 1);
+      }, label)
+      .toBe(true);
+  };
+  await whole("the definition active");
+  let c = await column();
+  expect(c.panes.map((p) => p.t)).toEqual(["“cephalopod”", "Counting neurons"]);
+  // Its card is in (it needs more than half the column, which an even share would give it), and the column stacks to show it whole.
+  expect(c.panes[0].need).toBeGreaterThan(c.h / 2);
+  expect(c.crowded).toBe(true);
+  await noFaults(page, "the definition active");
+  // The other pane active: it is the one shown whole.
+  await pane(page, "Counting neurons").locator(".pane-head h2").dispatchEvent("click");
+  await whole("Counting neurons active");
+  // The active pane in another column: this one shares its height as before, each pane what it needs or an even share.
+  await pane(page, "A body with many minds").locator(".pane-head h2").dispatchEvent("click");
+  await still(page);
+  c = await column();
+  expect(c.crowded).toBe(false);
+  for (const p of c.panes) expect(p.height, p.t).toBeGreaterThanOrEqual(Math.min(p.need, c.h / 2) - 2);
+  await noFaults(page, "the active pane elsewhere");
+});
+
 test("a pane cut off for any reason peeks out whole, across and down, and the curves follow it: covered from below or above, by its share, by the column's foot, beside a pinned pane, and with its column covered", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 700 });
   await library(page);
@@ -210,13 +272,13 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
   expect(await col.evaluate((c) => c.hasAttribute("data-covered") || !!c.nextElementSibling?.hasAttribute("data-over"))).toBe(true);
   expect(await sweep("column covered", true)).toBeGreaterThan(0);
 
-  // By its share of a column that is not crowded: a tall window, two top-level trees, one longer than its share.
+  // By its share of a column that is not crowded: a tall window, two top-level trees, one longer than its share, the active pane in another column (the active one is never cut short by its share).
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("ie:view:")).forEach((k) => localStorage.removeItem(k)));
   await library(page);
   await clickOpen(page, "Library", "Explicata");
   await clickOpen(page, "Library", "Octopus minds");
-  await pane(page, "Octopus minds").locator(".pane-head h2").dispatchEvent("click");
+  await pane(page, "Library").locator(".top h1").dispatchEvent("click");
   await still(page);
   expect(await page.locator(".strip > .col").nth(1).evaluate((c) => c.classList.contains("crowded"))).toBe(false);
   expect(await sweep("by share", false)).toBeGreaterThan(0);

@@ -1,6 +1,6 @@
 /** The stacking shared by the panes view's strip and its crowded columns (src/ui/stack.ts). */
 import { describe, expect, it } from "vitest";
-import { coverage, crowds, fill, fit, folded, offsets, release, resize, reveal, starts, whole } from "../src/ui/stack";
+import { coverage, crowds, fill, fit, folded, offsets, release, resize, reveal, share, starts, whole } from "../src/ui/stack";
 
 describe("stack", () => {
   it("sticks each item a strip after the one before, a pinned one its whole size, never past where the rest can still be reached", () => {
@@ -42,12 +42,15 @@ describe("stack", () => {
     expect(fill(700, [300, 2000, 300])).toEqual([233, 234, 233]);
   });
 
-  it("a column stacks when its panes do not fit at their least; as pages, also whenever a share would cut the pane looked at short", () => {
-    // Wide screen: shared while they fit at their least, whoever is looked at.
+  it("a column stacks when its panes do not fit at their least; also whenever a share would cut the pane looked at (the active pane; as pages, the page's) short", () => {
+    // No pane looked at (side by side, a column without the active pane): shared while they fit at their least.
     expect(crowds(850, [1000, 1000], 260)).toBe(false);
     expect(crowds(850, [1000, 1000, 1000], 260)).toBe(false);
     expect(crowds(850, [1000, 1000, 1000, 1000], 260)).toBe(true);
-    // As pages: the long pane looked at gets the height.
+    // A tall column of five that all fit at their least, the short active one (a definition and its card) cut short by an equal share: it stacks.
+    expect(crowds(1360, [400, 300, 300, 300, 240], 260)).toBe(false);
+    expect(crowds(1360, [400, 300, 300, 300, 240], 260, 0)).toBe(true);
+    // The long pane looked at gets the height.
     expect(crowds(720, [1000, 1000], 260, 0)).toBe(true);
     expect(crowds(720, [1000, 1000], 260, 1)).toBe(true);
     // A short pane looked at, shown whole by the share, leaves the long one beside it.
@@ -114,5 +117,44 @@ describe("stack", () => {
     for (const x of f) expect(Number.isInteger(x)).toBe(true);
     // Too short for a tab each: none.
     expect(fit([44, 44, 44], 120, T)).toBeNull();
+  });
+
+  it("side by side, an edge between two columns dragged by the mouse moves their widths as the splitter does: the column after gives, one at the least pushed along, nothing folds", () => {
+    const W = 240;
+    expect(release([606, 606, 606], 1, 100, W, 0)).toEqual([706, 506, 606]);
+    expect(release([606, 606, 606], 1, -100.4, W, 0)).toEqual([506, 706, 606]);
+    // Past the next column's least: it is pushed along, the one after it gives.
+    expect(release([606, 606, 606], 1, 600, W, 0)).toEqual([1206, 240, 372]);
+    // Never past the least, either way.
+    expect(release([606, 606, 606], 2, -2000, W, 0)).toEqual([240, 240, 1338]);
+    // Close to the least, nothing folds: where the mouse left it.
+    expect(release([606, 606], 1, 350, W, 0)).toEqual([956, 256]);
+  });
+
+  it("side by side, a column whose pinned panes keep their sizes by hand: the others share what is left as the layout shares a column", () => {
+    const T = 30;
+    // The pinned first pane keeps 300 of 900; the other two share 600 by what they need.
+    expect(share([300, undefined, undefined], [500, 100, 2000], 900, T)).toEqual([300, 100, 500]);
+    // A short pane takes only what it needs; the rest goes to the one that needs most.
+    expect(share([undefined, 400], [120, 3000], 900, T)).toEqual([500, 400]);
+    // What a pane needs is never taken as less than a tab.
+    expect(share([300, undefined, undefined], [500, 5, 2000], 900, T)).toEqual([300, 30, 570]);
+    // The sizes fill the column exactly.
+    const s = share([123, undefined, 77, undefined], [400, 900, 50, 333], 1001, T)!;
+    expect(s.reduce((a, b) => a + b, 0)).toBe(1001);
+    // No room for a tab each of the others: none.
+    expect(share([880, undefined], [500, 500], 900, T)).toBeNull();
+    // The active pane among the others, cut short by its share, has what it needs; the rest share what it leaves.
+    expect(share([300, undefined, undefined], [500, 400, 2000], 900, T)).toEqual([300, 300, 300]);
+    expect(share([300, undefined, undefined], [500, 400, 2000], 900, T, 1)).toEqual([300, 400, 200]);
+    // Needing more than there is, it has all but a tab for each of the others.
+    expect(share([300, undefined, undefined], [500, 3000, 2000], 900, T, 1)).toEqual([300, 570, 30]);
+    // Whole by its share already, or pinned (kept by hand), or alone: as without it.
+    expect(share([300, undefined, undefined], [500, 100, 2000], 900, T, 1)).toEqual([300, 100, 500]);
+    expect(share([300, undefined, undefined], [500, 400, 2000], 900, T, 0)).toEqual([300, 300, 300]);
+    expect(share([300, undefined], [500, 3000], 900, T, 1)).toEqual([300, 600]);
+    const a = share([123, undefined, 77, undefined, undefined], [400, 900, 50, 333, 700], 1001, T, 4)!;
+    expect(a[4]).toBe(700);
+    expect(a.reduce((x, y) => x + y, 0)).toBe(1001);
   });
 });

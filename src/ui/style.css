@@ -453,6 +453,14 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .col:not(.split) .grip, .col.crowded > .pane[data-tab] > .grip, .col.sized > .pane[data-tab] > .grip { display: none; }
 .tabline { touch-action: none; }
 .panes.dragging, .panes.dragging * { cursor: grabbing !important; user-select: none; }
+/*
+ * The mouse near an edge between two panes of a column, or two columns side by side (Panes.tsx
+ * edgeAt): the cursor says which way the edge drags, and a press there selects no text. A column
+ * sized by hand lays its panes one under another, filling it, nothing stacked.
+ */
+.panes[data-edge="row"], .panes[data-edge="row"] * { cursor: row-resize !important; user-select: none; -webkit-user-select: none; }
+.panes[data-edge="col"], .panes[data-edge="col"] * { cursor: col-resize !important; user-select: none; -webkit-user-select: none; }
+.col.sized { overflow-y: hidden; }
 .drop-line { position: absolute; z-index: 7; height: 2px; background: var(--link); pointer-events: none; }
 
 /* A pane's pin and ×, top right, in the margin above its title: quiet until pointed at. A pinned pane's pin is filled. */
@@ -975,10 +983,9 @@ html { scroll-padding-top: 48px; }
  * Moved up or down at once, the handle of any pane but a page's first drags the pane's top edge
  * (Panes.tsx): so the browser may only pan it sideways, a swipe that turns the page. A page too
  * short for a tab for each of its panes (tight) is never sized so: its handles scroll it, as before.
- * A page sized by hand lays its panes one under another, filling it, nothing stacked.
+ * A page sized by hand lays its panes one under another, filling it, nothing stacked (.col.sized, above).
  */
 .panes[data-layout="pages"] .col.split:not(.tight) > .pane:not(:first-child) > :is(.grip, .tabline) { touch-action: pan-x; }
-.panes[data-layout="pages"] .col.sized { overflow-y: hidden; }
 .panes.resizing, .panes.resizing * { user-select: none; -webkit-user-select: none; }
 /* Lifted: the pane fades where it is; its tab rides just above the finger; a line shows where it will go. */
 .pane[data-lifted] { opacity: 0.4; }

@@ -540,6 +540,10 @@ test("a pane is dragged by its grip, or its tab, up or down its column; the orde
   await page.reload();
   await page.waitForSelector(".strip .pane");
   expect((await columns(page))[1]).toEqual([kids[4], ...kids.slice(0, 4)]);
+  // The active pane back in the first column, so this one shares its height again (the active pane, cut short by a share, would stack it).
+  await pane(page, "Explicata").locator(".top h1, .pane-head h2").first().dispatchEvent("click");
+  await expect.poll(() => page.locator(".strip > .col").nth(1).getAttribute("class")).not.toContain("crowded");
+  await still(page);
   // Downward, reaching the top of a pane below is enough: the dragged pane lands after it.
   await drag(kids[4], kids[1]);
   expect((await columns(page))[1]).toEqual([kids[0], kids[1], kids[4], kids[2], kids[3]]);
@@ -556,6 +560,150 @@ test("a pane is dragged by its grip, or its tab, up or down its column; the orde
     await page.mouse.up();
     expect((await columns(page))[1].indexOf(kids[0])).toBeGreaterThan(1);
   }
+});
+
+/** The columns measured, left to right: each one's box, whether it is sized by hand, and its panes' tops and heights, whether active, and titles. */
+const measured = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>(".strip > .col")].map((col) => {
+      const c = col.getBoundingClientRect();
+      return {
+        left: c.left,
+        right: c.right,
+        w: c.width,
+        top: c.top,
+        bottom: c.bottom,
+        h: col.clientHeight,
+        sized: col.classList.contains("sized"),
+        panes: [...col.querySelectorAll<HTMLElement>(":scope > .pane")].map((p) => {
+          const r = p.getBoundingClientRect();
+          return { top: r.top, h: r.height, active: p.classList.contains("active"), title: p.querySelector(".pane-head h2")?.textContent?.trim() ?? "" };
+        }),
+      };
+    }),
+  );
+/** The mouse put here: the cursor it shows. */
+async function cursorAt(page: Page, x: number, y: number) {
+  await page.mouse.move(x, y);
+  return page.evaluate(([x, y]) => getComputedStyle(document.elementFromPoint(x, y)!).cursor, [x, y]);
+}
+/** The mouse pressed at (x, y), moved by (dx, dy) a step at a time, then let go (unless `up` is false). */
+async function mouseDrag(page: Page, x: number, y: number, dx: number, dy: number, up = true) {
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + dx, y + dy, { steps: 8 });
+  if (up) await page.mouse.up();
+  await frames(page);
+}
+
+test("side by side, the mouse resizes panes by their edges: the cursor says which way, the panes either side give and take, down a column and across the strip; only a pinned pane's size, and its column's width, outlive a move to another pane", async ({ page }) => {
+  await open(page);
+  await keys(page, "j Enter j Enter");
+  await expect.poll(async () => (await columns(page))[1]?.length).toBe(2);
+  await still(page);
+  let [c0, c1] = await measured(page);
+  const W0 = c0.w;
+  const W1 = c1.w;
+  const x = c1.left + c1.w / 2;
+  /** A height away from the edges between the panes: the middle of the tallest. */
+  const away = (c: typeof c1) => {
+    const p = c.panes.reduce((a, b) => (b.h > a.h ? b : a));
+    return p.top + p.h / 2;
+  };
+  let mid = away(c1);
+  // The edge between the two panes, up and down; the column's top and foot are no edges.
+  let y = c1.panes[1].top;
+  expect(await cursorAt(page, x, y)).toBe("row-resize");
+  expect(await cursorAt(page, x, y + 3)).toBe("row-resize");
+  expect(await cursorAt(page, x, y - 3)).toBe("row-resize");
+  expect(await cursorAt(page, x, y + 40)).not.toContain("resize");
+  expect(await cursorAt(page, x, c1.top + 2)).not.toContain("resize");
+  expect(await cursorAt(page, x, c1.bottom - 2)).not.toContain("resize");
+  // The edge between the two columns, either side; the strip's outer edges are none.
+  expect(await cursorAt(page, c1.left, mid)).toBe("col-resize");
+  expect(await cursorAt(page, c1.left - 3, mid)).toBe("col-resize");
+  expect(await cursorAt(page, c1.left + 3, mid)).toBe("col-resize");
+  expect(await cursorAt(page, c1.left + 30, mid)).not.toContain("resize");
+  expect(await cursorAt(page, c0.left + 2, mid)).not.toContain("resize");
+  expect(await cursorAt(page, c1.right - 2, mid)).not.toContain("resize");
+
+  // Dragged, the edge between the panes follows the mouse: the pane on one side grows, the other gives, filling the column.
+  const before = await state(page, (s) => ({ pane: s.paneAt, node: s.focus.node, grain: s.focus.grain }));
+  const dir = c1.panes[0].h > c1.panes[1].h ? -1 : 1;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  for (const d of [30, 90, 150]) {
+    await page.mouse.move(x, y + dir * d, { steps: 2 });
+    await frames(page);
+    const now = (await measured(page))[1];
+    expect(now.sized).toBe(true);
+    expect(Math.abs(now.panes[1].top - (y + dir * d)), `at ${dir * d}`).toBeLessThanOrEqual(1.5);
+    expect(Math.abs(now.panes[0].h + now.panes[1].h - now.h)).toBeLessThanOrEqual(1);
+  }
+  await page.mouse.up();
+  await frames(page);
+  c1 = (await measured(page))[1];
+  expect(Math.abs(c1.panes[1].top - (y + dir * 150))).toBeLessThanOrEqual(1.5);
+  // The press was not a click: the active pane and the focus are as they were, and no text was selected.
+  expect(await state(page, (s) => ({ pane: s.paneAt, node: s.focus.node, grain: s.focus.grain }))).toEqual(before);
+  expect(await page.evaluate(() => window.getSelection()?.isCollapsed ?? true)).toBe(true);
+  // Esc while dragging puts the edge back.
+  y = c1.panes[1].top;
+  await mouseDrag(page, x, y, 0, dir * 80, false);
+  expect(Math.abs((await measured(page))[1].panes[1].top - (y + dir * 80))).toBeLessThanOrEqual(1.5);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await frames(page);
+  expect(Math.abs((await measured(page))[1].panes[1].top - y)).toBeLessThanOrEqual(1.5);
+
+  // The edge between the columns: the column before takes what the one after gives.
+  mid = away(c1);
+  await mouseDrag(page, c1.left, mid, 120, 0);
+  [c0, c1] = await measured(page);
+  expect(Math.abs(c0.w - (W0 + 120))).toBeLessThanOrEqual(1);
+  expect(Math.abs(c1.w - (W1 - 120))).toBeLessThanOrEqual(1);
+  expect(Math.abs(c1.left - c0.right)).toBeLessThanOrEqual(1);
+  expect(await state(page, (s) => s.paneAt)).toBe(before.pane);
+  await expect(page.locator(".panes[data-edge]")).toHaveCount(1);
+  await page.mouse.move(x + 60, mid + 100);
+  await expect(page.locator(".panes[data-edge]")).toHaveCount(0);
+
+  // Nothing pinned: the focus moved to another pane (the one opened from the focused row), the column and the strip are laid out automatically again.
+  expect(c0.panes[0].active).toBe(true);
+  await keys(page, "Alt+l");
+  await expect.poll(async () => (await measured(page))[1].panes.some((p) => p.active)).toBe(true);
+  await expect.poll(async () => (await measured(page))[1].sized).toBe(false);
+  [c0, c1] = await measured(page);
+  expect(Math.abs(c0.w - W0)).toBeLessThanOrEqual(1);
+  expect(Math.abs(c1.w - W1)).toBeLessThanOrEqual(1);
+
+  // The first pane pinned (by its pin: the active pane stays), then both edges dragged: once the focus moves, its height and its column's width stay; the other pane has the rest of the column, the other column its own width.
+  await pane(page, c1.panes[0].title).locator(".pane-ctl .pane-btn.pin").click();
+  await expect(pane(page, c1.panes[0].title)).toHaveClass(/pinned/);
+  await still(page);
+  c1 = (await measured(page))[1];
+  const dir2 = c1.panes[0].h > c1.panes[1].h ? -1 : 1;
+  await mouseDrag(page, x, c1.panes[1].top, 0, dir2 * 120);
+  mid = away((await measured(page))[1]);
+  await mouseDrag(page, c1.left, mid, -80, 0);
+  [c0, c1] = await measured(page);
+  expect(c1.sized).toBe(true);
+  expect(Math.abs(c1.w - (W1 + 80))).toBeLessThanOrEqual(1);
+  const kept = c1.panes[0].h;
+  const back = c1.panes.findIndex((p) => !p.active);
+  await keys(page, back === 0 ? "[" : "]");
+  await expect.poll(async () => (await measured(page))[1].panes[back].active).toBe(true);
+  await still(page);
+  [c0, c1] = await measured(page);
+  expect(c1.sized).toBe(true);
+  expect(Math.abs(c1.panes[0].h - kept)).toBeLessThanOrEqual(1);
+  expect(Math.abs(c1.panes[1].h - (c1.h - kept))).toBeLessThanOrEqual(1);
+  expect(Math.abs(c1.w - (W1 + 80))).toBeLessThanOrEqual(1);
+  expect(Math.abs(c0.w - W0)).toBeLessThanOrEqual(1);
+
+  // A double click on the edge: the column laid out automatically again.
+  await page.mouse.dblclick(x, c1.panes[1].top);
+  await expect.poll(async () => (await measured(page))[1].sized).toBe(false);
 });
 
 test("a pinned pane is not covered in its column, and outlives a closed parent as an orphan in its column", async ({ page }) => {
@@ -769,4 +917,24 @@ test("in the column a Shift open is a plain open, and the status line says why o
   expect(await state(page, (s) => s.log.filter((l: any) => l.text.includes("panes view")).length)).toBe(1);
   await keys(page, "[");
   await expect(page.locator(".status .message")).toContainText("panes view");
+});
+
+test("side by side, a crowded column's edges resize too: the column is laid out by hand from what showed of each pane, one under another, the tabs kept", async ({ page }) => {
+  await five(page);
+  await expect(page.locator(".strip > .col").nth(1)).toHaveClass(/crowded/);
+  let c = (await measured(page))[1];
+  const x = c.left + c.w / 2;
+  const n = c.panes.length;
+  // Between two tabs stuck at the column's top, and where the pane shown whole begins: edges.
+  expect(await cursorAt(page, x, c.panes[2].top)).toBe("row-resize");
+  const y = c.panes[n - 1].top;
+  expect(await cursorAt(page, x, y)).toBe("row-resize");
+  const shown = c.panes.map((p, i) => (i < n - 1 ? c.panes[i + 1].top : c.bottom) - p.top);
+  await mouseDrag(page, x, y, 0, 200);
+  c = (await measured(page))[1];
+  expect(c.sized).toBe(true);
+  expect(Math.abs(c.panes[n - 1].top - (y + 200))).toBeLessThanOrEqual(1.5);
+  expect(Math.abs(c.panes[n - 2].h - (shown[n - 2] + 200))).toBeLessThanOrEqual(1.5);
+  for (let i = 0; i < n - 2; i++) expect(Math.abs(c.panes[i].h - shown[i])).toBeLessThanOrEqual(1.5);
+  for (let i = 1; i < n; i++) expect(Math.abs(c.panes[i].top - (c.panes[i - 1].top + c.panes[i - 1].h))).toBeLessThanOrEqual(1);
 });

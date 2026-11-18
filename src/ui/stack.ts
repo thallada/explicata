@@ -60,9 +60,9 @@ export function fill(h: number, needs: number[]): number[] {
 /**
  * Whether a column of height h stacks its panes (each folding to a tab but the one looked at)
  * rather than sharing its height among them: when they do not all fit at their least (`least`
- * each, or less where a pane needs less); and, given `here`, the pane looked at (as pages, on a
- * phone), also whenever sharing would leave that pane shorter than what it needs, so it gets the
- * column's height and the others fold.
+ * each, or less where a pane needs less); and, given `here`, the pane looked at (as pages, the
+ * page's; side by side, the active pane), also whenever sharing would leave that pane shorter than
+ * what it needs, so it gets the column's height and the others fold.
  */
 export function crowds(h: number, needs: number[], least: number, here?: number): boolean {
   if (needs.reduce((s, x) => s + Math.min(x, least), 0) > h) return true;
@@ -85,7 +85,8 @@ const fromEdges = (e: number[]) => e.slice(1).map((x, k) => Math.round(x) - Math
  * pushed up as a tab, and so on; moved down, the dragged pane gives, then the ones below it. The
  * pane on the other side of the edge takes what is given (a tab there opens). Always from the sizes
  * the drag began with, so moving back gives back what was pushed. The first pane's top is the
- * column's: it has no edge to move.
+ * column's: it has no edge to move. As panes side by side the same, by the mouse, down a column and
+ * across the strip (the columns' widths, where `min` is a column's least width).
  */
 export function resize(start: number[], i: number, dy: number, min: number): number[] {
   const n = start.length;
@@ -130,6 +131,28 @@ export function fit(sizes: number[], h: number, min: number): number[] | null {
   const room = h - n * min;
   const out = ex > 0 ? extra.map((x) => min + (x * room) / ex) : sizes.map((_, k) => min + (k === n - 1 ? room : 0));
   return fromEdges([...starts(out), h]);
+}
+
+/**
+ * As panes side by side, a column some of whose panes keep their sizes by hand (`fixed`, the rest
+ * undefined): the others share what is left of its height h as the layout shares a column (`fill`,
+ * from what each needs); null if what is left cannot hold `min` for each of them. Given `here`, the
+ * active pane, when it is one of them and its share would cut it short (as `crowds`), it has what
+ * it needs, up to what leaves the others `min` each, and they share the rest.
+ */
+export function share(fixed: (number | undefined)[], needs: number[], h: number, min: number, here?: number): number[] | null {
+  const free = fixed.flatMap((x, i) => (x === undefined ? [i] : []));
+  const room = h - sum(fixed.map((x) => x ?? 0));
+  if (room < free.length * min) return null;
+  const want = free.map((i) => Math.max(min, needs[i]));
+  let got = fill(room, want);
+  const j = here === undefined ? -1 : free.indexOf(here);
+  if (j >= 0 && free.length > 1 && got[j] < want[j] - 1) {
+    const mine = Math.floor(Math.min(want[j], room - (free.length - 1) * min));
+    const rest = fill(room - mine, want.filter((_, k) => k !== j));
+    got = [...rest.slice(0, j), mine, ...rest.slice(j)];
+  }
+  return fixed.map((x, i) => x ?? got[free.indexOf(i)]);
 }
 
 /** Whether a pane of this height, sized by hand, is folded to its tab. */

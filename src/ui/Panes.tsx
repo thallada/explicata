@@ -19,7 +19,7 @@ import { Component, type ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import { ancestors, label, sections, staleness, type NodeId } from "../core/model";
 import { LANES, LANE_FIRST, LANE_LAST, LANE_PITCH, laneOrder } from "./lanes";
-import { ACROSS, DOWN, crowds, fill, fit, folded, mark, offsets, release, resize, reveal, setAttr, starts, stick, unmark, whole } from "./stack";
+import { ACROSS, DOWN, crowds, fill, fit, folded, mark, offsets, release, resize, reveal, setAttr, share, starts, stick, unmark, whole } from "./stack";
 import { NodeBacklinks, NodeRelated, PaneCtx, TargetRow } from "./Links";
 import { pageAt, paneOfPage } from "./pages";
 import { Close, Pin, W } from "./Pages";
@@ -336,9 +336,9 @@ const PEEK_MS = 200;
 
 /** As pages, how far a finger moves on a pane's handle before its direction is known: up or down resizes the pane, sideways is the browser's (the page turns). */
 const LOCK_PX = 8;
-/** As pages, a pane sized by hand left less than this much taller than its tab folds to it when the finger lifts. */
+/** A pane sized by hand left less than this much taller than its tab folds to it when the finger lifts (side by side, the mouse lets go). */
 const FOLD_SNAP = 40;
-/** As pages, how long a released edge takes to come to rest at a fold, easing out. */
+/** How long a released edge takes to come to rest at a fold, easing out. */
 const SNAP_MS = 120;
 /** As pages, two taps on a pane's handle this close together put its page back to the automatic sizes. */
 const DOUBLE_TAP_MS = 320;
@@ -356,30 +356,70 @@ interface Hand {
   sizes: Map<number, number>;
   here: number | undefined;
 }
-const hands = new Map<number, Hand>();
-/** The page whose released edge is easing to rest: laid out by its animation alone meanwhile. */
+/**
+ * The columns sized by hand, as pages and as panes side by side (by the mouse, an edge between two
+ * panes dragged; there `here` is the active pane when they were sized, and the rule is `deskSizes`'s).
+ * Kept apart, so a phone turned wide and back finds its pages as it left them.
+ */
+const handsBy = { pages: new Map<number, Hand>(), panes: new Map<number, Hand>() };
+const hands = () => (store.pages ? handsBy.pages : handsBy.panes);
+/** The page (side by side, the column) whose released edge is easing to rest: laid out by its animation alone meanwhile. */
 let easing: HTMLElement | null = null;
 const setOf = (tids: number[]) => [...tids].sort((a, b) => a - b).join();
 
-/** A column's sizes by hand, fitted to its height, if they hold (else they are dropped). */
+/** Sizes by hand fitted to a column of height h (and kept so); null if a tab each does not fit. */
+function fitHand(m: Hand, tids: number[], h: number): number[] | null {
+  const hs = tids.map((t) => m.sizes.get(t) ?? TAB);
+  if (Math.abs(hs.reduce((a, b) => a + b, 0) - h) < 0.5) return hs;
+  const f = fit(hs, h, TAB);
+  if (f) tids.forEach((t, i) => m.sizes.set(t, f[i]));
+  return f;
+}
+
+/** As pages, a column's sizes by hand, fitted to its height, if they hold (else they are dropped). */
 function handSizes(col: number, tids: number[], here: number | undefined, h: number): number[] | null {
-  const m = hands.get(col);
+  const m = handsBy.pages.get(col);
   if (!m) return null;
-  const drop = () => (hands.delete(col), null);
+  const drop = () => (handsBy.pages.delete(col), null);
   if (m.set !== setOf(tids)) return drop();
   if (here !== m.here) {
     if (here === undefined || folded(m.sizes.get(here) ?? 0, TAB)) return drop();
     m.here = here;
   }
-  let hs = tids.map((t) => m.sizes.get(t) ?? TAB);
-  if (Math.abs(hs.reduce((a, b) => a + b, 0) - h) >= 0.5) {
-    const f = fit(hs, h, TAB);
-    if (!f) return drop();
-    hs = f;
-    tids.forEach((t, i) => m.sizes.set(t, f[i]));
-  }
-  return hs;
+  return fitHand(m, tids, h) ?? drop();
 }
+
+/**
+ * As panes side by side, a column's sizes by hand: only a pinned pane's size sticks. Once another
+ * pane is the active one, or a pane opens or closes in the column, the sizes of its unpinned panes
+ * are the layout's again (undefined here: `share` gives them what the pinned ones leave) and, with
+ * no pinned pane sized there, so is the column (null). Fitted to its height while they hold.
+ */
+function deskSizes(col: number, tids: number[], pinned: boolean[], active: number | undefined, h: number): (number | undefined)[] | null {
+  const m = handsBy.panes.get(col);
+  if (!m) return null;
+  const drop = () => (handsBy.panes.delete(col), null);
+  if (m.here !== active || m.set !== setOf(tids)) {
+    m.here = active;
+    m.set = setOf(tids);
+    for (const t of [...m.sizes.keys()]) if (!pinned[tids.indexOf(t)]) m.sizes.delete(t);
+    if (!m.sizes.size) return drop();
+  }
+  if (tids.some((t) => !m.sizes.has(t))) return tids.map((t) => m.sizes.get(t));
+  return fitHand(m, tids, h) ?? drop();
+}
+
+/**
+ * As panes side by side, columns sized by hand (the edge between two dragged, stack.ts `resize`
+ * across): each column's width by its number, and the active pane when they were set. A column
+ * holding a pinned pane keeps its width; the others' are the layout's again once another pane is
+ * the active one.
+ */
+const widths = { sizes: new Map<number, number>(), here: undefined as number | undefined };
+/** The least width a column is dragged to. */
+const COL_MIN = 240;
+/** As panes side by side, how near an edge between two panes, or two columns, the mouse takes it (each side). */
+const EDGE_PX = 4;
 
 /** Set the panes' heights, and show the tab of each folded to it. Only heights: nothing is measured. */
 function setHeights(ps: HTMLElement[], hs: number[]) {
@@ -460,9 +500,10 @@ export function Panes() {
   /**
    * Lay out the stacks (stack.ts). Across: each column stuck a spine after the one before (a pinned
    * pane's column, its whole width). Down: a column with several panes divides its height among
-   * them, a pane taking what its text needs; when they do not all fit, it becomes a stack of its
-   * own, each pane stuck a tab below the one before (a pinned one, its height) and the column
-   * scrolled to show whole the pane on the focused branch, or the one last on it there.
+   * them, a pane taking what its text needs; when they do not all fit, or a share would cut short
+   * the active pane (as pages, the pane looked at on the page), it becomes a stack of its own, each
+   * pane stuck a tab below the one before (a pinned one, its height) and the column scrolled to
+   * show whole the pane on the focused branch, or the one last on it there.
    */
   const layout = (all = false) => {
     const el = strip.current;
@@ -471,17 +512,30 @@ export function Panes() {
     if (!colEls.length) return;
     clearTimeout(later.current);
     const activeCol = activeId === undefined ? null : paneEls(el).get(activeId)?.parentElement;
-    const w = colEls[0].offsetWidth;
     const spine = colEls[0].querySelector<HTMLElement>(".spine")?.offsetWidth ?? 0;
     // With no scrollbar under the panes (none needed, or one drawn over them) their last bottom edge meets the status line's: one line, not two.
     setAttr(el, "data-flush", el.offsetHeight - el.clientHeight < 1);
     if (pages) {
-      // As pages nothing is stacked across: each column is a page of its own.
+      // As pages nothing is stacked across: each column is a page of its own, as wide as the screen.
       lefts.current = colEls.map(() => 0);
-      for (const c of colEls) if (c.style.left) c.style.left = "";
+      for (const c of colEls) {
+        if (c.style.left) c.style.left = "";
+        if (c.style.width) c.style.width = "";
+      }
     } else {
+      // Widths by hand: a column holding a pinned pane keeps its own; the others', once another pane is the active one, are the layout's again.
+      const at = new Set(colEls.map((c) => Number(c.dataset.col)));
+      const keep = new Set(colEls.filter((c) => c.hasAttribute("data-pinned")).map((c) => Number(c.dataset.col)));
+      const moved = widths.here !== activeId;
+      widths.here = activeId;
+      for (const k of [...widths.sizes.keys()]) if (!at.has(k) || (moved && !keep.has(k))) widths.sizes.delete(k);
+      for (const c of colEls) {
+        const by = widths.sizes.get(Number(c.dataset.col));
+        const v = by === undefined ? "" : `${by}px`;
+        if (c.style.width !== v) c.style.width = v;
+      }
       lefts.current = offsets(
-        colEls.map(() => w),
+        colEls.map((c) => c.offsetWidth),
         colEls.map((c) => c.hasAttribute("data-pinned")),
         spine,
         el.clientWidth,
@@ -491,22 +545,41 @@ export function Panes() {
     let deferred = false;
     for (const c of colEls) {
       const ps = [...c.children].filter((p): p is HTMLElement => p.classList.contains("pane"));
+      const col = Number(c.dataset.col);
       if (ps.length < 2) {
         for (const p of ps) if (p.style.height) (p.style.height = ""), (p.style.flex = ""), (p.style.top = ""), (p.style.bottom = "");
         c.classList.remove("crowded", "sized", "tight");
         unmark(ps);
+        // Side by side, a pane alone in its column has no edge to have been sized by.
+        if (!pages) handsBy.panes.delete(col);
         continue;
       }
       const h = c.clientHeight;
-      const col = Number(c.dataset.col);
       const tids = ps.map((p) => Number(p.dataset.tid));
       // The pane to show whole: on the focused branch, or the one last on it here.
       const here = paneOfPage(tids, onBranch, lastIn.current.get(col))!;
-      const sig = tids.map((t, i) => `${t}${ps[i].classList.contains("pinned") ? "^" : ""}`).join();
+      const pinned = ps.map((p) => p.classList.contains("pinned"));
+      const sig = tids.map((t, i) => `${t}${pinned[i] ? "^" : ""}`).join();
       // As pages, a page too short for a tab for each of its panes is never sized by hand (its handles scroll it).
       c.classList.toggle("tight", pages && ps.length * TAB > h);
-      // As pages, sized by hand (a pane's handle dragged): those sizes, while they hold.
-      const hand = pages ? handSizes(col, tids, here, h) : null;
+      /** What each pane needs to show all it holds; a buried pane is not laid out, so it keeps what it last needed. */
+      const measureNeeds = () => {
+        const cs = getComputedStyle(ps[0].querySelector<HTMLElement>(".pane-scroll")!);
+        const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 1;
+        return ps.map((p, i) => {
+          if (p.hasAttribute("data-buried") && needs.current.has(tids[i])) return needs.current.get(tids[i])!;
+          const n = p.querySelector<HTMLElement>(".pane-body")!.offsetHeight + pad;
+          needs.current.set(tids[i], n);
+          return n;
+        });
+      };
+      // The pane looked at, which a share must not cut short: as pages the page's; side by side the active pane, in its column (elsewhere none: those columns share as they will).
+      const k = tids.indexOf(here);
+      const first = pages || here === activeId ? k : undefined;
+      // Sized by hand (as pages a pane's handle dragged, side by side an edge): those sizes, while they hold; side by side, the panes not pinned share what the pinned ones leave, the active one first.
+      const by: (number | undefined)[] | null = pages ? handSizes(col, tids, here, h) : deskSizes(col, tids, pinned, activeId, h);
+      const hand = by?.includes(undefined) ? share(by, measureNeeds(), h, TAB, first) : (by as number[] | null);
+      if (by && !hand) handsBy.panes.delete(col);
       if (hand) {
         if (easing !== c) sizeBy(c, ps, hand);
         laid.current.set(c, sig);
@@ -514,20 +587,9 @@ export function Panes() {
         continue;
       }
       c.classList.remove("sized");
-      const sc = ps[0].querySelector<HTMLElement>(".pane-scroll")!;
-      const cs = getComputedStyle(sc);
-      const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 1;
-      // What each pane needs to show all it holds; a buried pane is not laid out, so it keeps what it last needed.
-      const need = ps.map((p, i) => {
-        if (p.hasAttribute("data-buried") && needs.current.has(tids[i])) return needs.current.get(tids[i])!;
-        const n = p.querySelector<HTMLElement>(".pane-body")!.offsetHeight + pad;
-        needs.current.set(tids[i], n);
-        return n;
-      });
-      const pinned = ps.map((p) => p.classList.contains("pinned"));
-      const k = tids.indexOf(here);
-      // As pages the pane looked at has the screen's height whenever a share would cut it short: the others fold to their tabs.
-      const crowded = crowds(h, need, PANE_MIN, pages ? k : undefined);
+      const need = measureNeeds();
+      // The pane looked at has the column's height whenever a share would cut it short (as pages, the screen's): the others fold to their tabs.
+      const crowded = crowds(h, need, PANE_MIN, first);
       let heights: number[];
       let tops: number[] = [];
       /** What the panes after each leave at the column's foot: a tab each, a pinned one its whole height. */
@@ -646,7 +708,9 @@ export function Panes() {
       }
       return;
     }
-    const w = colEls[0].offsetWidth;
+    // Each column's width (one sized by hand has its own), and where it starts when nothing is stuck.
+    const w = colEls.map((c) => c.offsetWidth);
+    const x = starts(w);
     const view = el.clientWidth;
     const max = el.scrollWidth - view;
     const L = lefts.current;
@@ -655,11 +719,11 @@ export function Panes() {
     const here = colOf(panes[at]);
     const was = lastCol.current;
     lastCol.current = here;
-    if (here === was && whole(el.scrollLeft, view, b * w, w, L[b] ?? 0)) return;
-    // Column i starts at i·w: show b whole, and the one before it too when both fit.
+    if (here === was && whole(el.scrollLeft, view, x[b], w[b], L[b] ?? 0)) return;
+    // Show b whole, and the one before it too when both fit.
     const a = b > 0 && (showing || f.grain === "node") ? b - 1 : b;
-    const both = reveal(el.scrollLeft, view, a * w, (b + 1 - a) * w, L[a] ?? 0, max);
-    const target = whole(both, view, b * w, w, L[b] ?? 0) && whole(both, view, a * w, w, L[a] ?? 0) ? both : reveal(el.scrollLeft, view, b * w, w, L[b] ?? 0, max);
+    const both = reveal(el.scrollLeft, view, x[a], x[b] + w[b] - x[a], L[a] ?? 0, max);
+    const target = whole(both, view, x[b], w[b], L[b] ?? 0) && whole(both, view, x[a], w[a], L[a] ?? 0) ? both : reveal(el.scrollLeft, view, x[b], w[b], L[b] ?? 0, max);
     if (Math.abs(target - el.scrollLeft) > 1) el.scrollTo({ left: target, behavior: reducedMotion() ? "auto" : "smooth" });
   };
 
@@ -893,6 +957,8 @@ export function Panes() {
     };
     const onMove = (e: PointerEvent) => {
       if (e.pointerType !== "mouse" || e.buttons || drag) return;
+      // On an edge between panes (below): it is pressed to resize, not peeked through.
+      if (wrap.dataset.edge) return unpeek();
       const pane = (e.target as HTMLElement).closest<HTMLElement>(".pane");
       if (pane && (pane === peekedFor || pane === pending)) return;
       clearTimeout(timer);
@@ -914,7 +980,6 @@ export function Panes() {
         if (now.length) peek(pane, now);
       }, PEEK_MS);
     };
-    el.addEventListener("pointermove", onMove, { signal });
     el.addEventListener("pointerleave", unpeek, { signal });
     window.addEventListener("keydown", unpeek, { capture: true, signal });
 
@@ -934,7 +999,7 @@ export function Panes() {
       return handle && pane && col && col.children.length > 1 ? { handle, pane, col } : null;
     };
     const onDown = (e: PointerEvent) => {
-      if (e.button !== 0 || (e.pointerType === "touch" && store.pages)) return;
+      if (e.button !== 0 || (e.pointerType === "touch" && store.pages) || edging) return;
       const h = handleAt(e.target);
       if (!h) return;
       const { handle, pane, col } = h;
@@ -1064,13 +1129,18 @@ export function Panes() {
      * down resizes (the handles' touch-action leaves only sideways to the browser, so nothing
      * scrolls first), sideways is the browser's, a swipe that turns the page. During the drag only
      * the panes' heights are set. When the finger lifts, a pane left barely taller than its tab
-     * folds (SNAP_MS). The sizes hold as `hands` says; a double tap on a handle drops them.
+     * folds (SNAP_MS). The sizes hold as `handSizes` says; a double tap on a handle drops them.
+     * Side by side, the mouse drags the same edge (below), and the sizes hold as `deskSizes` says.
      */
-    let press: { x: number; y: number; id: number; pane: HTMLElement; col: HTMLElement; i: number; lock: "v" | null; start: number[]; ps: HTMLElement[]; now: number[]; dy: number } | null = null;
+    /** An edge being dragged, by a finger or the mouse: the pane below it (i, in ps), the sizes the drag began with, those now, and how far it has moved. */
+    type Resizing = { pane: HTMLElement; col: HTMLElement; i: number; start: number[]; ps: HTMLElement[]; now: number[]; dy: number };
+    /** A finger on a handle: where it went down, and whether it has turned into a resize (lock). */
+    type Press = Resizing & { x: number; y: number; id: number; lock: "v" | null };
+    let press: Press | null = null;
     let lastTap: { col: HTMLElement; t: number; x: number; y: number } | null = null;
     let snapping = 0;
-    /** The handle's page laid out by hand from what shows of each pane now (no jump): false if it cannot be (a tab each does not fit). */
-    const startResize = (r: NonNullable<typeof press>): boolean => {
+    /** The handle's page (side by side, the edge's column) laid out by hand from what shows of each pane now (no jump): false if it cannot be (a tab each does not fit). */
+    const startResize = (r: Resizing): boolean => {
       const ps = [...r.col.querySelectorAll<HTMLElement>(":scope > .pane")];
       const h = r.col.clientHeight;
       if (r.i < 1 || ps.length * TAB > h || !ps.includes(r.pane)) return false;
@@ -1084,27 +1154,29 @@ export function Panes() {
       easing = null;
       unpeek();
       const tids = ps.map((p) => Number(p.dataset.tid));
-      const was = hands.get(Number(r.col.dataset.col));
-      hands.set(Number(r.col.dataset.col), { set: setOf(tids), sizes: new Map(tids.map((t, k) => [t, start[k]])), here: was?.here ?? shown.current.get(r.col) });
+      const was = hands().get(Number(r.col.dataset.col));
+      // As pages, the pane looked at on the page; side by side, the active pane (deskSizes).
+      const here = store.pages ? (was?.here ?? shown.current.get(r.col)) : store.branchNodes[store.paneAt]?.id;
+      hands().set(Number(r.col.dataset.col), { set: setOf(tids), sizes: new Map(tids.map((t, k) => [t, start[k]])), here });
       sizeBy(r.col, ps, start);
       Object.assign(r, { ps, start, now: start, i: ps.indexOf(r.pane) });
       wrap.classList.add("resizing");
       return true;
     };
-    const moveResize = (r: NonNullable<typeof press>, dy: number) => {
+    const moveResize = (r: Resizing, dy: number) => {
       r.dy = dy;
       r.now = resize(r.start, r.i, dy, TAB);
       setHeights(r.ps, r.now);
-      const m = hands.get(Number(r.col.dataset.col));
+      const m = hands().get(Number(r.col.dataset.col));
       if (m) r.ps.forEach((p, k) => m.sizes.set(Number(p.dataset.tid), r.now[k]));
     };
-    /** The finger lifted: the edge comes to rest, at a fold if a pane is left barely taller than its tab; a pane looked at folded away hands that to the pane across the edge. */
-    const endResize = (r: NonNullable<typeof press>) => {
+    /** The finger lifted (the mouse let go): the edge comes to rest, at a fold if a pane is left barely taller than its tab; as pages, a pane looked at folded away hands that to the pane across the edge. */
+    const endResize = (r: Resizing) => {
       wrap.classList.remove("resizing");
       const to = release(r.start, r.i, r.dy, TAB, FOLD_SNAP);
       const tids = r.ps.map((p) => Number(p.dataset.tid));
       const col = Number(r.col.dataset.col);
-      const m = hands.get(col);
+      const m = hands().get(col);
       // Dropped while the finger was down (its panes changed): laid out automatically.
       if (!m) return relayout();
       tids.forEach((t, k) => m.sizes.set(t, to[k]));
@@ -1120,13 +1192,17 @@ export function Panes() {
           const p = Math.min(1, (now - t0) / SNAP_MS);
           const e = 1 - (1 - p) ** 3;
           // Its panes changed meanwhile: the layout has it now.
-          if (!r.ps.every((x) => x.isConnected) || !hands.has(col)) return void (easing = null, latest.current(true));
+          if (!r.ps.every((x) => x.isConnected) || !hands().has(col)) return void (easing = null, latest.current(true));
           setHeights(r.ps, p < 1 ? from.map((x, k) => x + (to[k] - x) * e) : to);
+          // Side by side, the curves go with the edge.
+          if (!store.pages) schedule();
           if (p < 1) snapping = requestAnimationFrame(step);
           else easing = null;
         };
         snapping = requestAnimationFrame(step);
       }
+      // Side by side a pane folded to its tab stays where the keys are: nothing has to be looked at whole.
+      if (!store.pages) return;
       const active = store.branchNodes[store.paneAt]?.id;
       const a = active === undefined ? -1 : tids.indexOf(active);
       if (a < 0 || !folded(to[a], TAB)) return;
@@ -1135,9 +1211,9 @@ export function Panes() {
       m.here = tids[k];
       store.toPane(tids[k]);
     };
-    /** A double tap on a handle: the page laid out automatically again. */
+    /** A double tap on a handle (a double click on an edge): the page, or column, laid out automatically again. */
     const unsize = (col: HTMLElement) => {
-      if (!hands.delete(Number(col.dataset.col))) return;
+      if (!hands().delete(Number(col.dataset.col))) return;
       cancelAnimationFrame(snapping);
       easing = null;
       relayout();
@@ -1225,11 +1301,142 @@ export function Panes() {
       e.preventDefault();
       e.stopPropagation();
     };
+    /*
+     * As panes side by side, by the mouse (or a pen): near an edge between two panes of a column, or
+     * between two columns side by side, the pointer takes the edge (EDGE_PX each side; data-edge on
+     * the panes sets the cursor, row-resize or col-resize, and keeps a press there from selecting
+     * text). Pressed and moved, it drags that edge as a finger drags a pane's top edge as pages:
+     * down a column the same splitter (startResize, moveResize, endResize: the pane below the edge
+     * and the one above give and take, a tab pushed along at the limit, a pane left barely taller
+     * than its tab folding), across the strip the columns' widths (stack.ts `resize`: the column
+     * after the edge gives what the one before takes, one at COL_MIN pushed along; nothing folds).
+     * A press there is never a click on a pane; a double click on an edge lays its column, or the
+     * strip, out automatically again; Esc puts the edge back. An outer edge, or one a column covers
+     * (stuck over the one before it), is no edge. The sizes hold as `deskSizes` and `widths` say: a
+     * pinned pane's size, and the width of a column holding one, stick; the others' are the
+     * layout's again once another pane is the active one.
+     */
+    type EdgeAt = { axis: "row"; col: HTMLElement; pane: HTMLElement; i: number } | { axis: "col"; i: number };
+    type Edging = { at: EdgeAt; x: number; y: number; d: number; on: boolean; dead?: boolean; r?: Resizing; was?: Hand; widths?: Map<number, number>; start?: number[]; cols?: HTMLElement[] };
+    let edging: Edging | null = null;
+    /** The edge the pointer is near, if any: between two panes of the column under it, or between that column and one beside it where they meet. */
+    const edgeAt = (x: number, y: number, t: EventTarget | null): EdgeAt | null => {
+      const target = t as HTMLElement | null;
+      if (store.pages || !target?.closest || target.closest(".pane-ctl, .selbar, [data-peek]")) return null;
+      const col = target.closest<HTMLElement>(".strip > .col");
+      if (!col) return null;
+      const cols = [...el.querySelectorAll<HTMLElement>(":scope > .col")];
+      const k = cols.indexOf(col);
+      let best: EdgeAt | null = null;
+      let near = EDGE_PX + 1;
+      // Across: its left edge against the column before, its right against the one after, only where they meet.
+      for (const j of [k, k + 1]) {
+        if (j < 1 || j >= cols.length) continue;
+        const a = cols[j - 1].getBoundingClientRect();
+        const b = cols[j].getBoundingClientRect();
+        const d = Math.abs(x - b.left);
+        if (Math.abs(a.right - b.left) <= 1 && d < near) (best = { axis: "col", i: j }), (near = d);
+      }
+      // Down: the top of each pane but the first, where it shows in the column (in a crowded one, where it covers the pane before).
+      const ps = [...col.querySelectorAll<HTMLElement>(":scope > .pane")];
+      const c = col.getBoundingClientRect();
+      for (let i = 1; i < ps.length; i++) {
+        const top = ps[i].getBoundingClientRect().top;
+        const d = Math.abs(y - top);
+        if (top > c.top + 1 && top < c.bottom - 1 && d < near) (best = { axis: "row", col, pane: ps[i], i }), (near = d);
+      }
+      return best;
+    };
+    const showEdge = (at: EdgeAt | null) => {
+      const v = at?.axis;
+      if (wrap.dataset.edge !== v) v ? (wrap.dataset.edge = v) : delete wrap.dataset.edge;
+    };
+    const onEdgeHover = (e: PointerEvent) => {
+      if (edging || e.pointerType === "touch") return;
+      showEdge(e.buttons || drag ? null : edgeAt(e.clientX, e.clientY, e.target));
+    };
+    const onEdgeDown = (e: PointerEvent) => {
+      if (e.button !== 0 || e.pointerType === "touch") return;
+      const at = edgeAt(e.clientX, e.clientY, e.target);
+      if (!at) return;
+      e.preventDefault();
+      el.setPointerCapture(e.pointerId);
+      unpeek();
+      showEdge(at);
+      edging = { at, x: e.clientX, y: e.clientY, d: 0, on: false };
+    };
+    /** The edge's column, or the strip's columns, laid out by hand from where they are now; false if they cannot be. */
+    const startEdge = (g: Edging): boolean => {
+      const at = g.at;
+      if (at.axis === "row") {
+        const m = handsBy.panes.get(Number(at.col.dataset.col));
+        const was = m && { ...m, sizes: new Map(m.sizes) };
+        const r: Resizing = { pane: at.pane, col: at.col, i: at.i, start: [], ps: [], now: [], dy: 0 };
+        if (!startResize(r)) return false;
+        Object.assign(g, { r, was });
+      } else {
+        const cols = [...el.querySelectorAll<HTMLElement>(":scope > .col")];
+        Object.assign(g, { cols, start: cols.map((c) => c.offsetWidth), widths: new Map(widths.sizes) });
+        wrap.classList.add("resizing");
+      }
+      return (g.on = true);
+    };
+    /** The columns' widths as the edge between column i - 1 and column i, moved by dx, leaves them (whole pixels); only those that changed, or were set by hand already, are kept. */
+    const widen = (g: Edging, dx: number) => {
+      const now = release(g.start!, g.at.i, dx, COL_MIN, 0);
+      g.cols!.forEach((c, k) => {
+        const n = Number(c.dataset.col);
+        if (now[k] !== g.start![k] || widths.sizes.has(n)) widths.sizes.set(n, now[k]);
+      });
+      relayout();
+    };
+    const onEdgeMove = (e: PointerEvent) => {
+      const g = edging;
+      if (!g || g.dead) return;
+      const d = g.at.axis === "row" ? e.clientY - g.y : e.clientX - g.x;
+      if (!g.on && (Math.abs(d) < 2 || !startEdge(g))) return;
+      g.d = d;
+      if (g.r) (moveResize(g.r, d), schedule());
+      else widen(g, d);
+    };
+    /** The edge let go (keep) or put back where the drag began (Esc, a cancelled pointer). */
+    const endEdge = (g: Edging, keep: boolean) => {
+      wrap.classList.remove("resizing");
+      if (keep && g.r) return void (endResize(g.r), schedule());
+      if (keep) return widen(g, g.d);
+      if (!g.r) widths.sizes = g.widths!;
+      else {
+        const col = Number(g.r.col.dataset.col);
+        g.was ? handsBy.panes.set(col, g.was) : handsBy.panes.delete(col);
+      }
+      relayout();
+    };
+    const onEdgeUp = (e: PointerEvent) => {
+      const g = edging;
+      if (!g) return;
+      edging = null;
+      // The click this press ends with is not a click on a pane.
+      swallow = true;
+      setTimeout(() => (swallow = false), 0);
+      if (g.on && !g.dead) endEdge(g, e.type === "pointerup");
+    };
+    // A double click on an edge: its column (or, across, the strip) laid out automatically again. (The pointer was held by the strip, so what is under it is asked for.)
+    const onEdgeDouble = (e: MouseEvent) => {
+      const at = edgeAt(e.clientX, e.clientY, document.elementFromPoint(e.clientX, e.clientY));
+      if (!at) return;
+      e.preventDefault();
+      if (at.axis === "row") unsize(at.col);
+      else if (widths.sizes.size) (widths.sizes.clear(), relayout());
+    };
     const onKey = (e: KeyboardEvent) => {
-      if (drag?.on && e.key === "Escape") {
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        end(false);
+      const g = edging?.on && !edging.dead ? edging : null;
+      if (e.key !== "Escape" || !(drag?.on || g)) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      if (drag?.on) end(false);
+      else if (g) {
+        endEdge(g, false);
+        g.dead = true;
       }
     };
     // The click that ends a drag is not a click on the pane.
@@ -1247,6 +1454,15 @@ export function Panes() {
     // A press elsewhere puts a peeking pane back; on it, the click goes through to it (and makes it the active pane), and then it goes back.
     const onPress = (e: PointerEvent) => !peeked.some((p) => p.contains(e.target as Node)) && unpeek();
     const afterClick = () => peeked.length && requestAnimationFrame(unpeek);
+    // The edges first: a press on one is not a grip's, and the peek goes from under it.
+    el.addEventListener("pointermove", onEdgeHover, { signal });
+    el.addEventListener("pointermove", onMove, { signal });
+    el.addEventListener("pointerleave", () => !edging && showEdge(null), { signal });
+    el.addEventListener("pointerdown", onEdgeDown, { signal });
+    el.addEventListener("pointermove", onEdgeMove, { signal });
+    el.addEventListener("pointerup", onEdgeUp, { signal });
+    el.addEventListener("pointercancel", onEdgeUp, { signal });
+    el.addEventListener("dblclick", onEdgeDouble, { signal });
     el.addEventListener("pointerdown", onDown, { signal });
     el.addEventListener("pointerdown", onPress, { signal });
     el.addEventListener("click", afterClick, { signal });

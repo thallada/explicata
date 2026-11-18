@@ -178,9 +178,11 @@ Press `?` for every key. The short version:
   opened from: by where their parents stand, then by where in the parent each was opened from, so a
   pane opened from higher up stands higher (and curves cross as little as they can). A column divides
   its own height among its panes, a short pane taking only what its text needs. When they do not all
-  fit, the column stacks them the way the strip stacks columns: the pane on the focused branch shown
-  whole, those before it stuck a tab apart above it and those after it a tab apart at the column's
-  foot, partly covered and at the limit down to a one-line tab, so every pane shows at least its tab.
+  fit, or when its share would cut the active pane short (a definition whose article's card has
+  just arrived, say), the column stacks them the way the strip stacks columns: the pane on the
+  focused branch shown whole, those before it stuck a tab apart above it and those after it a tab
+  apart at the column's foot, partly covered and at the limit down to a one-line tab, so every pane
+  shows at least its tab.
   A pane scrolled past its own title shows the same tab at its top, over its text; a pane shows its
   tab only while the rule under its title does not show, never both. A click anywhere
   in a pane that is not text, a row or a link makes it the active pane; a click anywhere else, or
@@ -192,6 +194,19 @@ Press `?` for every key. The short version:
   it up or down its column; Esc cancels; `Alt+Shift+k` `Alt+Shift+j` (or the pane menu's Move this
   pane up and down) move the active pane a place; the column keeps that order, and a pane opened
   later goes in just after the one before it in its own order.
+- **Resizing by the edges.** The mouse near the edge between two panes of a column shows an up and
+  down arrow, near the edge between two columns side by side a left and right one; pressed and
+  dragged, the edge follows it, as a finger drags a pane's top edge on a phone: down a column the
+  panes either side give and take (a tab at the limit pushed along, never less than a tab, a pane
+  left barely taller than its tab folds), across the strip the column after the edge gives what the
+  one before takes (never narrower than 240 px, one at the limit pushed along). The column's top
+  and foot, the strip's outer edges and an edge a column covers are not edges. Esc while dragging
+  puts the edge back; a double click on an edge lays its column (across, the strip) out
+  automatically again. Only a pinned pane's size sticks: once another pane is the active one, or a
+  pane opens or closes in that column, the column is laid out automatically again but for its
+  pinned panes, which keep their heights, the others sharing the rest (the active pane first, as
+  far as a tab for each of the others allows); likewise a column keeps its width only while it
+  holds a pinned pane. Sizes by hand are not kept across a reload.
 - **Between panes, by keys.** `Alt+h` goes to the pane this one was opened from, `Alt+l` to one
   opened from it (the one opened from the focused row or link, if it is open, else the one last
   visited there), `Alt+k` and `Alt+j` (or `Alt+↑` `Alt+↓`, or `[` `]`) to the pane above and below
@@ -370,7 +385,8 @@ What is sent where:
   the store's `trail` is its focused branch); `stack.ts` is the stacking shared by the strip and its
   columns (and how a column shares or stacks its height), `lanes.ts` orders the curves' lanes. The
   pages layout is the same panes (`Panes.tsx`, which also glides the strip and carries a pane held
-  or resizes one by touch, the sizes by hand being `stack.ts` `resize`, `release` and `fit`) laid out a column per page, with `Pages.tsx` (the trail and the map) and `pages.ts`
+  or resizes one by touch, or side by side by the mouse at its edges, the sizes by hand being
+  `stack.ts` `resize`, `release`, `fit` and `share`) laid out a column per page, with `Pages.tsx` (the trail and the map) and `pages.ts`
   (which pane a page brings forward, the history entries a pane per step, and the map's tree lines,
   pure functions).
 
