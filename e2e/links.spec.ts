@@ -360,7 +360,8 @@ test("linking by hand: the picker links to the library, to Wikipedia and to an a
   await page.keyboard.type("https://example.org/tides");
   await expect(picker.locator(".choice.selected")).toContainText("example.org");
   await keys(page, "Enter");
-  expect(await linkCount()).toEqual([`${word}|wiki|Octopus`, `${second}|url|https://example.org/tides`]);
+  // The page's title is asked for first (the mock web has none for this address), so the link lands a moment later.
+  await expect.poll(linkCount).toEqual([`${word}|wiki|Octopus`, `${second}|url|https://example.org/tides`]);
   // /link with a target in the text form, on the node itself: the node is about something.
   await keys(page, "Escape Escape");
   await command(page, "/link w:Tide");
@@ -483,8 +484,10 @@ test("a hostile article cannot run script or load anything from elsewhere, in a 
     await keys(page, "j l");
     await page.waitForTimeout(300);
     const text = page.locator(".wiki-text");
-    expect(await text.locator("script, iframe, object, embed, img, svg, style, link, form, video, base, meta").count()).toBe(0);
-    expect(await text.evaluateAll((els) => els.flatMap((e) => [...e.querySelectorAll("*")]).flatMap((e) => [...e.attributes].map((a) => a.name)).filter((n) => /^on|^style$|^src|^srcset$|^background$/.test(n)))).toEqual([]);
+    // Pictures are kept, so img may appear, but only from the app's own image route; a video only as its facade (no <video> before a click).
+    expect(await text.locator("script, iframe, object, embed, svg, style, link, form, video, audio, source, base, meta").count()).toBe(0);
+    expect(await text.evaluateAll((els) => els.flatMap((e) => [...e.querySelectorAll("*")]).flatMap((e) => [...e.attributes].map((a) => a.name)).filter((n) => /^on|^style$|^srcset$|^srcdoc$|^background$|^poster$/.test(n)))).toEqual([]);
+    expect(await text.evaluateAll((els) => els.flatMap((e) => [...e.querySelectorAll("[src]")]).map((i) => `${i.localName} ${i.getAttribute("src")}`).filter((s) => !s.startsWith("img /api/wiki/media?u=https%3A%2F%2Fupload.wikimedia.org%2F")))).toEqual([]);
     expect(await text.evaluateAll((els) => els.flatMap((e) => [...e.querySelectorAll("a[href]")]).map((a) => a.getAttribute("href")!).filter((h) => !/^https:\/\//.test(h)))).toEqual([]);
     for (const a of await text.locator("a[target]").all()) expect(await a.getAttribute("rel")).toContain("noopener");
     // The heading with markup in it is shown as text.

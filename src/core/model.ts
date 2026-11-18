@@ -919,6 +919,15 @@ export function topOf(snap: Snap, id: NodeId): NodeId | null {
 export const sections = (snap: Snap, id: NodeId) => snap.nodes[id].children.filter((c) => snap.nodes[c].kind === "section" && !snap.nodes[c].articles);
 
 /**
+ * Whether a section is nothing but a link: its target is a Wikipedia article or a web page, and it
+ * has no text and no sections of its own. The UI shows such a section as its article (Store.linkOnly).
+ */
+export function linkOnly(snap: Snap, id: NodeId): boolean {
+  const n = snap.nodes[id];
+  return !!n && n.kind === "section" && !!n.ref && n.ref.kind !== "node" && !n.body.trim() && !sections(snap, id).length;
+}
+
+/**
  * Hash of what a node's body should be a summary of: its section children, in order. The
  * library's body is not a summary of its children, so it has nothing to be stale against.
  */

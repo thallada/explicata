@@ -1,6 +1,6 @@
 import { UndoManager } from "loro-crdt";
 import { describe, expect, it } from "vitest";
-import { Doc, SYSTEM_ORIGIN, ancestorsBelowRoot, isStale, retitleOps, staleness, sections, notesOf, topOf, tops, type NodeId } from "../src/core/model";
+import { Doc, SYSTEM_ORIGIN, ancestorsBelowRoot, isStale, linkOnly, retitleOps, staleness, sections, notesOf, topOf, tops, type NodeId } from "../src/core/model";
 import { healAnchors, history, verifyHistory, revertTo, revertSubtreeTo, mergeBranch, mergeUpdate, resolveConflict, reopenConflict, at, touched, Repo } from "../src/core/repo";
 import { formFor, paragraphs, sentences, sha256, words } from "../src/core/text";
 
@@ -399,5 +399,38 @@ describe("library", () => {
     third.apply([{ op: "update", id: bLeaf, body: "Carol's." }], "Carol");
     const found = mergeUpdate(doc, third.loro.export({ mode: "update", from: doc.loro.version() }), third.loro.version().toJSON());
     expect(found.conflicts.map((c) => [c.type, c.node])).toEqual([["edit-edit", bLeaf]]);
+  });
+});
+
+describe("a section that is only a link", () => {
+  it("is a section with a Wikipedia or web target and nothing of its own: no text, no sections", () => {
+    const { doc, root, one } = fixture();
+    const { created } = doc.apply(
+      [
+        { op: "create", parent: root, title: "Octopuses", body: "", ref: { kind: "wiki", title: "Octopus", lang: "en" } },
+        { op: "create", parent: root, title: "A trace", body: "", ref: { kind: "url", url: "https://tracing.example.org/posts/following-a-request" } },
+        { op: "create", parent: root, title: "Elsewhere", body: "", ref: { kind: "node", id: one } },
+        { op: "create", parent: root, title: "Nothing", body: "" },
+      ],
+      "Add links",
+    );
+    const [wiki, web, node, plain] = created;
+    expect(linkOnly(doc.snap(), wiki)).toBe(true);
+    expect(linkOnly(doc.snap(), web)).toBe(true);
+    // A link to a node is not an article; a section with no target is not a link.
+    expect(linkOnly(doc.snap(), node)).toBe(false);
+    expect(linkOnly(doc.snap(), plain)).toBe(false);
+    expect(linkOnly(doc.snap(), root)).toBe(false);
+    // Text of its own (not just white space), or a section inside, makes it a section like any other.
+    doc.apply([{ op: "update", id: wiki, body: "  \n " }], "Blank");
+    expect(linkOnly(doc.snap(), wiki)).toBe(true);
+    doc.apply([{ op: "update", id: wiki, body: "Eight arms." }], "Text");
+    expect(linkOnly(doc.snap(), wiki)).toBe(false);
+    doc.apply([{ op: "create", parent: web, title: "Inside", body: "" }], "Inside");
+    expect(linkOnly(doc.snap(), web)).toBe(false);
+    // A note is never one, whatever it links to; nor is a node that is gone.
+    const [note] = doc.apply([{ op: "create", parent: one, kind: "note", quote: "first", body: "", ref: { kind: "wiki", title: "First", lang: "en" } }], "Link").created;
+    expect(linkOnly(doc.snap(), note)).toBe(false);
+    expect(linkOnly(doc.snap(), "nope" as NodeId)).toBe(false);
   });
 });

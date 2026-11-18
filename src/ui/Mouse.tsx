@@ -12,9 +12,10 @@ import { createPortal } from "preact/compat";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { isLibraryRoot, label, staleness, topOf, type NodeId } from "../core/model";
 import { plain } from "../core/text";
-import { articleRowEntries, barItems, nodeEntries, paneEntries, selectionEntries, type Act, type Entry, type Item, type NodeCtx, type SelCtx } from "./actions";
+import { articleRowEntries, barItems, nodeEntries, paneEntries, selectionEntries, tidy, webPageEntries, type Act, type Entry, type Item, type NodeCtx, type SelCtx } from "./actions";
 import { press } from "./press";
-import { store, type WRow } from "./store";
+import { rowId, store, type WRow } from "./store";
+import { canArrange, pageName, siteOf } from "./web";
 
 // ---- where a pointer is, in the text ----
 
@@ -55,7 +56,7 @@ export function pointedPane(target: HTMLElement) {
 }
 
 /** The row of an article's text an element is in: its head or a section. */
-export const wtextRow = (wtext: HTMLElement) => (wtext.dataset.wtext === "head" ? { t: "head" } : { t: "sec", id: Number(wtext.dataset.wtext) }) as WRow;
+export const wtextRow = (wtext: HTMLElement) => (wtext.dataset.wtext === "head" ? { t: "head" } : { t: "sec", id: rowId(wtext.dataset.wtext) }) as WRow;
 
 /** The text position under a point. */
 function caretAt(x: number, y: number): { node: Node; offset: number } | null {
@@ -126,7 +127,7 @@ function selCtx(): SelCtx {
   const text = plain(store.selectedText() ?? "");
   const s = store.snap;
   const a = store.aux;
-  if (a?.kind === "wiki") return { text, article: true, link: store.auxLink(a) ? "wiki" : undefined, note: !!store.articleNoteHere(), panes: store.panes, pages: store.pages };
+  if (a?.kind === "wiki") return { text, article: true, web: store.onWeb, link: store.auxTarget(a)?.kind as "wiki" | "url" | undefined, note: !!store.articleNoteHere(), panes: store.panes, pages: store.pages };
   const f = store.focus;
   const id = store.noteAt(f.range);
   const r = id ? store.targetOf(id) : undefined;
@@ -156,15 +157,29 @@ function menuHere(where: Where): Entry[] {
   const pinned = !!store.branchNodes[store.paneAt]?.pinned;
   const moves = store.paneMoves();
   if (a?.kind === "wiki") {
-    const h = store.wikiHost(a.host);
-    if (store.panes && (where === "pane" || a.row.t === "head")) return paneEntries(a.host.startsWith("n") ? { node: nodeCtx(a.host.slice(1) as NodeId), pinned, ...moves } : { article: h?.title, pinned, ...moves }, act);
-    if (a.row.t === "sec" || a.row.t === "sense") return articleRowEntries(h?.title ?? "Wikipedia", store.panes, act, store.pages);
+    const h = store.viewHost(a.host);
+    const title = h?.src === "web" ? pageName(h.url) : h?.title;
+    const web = h?.src === "web";
+    const arrange = canArrange();
+    if (store.panes && (where === "pane" || a.row.t === "head")) {
+      if (!a.host.startsWith("n")) return paneEntries({ article: title, web, arrange, pinned, ...moves }, act);
+      const id = a.host.slice(1) as NodeId;
+      // A section shown as its article: its own items, then the page's or the article's.
+      return paneEntries({ node: nodeCtx(id), ...(store.linkOnly(id) ? { article: title ?? "", web, arrange } : {}), pinned, ...moves }, act);
+    }
+    if (a.row.t === "sec" || a.row.t === "sense") return articleRowEntries(title ?? "Wikipedia", store.panes, act, store.pages, web, arrange);
+    // A web page's head, in the column or under a node: what can be done to the page.
+    if (web && a.row.t === "head") return tidy([{ t: "head", text: title ?? siteOf(h.url) }, ...webPageEntries(act, arrange)]);
     return [];
   }
   if (a) return [];
   const id = store.focus.node;
   if (!store.snap.nodes[id]) return [];
-  if (where === "pane" && store.panes) return paneEntries({ node: nodeCtx(id), pinned, ...moves }, act);
+  if (where === "pane" && store.panes) {
+    const h = store.linkOnly(id) && store.paneHead(id) ? store.viewHost(`n${id}`) : null;
+    const article = h ? (h.src === "web" ? pageName(h.url) : h.title) : undefined;
+    return paneEntries({ node: nodeCtx(id), ...(h ? { article, web: h.src === "web", arrange: canArrange() } : {}), pinned, ...moves }, act);
+  }
   return nodeEntries(nodeCtx(id), act);
 }
 
@@ -209,7 +224,7 @@ function focusAt(target: HTMLElement, x: number, y: number): Where | null {
     const wrow = target.closest<HTMLElement>("[data-wrow]");
     if (host && wrow) {
       intoPane();
-      store.setFocus(store.focus, { kind: "wiki", host, row: { t: "sec", id: Number(wrow.dataset.wrow) } });
+      store.setFocus(store.focus, { kind: "wiki", host, row: { t: "sec", id: rowId(wrow.dataset.wrow) } });
       return "auto";
     }
     // A link's or a note's words.

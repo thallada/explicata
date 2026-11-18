@@ -7,8 +7,9 @@
  * list entries and block quotes, with everything inline in them (links, italics, bold, sub- and
  * superscripts, code). An inline formula counts as its glyphs' text and is selected and drawn
  * whole: a selection that touches it highlights all of it. What is not: tables and preformatted
- * blocks, which are shown as they are but carry no offsets. Whitespace is collapsed as the browser
- * collapses it. Citation markers and the rest are gone already (server/wikiHtml.ts). A section's
+ * blocks, which are shown as they are but carry no offsets. A figure (an image and its caption,
+ * or a video's facade and its caption) is shown as it is, and its caption is text like a paragraph's. Whitespace is
+ * collapsed as the browser collapses it. Citation markers and the rest are gone already (server/wikiHtml.ts). A section's
  * text is its own: nothing spans two sections.
  */
 import type { Range } from "../core/text";
@@ -42,15 +43,18 @@ export type Block =
   | { k: "el"; tag: string; attrs: [string, string][]; kids: Block[] }
   | { k: "raw"; html: string };
 
+/** A link in the text: to an article (`lang` when it names its own, as a web page's links do), or to another web page. */
+export type TextLink = { range: Range; title: string; lang?: string } | { range: Range; url: string; title?: undefined };
+
 export interface ArticleText {
   text: string;
   blocks: Block[];
-  /** The links to other articles, in reading order. */
-  links: { range: Range; title: string }[];
+  /** The links to other articles and pages, in reading order. */
+  links: TextLink[];
 }
 
-const STRUCT = new Set(["ul", "ol", "li", "dl", "dt", "dd", "blockquote"]);
-const OPAQUE = new Set(["table", "pre", "hr"]);
+const STRUCT = new Set(["ul", "ol", "li", "dl", "dt", "dd", "blockquote", "figure", "figcaption"]);
+const OPAQUE = new Set(["table", "pre", "hr", "img"]);
 
 const attrsOf = (n: DomLike): [string, string][] => Array.from(n.attributes ?? [], (a) => [a.name, a.value]);
 const same = (a: Mark[], b: Mark[]) => a.length === b.length && a.every((m, i) => m === b[i]);
@@ -138,7 +142,7 @@ export function buildText(root: DomLike): ArticleText {
   visit(root);
   flush();
 
-  // A link is the runs inside one <a data-wiki>.
+  // A link is the runs inside one <a data-wiki> (or, in a web page's text, <a data-url>).
   const links: ArticleText["links"] = [];
   const seen = new Map<Mark, number>();
   const walk = (bs: Block[]) => {
@@ -146,13 +150,16 @@ export function buildText(root: DomLike): ArticleText {
       if (b.k === "el") walk(b.kids);
       if (b.k !== "para") continue;
       for (const r of b.runs) {
-        const a = r.marks.find((m) => m.tag === "a" && m.attrs.some(([k]) => k === "data-wiki"));
+        const a = r.marks.find((m) => m.tag === "a" && m.attrs.some(([k]) => k === "data-wiki" || k === "data-url"));
         if (!a) continue;
         const i = seen.get(a);
         if (i !== undefined) links[i].range[1] = r.e;
         else {
           seen.set(a, links.length);
-          links.push({ range: [r.s, r.e], title: a.attrs.find(([k]) => k === "data-wiki")![1] });
+          const at = (k: string) => a.attrs.find(([n]) => n === k)?.[1];
+          const title = at("data-wiki");
+          const lang = at("data-wiki-lang");
+          links.push(title !== undefined ? { range: [r.s, r.e], title, ...(lang ? { lang } : {}) } : { range: [r.s, r.e], url: at("data-url")! });
         }
       }
     }

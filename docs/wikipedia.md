@@ -62,6 +62,24 @@ bulk work only.
 speed limit on read requests", and recommends `Accept-Encoding: gzip`, the pipe (`titles=A|B|C`)
 "whenever possible", and caching.
 
+**Pictures (upload.wikimedia.org).** Since articles keep their pictures (§3), the server also
+reads thumbnails from upload.wikimedia.org, through `/api/wiki/media`: only addresses an article
+it served shows, and only those the reader's browser asks for (they load lazily, as they scroll
+into view). These go through a fetcher of their own (`server/pageFetch.ts`), not the API queue:
+the same User-Agent as the API requests (with the contact when `EX_WIKI_CONTACT` is set), at most
+**two at a time**, starts **250 ms** apart with a contact and **1 s** without, no redirects
+followed off the host, 15 s and 10 MB per picture, and after a 429 or 503 nothing more to that host
+for its Retry-After (else 10 s; a wait longer than a read may take is answered at once with
+"asked for fewer requests"). robots.txt is not read for it: Wikimedia's own policies govern it.
+The renditions asked for are only those the article's HTML lists (`src`, and `srcset` up to 2x:
+a 250 px thumbnail's 500 px one), never a size constructed by the app and never a large
+original. *Not checked against Wikimedia's current policy, and to be rechecked before relying on
+it:* whether upload.wikimedia.org counts these requests against the API budget above or has
+limits of its own, whether the 2025–26 changes to which thumbnail sizes are served still include
+every size an article's `srcset` names, whether the concurrency and spacing chosen here are within
+what the robot policy asks for media, and whether a larger standard size (such as 960 px) could be
+asked for instead of the 2x rendition. Nothing was fetched from Wikimedia to check.
+
 **Authentication** only raises a new account to the same 200/min a compliant UA already gets (the
 2000/min tier needs an established editor account), and Wikimedia Enterprise is overkill for one
 user, so neither is used.
@@ -85,10 +103,10 @@ put a summary in a model prompt without delaying the prompt.
 
 What gets stripped (seen in real output): inline `<style>` (TemplateStyles), `sup.reference`
 markers, the reference list, COinS spans (`Z3988`), navboxes, infoboxes, sidebars, hatnotes,
-clade tables, the hidden short description, edit links, maintenance boxes and `noprint`. Images
-are dropped: each file has its own licence, and the browser would load them from
-upload.wikimedia.org. MathML is kept, because the parser now emits native MathML and browsers
-render it.
+clade tables, the hidden short description, edit links, maintenance boxes and `noprint`. Pictures
+are kept as figures since November 2026 (§3), loaded through the app's own route, never by the
+browser from upload.wikimedia.org. MathML is kept, because the parser now emits native MathML and
+browsers render it.
 
 **Services not used.** The Link Recommendation API ("Add a link") takes an existing article, not
 arbitrary text, and is scheduled for deprecation from July 2026; its underlying idea (anchor
@@ -107,15 +125,48 @@ When text is shown in the app it must carry:
 - **Licence notice**: name the licence and link to it
   (https://creativecommons.org/licenses/by-sa/4.0/).
 - **Modifications**: one "must indicate in a reasonable fashion that the original work has been
-  modified". We remove references, boxes and images, so `article()` returns
-  `attribution.modified` and an `attribution.text` that says so.
+  modified". We remove references, boxes and edit links, so `article()` returns
+  `attribution.modified` and an `attribution.text` that says so: "Adapted: references, navigation
+  boxes, infoboxes and edit links removed; each picture is credited on its own file page (click
+  it)."
 - **Share-alike** applies to modified article text that is redistributed. If a node quotes or adapts
   article text and that text is exported or shared, that part is CC BY-SA. Linking to an
   article and writing your own prose about it is not affected.
-- **Images** each have their own licence and need their own credit. This is why they are dropped.
+- **Images** each have their own licence and need their own credit. They were dropped for that
+  reason until November 2026. **That decision is reversed** (the owner's): pictures sometimes
+  carry the most important information in an article (a diagram, a map, the thing itself), and
+  dropping them loses it. Each picture is credited as Wikipedia itself credits it: by a link to
+  its File page, where its author, source and licence are. Clicking a picture opens that page in
+  a new tab (its `data-full`); a video has a "File page: author and licence ↗" link under it. A
+  picture with no File page to link to is not shown.
 
 The UI must show `attribution.text`, with its links, next to every pane of article text, and next
 to summary extracts too.
+
+**What is kept, and how** (`server/wikiHtml.ts`). Thumbnails (`<figure typeof="mw:File/…">`, and
+old-style `div.thumb`), each picture of a multiple-image block (`div.tsingle`), and each box of a
+gallery (`ul.gallery`, its caption a paragraph) become `<figure><img src="/api/wiki/media?u=…"
+alt width height loading="lazy" decoding="async" data-full="<File page>"><figcaption>…</figcaption>
+</figure>`, the caption with its links. The infobox is still dropped, but its main picture (the
+one in its `infobox-image` cell, else its first picture worth keeping) is lifted to the top of
+the lead with its `infobox-caption`. Not kept: pictures declared under 50 px wide or tall (icons,
+flags, buttons), those marked `noviewer`, `flagicon` and the like, pictures inline in a sentence
+or a table cell (a figure may not sit inside a paragraph), anything inside a box that is dropped
+(navboxes, maintenance boxes, sidebars), any address not on upload.wikimedia.org, and sound
+files. The rendition is the largest of `src` and its `srcset` up to 2x. The File page is the
+`a.mw-file-description` (or old `a.image`) link, made absolute on the article's own wiki. A
+`<video>` (WebM or Ogg sources on upload.wikimedia.org, with a `resource` or `data-mwtitle` naming
+its file) becomes the click-to-play facade of docs/pages.md §11, with a WebM transcode of 360 to
+720 lines when there is one, its poster as the still and `data-file` its File page.
+
+`/api/wiki/media?u=…` serves a picture only if an article this server has served since it started
+shows it (the addresses are recorded as each article is served; the most recent 20,000 are
+kept), only from upload.wikimedia.org, `image/*` only, with the same headers as a web page's
+images (`cache-control: private, max-age=604800`, `content-security-policy: sandbox`,
+`x-content-type-options: nosniff`), and refuses a request another site's page makes. After a
+server restart a picture loads again once its article is opened again. It is a route of its own,
+beside `/api/page/media`, so that it follows `EX_WIKI` (and works with `EX_PAGES=off`) and sends
+Wikimedia's User-Agent.
 
 ## 4. Decision: live API with a disk cache; no local title index
 
@@ -214,7 +265,10 @@ considered and set aside:
 ## 7. Caches
 
 `<EX_DATA>/wiki-cache/<lang>/titles.json` (found 30 d, missing 3 d), `small.json` (summaries 14 d,
-senses 14 d, suggest 1 d), `articles/` (7 d). Vectors, per library: `<EX_DATA>/libraries/<id>/vectors/<name>.json`
+senses 14 d, suggest 1 d), `articles/` (7 d). An article records the version of the sanitiser
+that made it (`sanitiser`; absent is 1, which dropped pictures, and 2 keeps them): one made by
+another version is read again on its next open even within its 7 days, so pictures appear at
+once, and is still served, marked stale, while Wikipedia cannot be reached. Vectors, per library: `<EX_DATA>/libraries/<id>/vectors/<name>.json`
 and `.f32`. An expired entry is still served, marked `stale`, when the network is down. The
 variables that configure all this are in the README.
 

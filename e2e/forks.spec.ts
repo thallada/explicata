@@ -197,6 +197,8 @@ test("a link and an article's link open beside by default, in place with Shift; 
   await expect.poll(async () => (await columns(page))[3]).toEqual(["“lambda calculus”", "Fixed-point combinator"]);
   // In an article: a click opens beside, a Shift-click in place.
   const art = pane(page, "Fixed-point combinator");
+  // The note above, with its article in full, takes the column: the pane is a tab at its foot until it is clicked.
+  await art.locator(".tabline").click();
   await art.locator('.wiki-text a[data-wiki="Haskell Curry"]').click();
   await art.locator('.wiki-text a[data-wiki="Recursion (computer science)"]').click();
   expect((await columns(page))[4]).toEqual(["Haskell Curry", "Recursion (computer science)"]);

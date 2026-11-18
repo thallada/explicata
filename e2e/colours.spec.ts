@@ -7,7 +7,7 @@
  * selection bar sits at its pane's level. Same build, mock model and mock Wikipedia as the others.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { clickOpen, frames, library, pane, pixels, seedLinks, settle, state, still, tid } from "./helpers";
+import { clickOpen, frames, library, pane, pixels, seedLinks, seedWeb, settle, state, still, tid } from "./helpers";
 
 
 /**
@@ -41,7 +41,7 @@ const lines = (page: Page) =>
         cls: p.getAttribute("class") ?? "",
         hue: p.dataset.hue ?? null,
         paneHue: pe.dataset.hue ?? null,
-        kind: pe.classList.contains("wiki-pane") ? (pe.querySelector(".wiki-head .wsub") ? "article section" : "article") : pe.querySelector(":scope > .pane-scroll > .pane-body > .top") ? "page" : "section",
+        kind: pe.classList.contains("wiki-pane") ? `${pe.classList.contains("web") ? "web" : "article"}${pe.querySelector(".wiki-head .wsub") ? " section" : ""}` : pe.querySelector(":scope > .pane-scroll > .pane-body > .top") ? "page" : "section",
         stroke: rgb(getComputedStyle(p).stroke),
         colour: rgb(getComputedStyle(pe).getPropertyValue("--hue")),
         ownRule: head ? rgb(getComputedStyle(head).borderBottomColor) : null,
@@ -63,6 +63,7 @@ test.use({ viewport: { width: 1920, height: 1080 }, colorScheme: "dark" });
 test.describe.configure({ mode: "serial" });
 test.beforeAll(async ({ request }) => {
   await seedLinks(request);
+  await seedWeb(request);
 });
 test.beforeEach(async ({ context }) => {
   await context.route(/wikipedia\.org|wikimedia\.org|stanford\.edu|example\.org/, (r) => r.abort());
@@ -73,7 +74,7 @@ const near = (a: number, b: number, d = 1) => Math.abs(a - b) <= d;
 /** Two colours alike, but for rounding (a colour at part strength, un-premultiplied, may differ by a unit or two). */
 const alike = (a: number[] | null, b: number[] | null) => !!a && !!b && a.every((v, i) => Math.abs(v - b[i]) <= 3);
 
-test("every kind of pane's title rule is drawn by the curve into it, in the pane's colour: nodes (a top-level one too), articles and their sections", async ({ page }) => {
+test("every kind of pane's title rule is drawn by the curve into it, in the pane's colour: nodes (a top-level one too), articles and their sections, web pages and their sections", async ({ page }) => {
   await library(page);
   for (const t of ["The tides", "Fixed points"]) await clickOpen(page, "Library", t);
   const seen = new Set<string>();
@@ -102,7 +103,20 @@ test("every kind of pane's title rule is drawn by the curve into it, in the pane
   await expect(page.locator(".wiki-pane .wiki-head .wsub")).toHaveCount(1);
   await still(page);
   await check();
-  expect([...seen].sort(), JSON.stringify((await lines(page)).map((l) => [l.kind, l.ruled, l.cls, l.folded, l.scrolled]))).toEqual(["article", "article section", "section"]);
+  // A web page, from a link in a section of another tree, and a section of it.
+  await clickOpen(page, "Library", "Error-correcting codes");
+  await clickOpen(page, "Error-correcting codes", "The problem");
+  await clickOpen(page, "The problem", "Repetition");
+  await clickOpen(page, "Repetition", "take a majority vote", ".lnk, .anchor");
+  await expect(pane(page, "On maps").locator(".wrow").first()).toBeVisible();
+  await pane(page, "Repetition").locator(".pane-head h2").dispatchEvent("click");
+  await still(page);
+  await check();
+  await clickOpen(page, "On maps", "II.", ".wrow .row");
+  await expect(page.locator(".wiki-pane.web .wiki-head .wsub")).toHaveCount(1);
+  await still(page);
+  await check();
+  expect([...seen].sort(), JSON.stringify((await lines(page)).map((l) => [l.kind, l.ruled, l.cls, l.folded, l.scrolled]))).toEqual(["article", "article section", "section", "web", "web section"]);
   // A top-level node's pane is headed like any other: only the first pane is a page.
   expect(await page.locator(".strip .pane:not(.root) > .pane-scroll > .pane-body > .top").count()).toBe(0);
   // The two forks out of the library are two colours; the top node has none.

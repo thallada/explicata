@@ -7,10 +7,13 @@
  * Article HTML arrives sanitised by the server (server/wiki.ts). It is cleaned again here before it
  * is put into the page, because it came from outside: only an allowlist of elements and
  * attributes survives, and every link either names an article (data-wiki) or opens a new tab.
+ * Pictures survive only from the app's own image route (Wikipedia's or a web page's), and a video
+ * only as the fixed facade of src/core/video.ts, with checked values.
  */
 import type { Attribution, FullArticle as Article, Sense, Summary, TitleSuggestion as Suggestion } from "../../server/wiki";
 import type { SectionText } from "../core/article";
 import { wikiKey, wikiTitle } from "../core/ref";
+import { validId } from "../core/video";
 import { buildText, type ArticleText } from "./articleText";
 
 export type { Article, Attribution, Suggestion };
@@ -155,49 +158,107 @@ const ATTRS = new Set(["colspan", "rowspan", "start", "data-wiki", "data-wiki-fr
 /** Elements whose content goes with them. */
 const DROP = new Set(["script", "style", "iframe", "object", "embed", "svg", "link", "meta", "base", "form", "template", "noscript", "video", "audio", "img", "picture", "figure", "source", "canvas", "title", "head", "input", "button", "select", "textarea"]);
 
+/** Figures, each an image from the app's own media route and its caption (server/pageHtml.ts, server/wikiHtml.ts), or a video's facade. */
+const FIGURE_KEEP = new Set(["figure", "figcaption", "img"]);
+/** The only images shown in a web page's text: those the server proxies for a page it read (it is not an open proxy, and the page's CSP allows nothing else). */
+export const MEDIA_ROUTE = "/api/page/media?u=";
+/** The same for Wikipedia's text: pictures on upload.wikimedia.org that an article read here shows. */
+export const WIKI_MEDIA_ROUTE = "/api/wiki/media?u=";
+const FILE_PAGE = /^https:\/\/[a-z][a-z0-9-]{1,15}\.wikipedia\.org\/wiki\/[^\s"<>]+$/;
+const LANG = /^[a-z][a-z0-9-]{1,15}$/;
+const http = (u: string | undefined) => !!u && /^https?:\/\/[^\s]+$/i.test(u);
+
+/**
+ * What of an allowlisted element survives the cleaning: its attributes, in the order they are set,
+ * or null when the element goes, content and all. A figure's image is kept with a fixed set of
+ * attributes when it comes from the media route (`data-full`: what a click opens, the image itself
+ * on a web page, its File page on Wikipedia). A video's facade keeps its class and checked data
+ * attributes, nothing else. `web`: a web page's text, where a link may name another page
+ * (data-url, opened as a pane) or an article in its own language (data-wiki-lang), images come
+ * from /api/page/media, and a video may be any https file or a YouTube or Vimeo player; in
+ * Wikipedia's, images come from /api/wiki/media and a video's file from upload.wikimedia.org.
+ */
+export function cleanAttrs(tag: string, attrs: [string, string][], web = false): [string, string][] | null {
+  const get = (k: string) => attrs.find(([n]) => n === k)?.[1];
+  const digits = (k: string) => (/^\d{1,5}$/.test(get(k) ?? "") ? get(k)! : null);
+  if (tag === "img") {
+    const src = get("src");
+    if (!src?.startsWith(web ? MEDIA_ROUTE : WIKI_MEDIA_ROUTE)) return null;
+    const out: [string, string][] = [["src", src], ["alt", get("alt") ?? ""]];
+    for (const k of ["width", "height"]) if (digits(k)) out.push([k, digits(k)!]);
+    out.push(["loading", "lazy"], ["decoding", "async"]);
+    if (http(get("data-full"))) out.push(["data-full", get("data-full")!]);
+    return out;
+  }
+  if (tag === "figure" && get("class") === "video") {
+    const out: [string, string][] = [];
+    const embed = get("data-embed") ?? "";
+    const id = get("data-id") ?? "";
+    const video = get("data-video") ?? "";
+    if (web && validId(embed, id)) out.push(["data-embed", embed], ["data-id", id]);
+    else if (web ? /^https:\/\/[^\s"<>]+$/.test(video) : /^https:\/\/upload\.wikimedia\.org\/[^\s"<>]+$/.test(video)) out.push(["data-video", video]);
+    // Not a video this app can play: an empty figure, which shows its caption.
+    if (!out.length) return [];
+    if (digits("data-width") && digits("data-height")) out.push(["data-width", digits("data-width")!], ["data-height", digits("data-height")!]);
+    if (FILE_PAGE.test(get("data-file") ?? "")) out.push(["data-file", get("data-file")!]);
+    return [["class", "video"], ...out];
+  }
+  if (FIGURE_KEEP.has(tag)) return [];
+  const out = attrs.filter(([k]) => ATTRS.has(k));
+  if (tag !== "a") return out;
+  const href = get("href");
+  const wiki = get("data-wiki");
+  const lang = web && LANG.test(get("data-wiki-lang") ?? "") ? get("data-wiki-lang")! : null;
+  const page = web && wiki === undefined && http(get("data-url")) ? get("data-url")! : null;
+  if (lang) out.push(["data-wiki-lang", lang]);
+  if (page) out.push(["data-url", page]);
+  if (wiki !== undefined) out.push(["href", `https://${lang ?? config.lang}.wikipedia.org/wiki/${encodeURIComponent(wiki.replace(/ /g, "_"))}`]);
+  else if (page ?? (href && /^https?:\/\//i.test(href))) out.push(["href", page ?? href!], ["target", "_blank"], ["rel", "noopener noreferrer nofollow"]);
+  return out;
+}
+
 /**
  * Clean article HTML once more, in an inert document (DOMParser runs no script and loads nothing):
- * allowlisted elements and attributes only, wiki links kept as data-wiki, other links only if
- * http(s) and then in a new tab without an opener.
+ * allowlisted elements and attributes only (cleanAttrs), wiki links kept as data-wiki, other links
+ * only if http(s) and then in a new tab without an opener.
  */
-function cleanHtml(html: string): string {
+function cleanHtml(html: string, web: boolean): string {
   const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
   const walk = (el: Element) => {
     for (const child of [...el.children]) {
       const tag = child.localName;
-      if (DROP.has(tag)) {
+      const extra = FIGURE_KEEP.has(tag);
+      if (DROP.has(tag) && !extra) {
         child.remove();
         continue;
       }
       walk(child);
-      if (!KEEP.has(tag)) {
+      if (!KEEP.has(tag) && !extra) {
         child.replaceWith(...child.childNodes);
         continue;
       }
-      const href = tag === "a" ? child.getAttribute("href") : null;
-      for (const a of [...child.attributes]) if (!ATTRS.has(a.name)) child.removeAttribute(a.name);
-      if (tag === "a") {
-        if (child.hasAttribute("data-wiki")) child.setAttribute("href", `https://${config.lang}.wikipedia.org/wiki/${encodeURIComponent(child.getAttribute("data-wiki")!.replace(/ /g, "_"))}`);
-        else if (href && /^https?:\/\//i.test(href)) {
-          child.setAttribute("href", href);
-          child.setAttribute("target", "_blank");
-          child.setAttribute("rel", "noopener noreferrer nofollow");
-        }
+      const attrs = cleanAttrs(tag, [...child.attributes].map((a): [string, string] => [a.name, a.value]), web);
+      if (!attrs) {
+        child.remove();
+        continue;
       }
+      for (const a of [...child.attributes]) child.removeAttribute(a.name);
+      for (const [k, v] of attrs) child.setAttribute(k, v);
     }
   };
   walk(doc.body);
   return doc.body.innerHTML;
 }
 
-/** A piece of article HTML as text to select in (articleText.ts). Remembered per string. */
+/** A piece of article HTML as text to select in (articleText.ts); `web` for a web page's (cleanAttrs). Remembered per string. */
 const texts = new Map<string, ArticleText>();
-export function articleText(html: string): ArticleText {
-  let out = texts.get(html);
+export function articleText(html: string, web = false): ArticleText {
+  const key = web ? `\u0000${html}` : html;
+  let out = texts.get(key);
   if (out) return out;
-  out = buildText(new DOMParser().parseFromString(`<body>${cleanHtml(html)}</body>`, "text/html").body);
+  out = buildText(new DOMParser().parseFromString(`<body>${cleanHtml(html, web)}</body>`, "text/html").body);
   if (texts.size > 400) texts.delete(texts.keys().next().value as string);
-  texts.set(html, out);
+  texts.set(key, out);
   return out;
 }
 

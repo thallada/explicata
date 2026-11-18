@@ -9,16 +9,24 @@ import { label } from "../core/model";
 import { store, type PaneRef } from "./store";
 import { mapStep, rails, type Rail } from "./pages";
 import { article } from "./wiki";
+import { article as webArticle, siteOf } from "./web";
 
-/** What a pane is called: its node's title, or its article's (a section of one by its heading). */
+/** What a pane is called: its node's title, or its article's or web page's (a section of one by its heading). */
 function paneTitle(p: PaneRef): string {
   if (p.kind === "node") return store.snap.nodes[p.id] ? label(store.snap, p.id) : "…";
+  if (p.kind === "web") {
+    const w = webArticle(p.url);
+    const sec = p.sec !== undefined && w.state === "ready" ? w.value.sections.find((x) => x.id === p.sec) : undefined;
+    return sec ? sec.heading : w.state === "ready" ? w.value.title : siteOf(p.url);
+  }
   const a = article(p.title, p.lang);
   const sec = p.sec !== undefined && a.state === "ready" ? a.value.sections.find((x) => x.id === p.sec) : undefined;
   return sec ? sec.heading : a.state === "ready" ? a.value.title : p.title;
 }
 
 export const W = () => <b class="wmark">W</b>;
+/** The mark of a web page's pane, as W marks an article's. */
+export const U = () => <b class="wmark umark">↗</b>;
 
 /** Up to this many panes in a column, a trail step shows a dot for each; beyond, their number. */
 const STACK_DOTS = 4;
@@ -82,7 +90,7 @@ export function Trail() {
                 store.toPane(n.id);
               }}
             >
-              {n.ref.kind === "wiki" && <W />}
+              {n.ref.kind === "wiki" ? <W /> : n.ref.kind === "web" ? <U /> : null}
               <span class="trail-t">{t}</span>
               {d && <Stack i={d.i} n={d.n} />}
             </button>
@@ -208,7 +216,7 @@ export function PaneMap() {
                 <RailLine key={k} r={r} step={step} hue={hues.get(r.tid)} on={branch.has(r.tid)} />
               ))}
               <button type="button" class="map-go" aria-current={id === active ? "page" : undefined} onClick={() => (store.showMap(false), store.toPane(id))}>
-                {x.node.ref.kind === "wiki" && <W />}
+                {x.node.ref.kind === "wiki" ? <W /> : x.node.ref.kind === "web" ? <U /> : null}
                 <span class="map-t">{paneTitle(x.node.ref)}</span>
                 {orphan && <span class="map-sub">its source closed</span>}
               </button>

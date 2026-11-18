@@ -2,6 +2,9 @@
 import { inArticles } from "../core/article";
 import { store } from "./store";
 
+/** The keys that act on a node, which on the head of a section shown as its article (Store.linkHead) act on that section rather than on the article. */
+const NODE_KEYS = new Set(["r", "w", "D", "a", "A", "c", "e", "J", "K", ">", "<", "p", "M", "z", "b", "o", "O"]);
+
 export const HELP: [string, [string, string][]][] = [
   [
     "Move",
@@ -40,10 +43,12 @@ export const HELP: [string, [string, string][]][] = [
     "Links",
     [
       ["", "W marks a Wikipedia link, § another note in the library, ↗ a web page; a dotted underline is a note, both together a note that also links"],
-      ["Enter", "on a link: open it (panes: the next pane; column: a preview, Enter again opens it). On a note that also links, or a note and a link on the same words: one page, the note's text above the article"],
-      ["w", "on a selection: link it (library, Wikipedia or an address); on a link: retarget it; on a node: give the node a target"],
-      ["L", "on a node: open its own target"],
-      ["W", "open the focused article on wikipedia.org, in a new tab"],
+      ["Enter", "on a link: open it (panes: the next pane; column: a preview, Enter again opens it). A web page opens like an article: its lead, then its sections as rows (an address on wikipedia.org opens as the article). On a note that also links, or a note and a link on the same words: one page, the note's text above the article"],
+      ["w", "on a selection: link it (library, Wikipedia or an address); on a link: retarget it; on a node: give the node a target. A section with a target and nothing else of its own is shown as its article: opened, its pane reads as the article (in one column, the article opens under its row); on that pane's head r w D a c act on the section, and a or c makes it a section like any other"],
+      ["L", "on a node: open its own target (in panes, to the right of the node's pane when that is open)"],
+      ["W", "open the focused article on wikipedia.org, or a web page (or a link to one) at its own address, in a new tab"],
+      ["s", "on a web page: have the model summarise it, and arrange a page divided only by length into sections of its choosing (a page with headings of its own keeps them). Only when asked, within the server's daily limit of calls (EX_PAGE_CALLS); the summary is shown above the lead, marked as the model's, and the foot says what the model did. Pressed again on the same text, it costs no call"],
+      ["R", "on a web page: read it again (a page is otherwise kept as first read). Unchanged text keeps what the model made of it; a page that no longer answers keeps the copy read before, marked stale; one that could not be shown is asked again"],
       ["D", "on a link: remove it, and decline its words in that node so it is not made again (u undoes). Also in the right-click menu: Remove the link"],
       ["y n", "on a suggested link (a faint dashed underline; Tab reaches it): link it / decline it (a declined phrase is not suggested again in that node)"],
       ["S", "the links list of the node you are on and everything under it (on the library root, the whole library): every link found or made, with who decided and the reviewer's reason. 1 2 3 show or hide linked · rejected · pending (rejected is hidden at first); j k move (the words are selected in the text); y links (also a rejected one: you overrule); n declines, or on a link removes it for good; Y links all the pending shown; Enter goes to the words; Esc closes"],
@@ -329,11 +334,27 @@ export function handleKey(e: KeyboardEvent, hooks: KeyHooks) {
   // On a Wikipedia view, a target or a "Linked from" row, the keys mean what they would on rows
   // (unless the focus is an annotation shown in it, which is a node like any other).
   const onAnnotation = !!store.snap.nodes[store.focus.node]?.wanchor || inArticles(store.snap, store.focus.node);
-  if (!store.aux && !onAnnotation && ((store.panes && store.trail[store.paneAt]?.kind === "wiki") || (!store.panes && store.colWiki))) {
+  if (!store.aux && !onAnnotation && ((store.panes && (store.trail[store.paneAt]?.kind ?? "node") !== "node") || (!store.panes && store.colWiki))) {
     store.aux = { kind: "wiki", host: store.panes ? `p${store.paneAt}` : "col", row: { t: "head" } };
+  }
+  // The head of a pane that is a section shown as its article is the article's head; the keys that
+  // act on a node (rename, retarget, delete, add a section, edit its text…) act on that section there.
+  const lone = store.focus.node;
+  if (!store.aux && !onAnnotation && store.panes && store.focus.grain === "node" && lone !== store.top && store.paneHead(lone) && store.linkOnly(lone)) {
+    store.aux = { kind: "wiki", host: `n${lone}`, row: { t: "head" } };
+  }
+  const head = store.linkHead;
+  if (head && NODE_KEYS.has(k)) {
+    store.aux = null;
+    store.focus = { node: head, grain: "node" };
   }
   // An Enter after a Tab that is waiting for its article to arrive waits with it.
   if (store.aux && store.holdKey(k, e.shiftKey)) return done();
+  // On a web page, its rows or its text: R reads it again, s has the model arrange it.
+  if (store.onWeb && (k === "R" || k === "s")) {
+    void (k === "R" ? store.reloadWebPage() : store.arrangeWebPage());
+    return done();
+  }
   // Enter opens beside what is in the next column; Shift+Enter in place of the focused branch's pane there.
   const replace = k === "Enter" && e.shiftKey;
   // Words selected in an article's text take the same keys as words of a node.
@@ -541,7 +562,7 @@ function libsKey(k: string): boolean {
 function commonKey(k: string, hooks: KeyHooks): boolean {
   switch (k) {
     case "W":
-      store.openOnWikipedia();
+      store.openOriginal();
       return true;
     case "q":
       if (store.panes) store.closePane();

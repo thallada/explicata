@@ -27,7 +27,7 @@ export default defineConfig({
     // Each port builds into its own directory: two runs side by side must not rebuild the files the
     // other is serving.
     command: `npx vite build --outDir dist-e2e-${PORT} --emptyOutDir && npx tsx server/index.ts`,
-    env: { EX_DIST: `dist-e2e-${PORT}`, EX_PROD: "1", EX_LLM: "mock", EX_MOCK_DELAY: "10", EX_DATA: data, PORT: String(PORT), EX_USER: "tester", EX_WIKI: "mock", EX_EMBED: "fake", EX_WIKI_MOCK_BULK_MS: "60" },
+    env: { EX_DIST: `dist-e2e-${PORT}`, EX_PROD: "1", EX_LLM: "mock", EX_MOCK_DELAY: "10", EX_DATA: data, PORT: String(PORT), EX_USER: "tester", EX_WIKI: "mock", EX_PAGES: "mock", EX_EMBED: "fake", EX_WIKI_MOCK_BULK_MS: "60" },
     url: `http://localhost:${PORT}/api/state`,
     reuseExistingServer: false,
     timeout: 60_000,

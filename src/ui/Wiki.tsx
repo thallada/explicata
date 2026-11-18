@@ -10,18 +10,21 @@
  * text ends with its attribution.
  */
 import { h, type ComponentChildren } from "preact";
-import { useContext } from "preact/hooks";
+import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type { NodeId } from "../core/model";
 import { wikiKey } from "../core/ref";
 import { clip, type Range } from "../core/text";
+import { PLAYER_ALLOW, PLAYER_SANDBOX, embedSrc } from "../core/video";
 import type { Block } from "./articleText";
 import { Attribution, Backlinks, PaneCtx, useForkMark } from "./Links";
 import { NodeBody, NoteView, type VNote } from "./Node";
 import { sameAux, store, type WRow } from "./store";
 import { article, articleText, known, revisionUrl, sectionsUnder, sensesOf, summary, type Article } from "./wiki";
+import { webKey } from "./web";
 
 type Para = Extract<Block, { k: "para" }>;
-interface Ctx {
+/** What drawing a piece of article text needs besides its blocks (a web page's too: Web.tsx). */
+export interface Ctx {
   text: string;
   notes: VNote[];
   sel: { grain: string; range: Range } | null;
@@ -60,13 +63,82 @@ function ArticleTextView({ host, row, sec, html, article, lang }: { host: string
   );
 }
 
-function Blocks({ bs, c }: { bs: Block[]; c: Ctx }) {
+export function Blocks({ bs, c }: { bs: Block[]; c: Ctx }) {
   return (
     <>
       {bs.map((b, i) =>
-        b.k === "para" ? <APara key={i} b={b} c={c} /> : b.k === "raw" ? <div key={i} class="wraw" dangerouslySetInnerHTML={{ __html: b.html }} /> : h(b.tag, { key: i, ...Object.fromEntries(b.attrs) }, <Blocks bs={b.kids} c={c} />),
+        b.k === "para" ? (
+          <APara key={i} b={b} c={c} />
+        ) : b.k === "raw" ? (
+          <div key={i} class="wraw" dangerouslySetInnerHTML={{ __html: b.html }} />
+        ) : b.tag === "figure" && b.attrs.some(([k, v]) => k === "class" && v === "video") ? (
+          <VideoFigure key={i} b={b} c={c} />
+        ) : (
+          h(b.tag, { key: i, ...Object.fromEntries(b.attrs) }, <Blocks bs={b.kids} c={c} />)
+        ),
       )}
     </>
+  );
+}
+
+type El = Extract<Block, { k: "el" }>;
+
+/** A video box's shape: the nearest of a few common ones to the video's own (16:9 when unknown), as a class, since the text may carry no style attribute. */
+const SHAPES: [string, number][] = [["r21-9", 21 / 9], ["r16-9", 16 / 9], ["r3-2", 3 / 2], ["r4-3", 4 / 3], ["r1-1", 1], ["r3-4", 3 / 4], ["r9-16", 9 / 16]];
+function shape(size: { width?: string; height?: string }): string {
+  const r = size.width && size.height ? Number(size.width) / Number(size.height) : 16 / 9;
+  return SHAPES.reduce((best, s) => (Math.abs(Math.log(s[1] / r)) < Math.abs(Math.log(best[1] / r)) ? s : best))[0];
+}
+
+/**
+ * A video's facade (src/core/video.ts): its still and a play mark, its caption under them, and on
+ * Wikipedia a link to its File page, which credits it. Nothing plays or loads from elsewhere until
+ * the click; then a <video controls preload="none"> with the checked source (started, since the
+ * reader asked), or an iframe to the one player address for the checked id, takes the still's
+ * place. Both are made here from the data attributes the cleaning let through, never from the
+ * page's own markup.
+ */
+function VideoFigure({ b, c }: { b: El; c: Ctx }) {
+  const [playing, setPlaying] = useState(false);
+  const ref = useRef<HTMLVideoElement>(null);
+  const a = Object.fromEntries(b.attrs) as Record<string, string | undefined>;
+  const still = b.kids.find((k): k is Extract<Block, { k: "raw" }> => k.k === "raw");
+  const stillSrc = still && /^<img src="([^"]*)"/.exec(still.html)?.[1]?.replace(/&amp;/g, "&");
+  const rest = b.kids.filter((k) => k !== still);
+  const player = a["data-embed"] && a["data-id"] ? embedSrc(a["data-embed"], a["data-id"]) : null;
+  const size = a["data-width"] && a["data-height"] && !player ? { width: a["data-width"], height: a["data-height"] } : {};
+  const caption = rest.map((k) => (k.k === "para" ? c.text.slice(k.s, k.e) : k.k === "el" ? k.kids.map((x) => (x.k === "para" ? c.text.slice(x.s, x.e) : "")).join(" ") : "")).join(" ").trim();
+  useEffect(() => {
+    if (playing) void ref.current?.play().catch(() => {});
+  }, [playing]);
+  const play = (e: Event) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setPlaying(true);
+  };
+  return (
+    <figure {...a} class={`video${a["data-embed"] ? " embed" : ""}${playing ? " playing" : ""}`}>
+      {!playing ? (
+        <div class={`video-box ${shape(size)}`} role="button" aria-label={`Play video${caption ? `: ${caption}` : ""}`} onClick={play}>
+          {still && <div class="wraw" dangerouslySetInnerHTML={{ __html: still.html }} />}
+          <span class="video-play" aria-hidden="true">▶</span>
+        </div>
+      ) : player ? (
+        <div class="video-box r16-9">
+          <iframe src={player} title={caption || "Video"} sandbox={PLAYER_SANDBOX} allow={PLAYER_ALLOW} referrerpolicy="no-referrer" />
+        </div>
+      ) : (
+        <div class={`video-box ${shape(size)}`}>
+          <video ref={ref} src={a["data-video"]} controls preload="none" {...size} {...(stillSrc ? { poster: stillSrc } : {})} />
+        </div>
+      )}
+      <Blocks bs={rest} c={c} />
+      {a["data-file"] && (
+        <a class="video-credit" href={a["data-file"]} target="_blank" rel="noopener noreferrer">
+          File page: author and licence ↗
+        </a>
+      )}
+    </figure>
   );
 }
 
@@ -101,7 +173,8 @@ function APara({ b, c }: { b: Para; c: Ctx }) {
       );
       for (const m of [...run.marks].reverse()) {
         const attrs = Object.fromEntries(m.attrs);
-        const cls = m.tag === "a" ? [c.link && meets(c.link, x, y, false) && "wfocus", c.fork && attrs["data-wiki"] && c.fork(`w:${attrs["data-wiki"]}`)].filter(Boolean).join(" ") : "";
+        const fork = c.fork && (attrs["data-wiki"] ? c.fork(`w:${attrs["data-wiki"]}`) : attrs["data-url"] ? c.fork(webKey(attrs["data-url"])) : "");
+        const cls = m.tag === "a" ? [c.link && meets(c.link, x, y, false) && "wfocus", fork].filter(Boolean).join(" ") : "";
         el = h(m.tag, { key: x, ...attrs, class: cls || undefined }, el);
       }
       out.push(el);
@@ -150,9 +223,9 @@ const detachedIn = (article: Article, lang: string, sec: number) =>
   store.annotations(article, lang).detached.filter((d) => d.sec === sec || (sec === 0 && d.sec === null)).map((d) => d.id);
 
 /** The W that marks Wikipedia's text, and the title. */
-function Head({ title, sub, focused }: { title: string; sub?: string; focused: boolean }) {
+function Head({ title, sub, focused, mark }: { title: string; sub?: string; focused: boolean; mark?: string }) {
   return (
-    <header class={`wiki-head${focused ? " focused" : ""}`}>
+    <header class={`wiki-head${focused ? " focused" : ""}${mark ? ` ${mark}` : ""}`}>
       <div class="wiki-brand">
         <span class="wmark">W</span> Wikipedia
       </div>
@@ -164,25 +237,30 @@ function Head({ title, sub, focused }: { title: string; sub?: string; focused: b
   );
 }
 
-function Problem({ message }: { message: string }) {
+export function Problem({ message }: { message: string }) {
   return <p class="wiki-problem">{message}</p>;
 }
 
 /** One article view. `host` says which (see Aux in store.ts); a pane passes its index. */
-export function WikiView({ host }: { host: string }) {
+export function WikiView({ host, own, headFocused }: { host: string; own?: boolean; headFocused?: boolean }) {
   const tid = useContext(PaneCtx);
+  const fork = useForkMark();
   const h = store.wikiHost(host);
   if (!h) return null;
+  // Under a node, the article opened in a pane of its own (L) is marked at this head, where its curve starts.
+  const mark = h.embedded ? fork?.(`w:${h.title}`) : undefined;
   const a = store.aux;
-  const at = (row: WRow) => !!a && a.kind === "wiki" && a.host === host && !a.grain && sameAux(a, { kind: "wiki", host, row });
+  const at = (row: WRow) => (row.t === "head" && !!headFocused) || (!!a && a.kind === "wiki" && a.host === host && !a.grain && sameAux(a, { kind: "wiki", host, row }));
   const embedded = h.embedded;
+  // Its pane's own view (a section that is only a link, shown as its article), not an inset under a node's text.
+  const inset = embedded && !own ? " embedded" : "";
 
   // Under a node, folded: its summary only, until l unfolds the article.
   if (store.folded(embedded)) {
     const sum = summary(h.title, h.lang);
     return (
       <section class={`wiki embedded folded${at({ t: "head" }) ? " focused" : ""}`} data-host={host}>
-        <Head title={sum.state === "ready" ? sum.value.title : h.title} focused={at({ t: "head" })} />
+        <Head title={sum.state === "ready" ? sum.value.title : h.title} focused={at({ t: "head" })} mark={mark} />
         {sum.state === "loading" && <p class="wiki-wait">Loading the summary…</p>}
         {sum.state === "failed" && <Problem message={sum.message} />}
         {sum.state === "ready" && (
@@ -202,8 +280,8 @@ export function WikiView({ host }: { host: string }) {
     // While the article loads, a summary already at hand is shown at once.
     const have = known(h.title, h.lang);
     return (
-      <section class={`wiki${embedded ? " embedded" : ""}`} data-host={host}>
-        <Head title={have?.title ?? h.title} focused={at({ t: "head" })} />
+      <section class={`wiki${inset}`} data-host={host}>
+        <Head title={have?.title ?? h.title} focused={at({ t: "head" })} mark={mark} />
         {have && <p class="wiki-summary">{have.extract}</p>}
         {art.state === "loading" ? <p class="wiki-wait">Loading the article from Wikipedia…</p> : <Problem message={art.message} />}
         {have && <Attribution a={have.attribution} />}
@@ -216,8 +294,8 @@ export function WikiView({ host }: { host: string }) {
   // A section open as a pane to the right is marked: the picked child "showing", another fork "forked".
   const showing = (id: number): string | undefined => (store.panes ? store.kidMark(tid, (r) => r.kind === "wiki" && r.title === h.title && r.sec === id) : undefined);
   return (
-    <section class={`wiki${embedded ? " embedded" : ""}`} data-host={host}>
-      <Head title={v.title} sub={sec?.heading} focused={at({ t: "head" })} />
+    <section class={`wiki${inset}`} data-host={host}>
+      <Head title={v.title} sub={sec?.heading} focused={at({ t: "head" })} mark={mark} />
       {art.stale && <p class="wiki-wait">Wikipedia could not be reached; this is the copy kept from before.</p>}
       <Detached ids={detachedIn(v, h.lang, h.sec)} article={v} lang={h.lang} />
       <ArticleTextView host={host} row={{ t: "head" }} sec={h.sec} html={sec ? sec.html : v.lead} article={v} lang={h.lang} />
@@ -237,7 +315,7 @@ function Rows(props: { article: Article; host: string; lang: string; parent: num
     <ul class={`wrows${parent ? " nested" : ""}`}>
       {kids.map((x) => {
         const row: WRow = { t: "sec", id: x.id };
-        const open = nested && store.colOpen.has(x.id);
+        const open = nested && store.secOpen(host, x.id);
         const leaf = !sectionsUnder(v, x.id).length;
         return (
           <li key={x.id} class={`wrow${at(row) ? " focused" : ""}${open ? " open" : ""}${showing(x.id) ? ` ${showing(x.id)}` : ""}`}>
@@ -298,7 +376,8 @@ export function WikiPage() {
   );
 }
 
-function backLabel(): string {
+/** What h returns to from the column's article page. */
+export function backLabel(): string {
   const c = store.colWiki;
   if (!c) return "";
   if (c.stack.length) return c.stack[c.stack.length - 1].title;

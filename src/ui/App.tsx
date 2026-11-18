@@ -10,21 +10,21 @@ import { LinkCard, LinkPicker, LinksPanel, NodeBacklinks, NodeRelated, TargetRow
 import { NodeBody, Outline, PendingSections, TopMatter } from "./Node";
 import { Panes } from "./Panes";
 import { PaneMap, Trail } from "./Pages";
-import { PANES_MIN_WIDTH, store, type Aux } from "./store";
-import { WikiPage, WikiView } from "./Wiki";
+import { PANES_MIN_WIDTH, rowId, store, type Aux } from "./store";
+import { ArticlePage, ArticleView } from "./Web";
 import { Usage } from "./Usage";
 import { FirstRun, Hints, Key, MenuHost, SelBar, closeMenu, dragged, hideBar, locate, locateIn, menuAt, pointedPane, setCard, setPrompt, showBar, touch, wtextRow, type Hint } from "./Mouse";
 import { press } from "./press";
 
 function Page() {
-  if (store.colWiki) return <WikiPage />;
+  if (store.colWiki) return <ArticlePage />;
   const kids = sections(store.snap, store.top);
   return (
     <article class={store.preview ? "preview" : ""}>
       <TopMatter id={store.top} />
       {kids.length > 0 && <Outline ids={kids} />}
       <PendingSections id={store.top} />
-      {store.articleUnder(store.top) ? <WikiView host={`n${store.top}`} /> : <TargetRow id={store.top} />}
+      {store.articleUnder(store.top) ? <ArticleView host={`n${store.top}`} /> : <TargetRow id={store.top} />}
       <NodeBacklinks id={store.top} />
       <NodeRelated id={store.top} />
     </article>
@@ -411,13 +411,22 @@ function StatusLine() {
           ? [lp.edit.kind === "new" ? "the new library's name" : "the library's new name", "⏎ keeps it", ["Escape", "leave it"]]
           : ["j k", ["Enter", "open"], ["n", "new"], ["r", "rename"], ["D", "delete"], ["Escape", "close"]]
       : null;
+  const auxTo = store.aux ? store.auxTarget(store.aux) : null;
+  // Where a focused link in an article's text goes, as Enter's hint names it: the article, or the page's host.
+  const auxToName = !auxTo ? "" : auxTo.kind === "wiki" ? `“${clip(auxTo.title, 40)}”` : clip(hostOf(auxTo.kind === "url" ? auxTo.url : ""), 40);
   const hint: Hint = store.aux
-    ? store.aux.kind === "wiki"
+    ? store.aux.kind === "wiki" && store.onWeb
+      ? store.inArticleText
+        ? auxTo
+          ? [["Enter", `opens ${auxToName}`], ["W", "the original"], ["Escape", "widen"]]
+          : [["H L", "select less, more"], ["Escape", "widen"]]
+        : ["web page · j k rows", ["l", "open"], ["h", "back"], ["i", "select words"], ["Tab", "links"], ["W", "the original"], ...(store.panes ? [["q", "close"] as [string, string]] : [])]
+    : store.aux.kind === "wiki"
       ? store.inArticleText
         ? store.articleNoteHere()
           ? [["Enter", "open/enter the note"], ["e", "toggle"], ["D", "delete note"], ["Tab", "next"]]
-          : store.auxLink(store.aux)
-            ? [["Enter", `opens “${clip(store.auxLink(store.aux)!.title, 40)}”`], "e d y x c annotate", ["W", "on wikipedia.org"]]
+          : auxTo
+            ? [["Enter", `opens ${auxToName}`], "e d y x c annotate", ["W", auxTo.kind === "wiki" ? "on wikipedia.org" : "the original"]]
             : [...lensHint, ["Escape", "widen"]]
         : ["Wikipedia · j k rows", ["l", "open"], ["h", "back"], ["i", "select words"], ["Tab", "links and notes"], ["W", "on wikipedia.org"], ...(store.panes ? [["q", "close"] as [string, string]] : [])]
       : store.aux.kind === "target" ? [["Enter", "opens what this is about"]]
@@ -431,7 +440,7 @@ function StatusLine() {
         ? [["Enter", `opens the note with ${store.targetOf(commentary)!.kind === "wiki" ? "its article" : "what it links to"}`], ["e", "shows the note here"], ["D", "delete note"], ["w", "retarget"]]
       : noteHere
         ? store.snap.nodes[noteHere].ref
-          ? [["Enter", "open the link"], ["w", "retarget"], ["D", "remove"], ...(store.snap.nodes[noteHere].ref!.kind === "wiki" ? [["W", "on Wikipedia"] as [string, string]] : [])]
+          ? [["Enter", "open the link"], ["w", "retarget"], ["D", "remove"], ...(store.snap.nodes[noteHere].ref!.kind === "wiki" ? [["W", "on Wikipedia"] as [string, string]] : store.snap.nodes[noteHere].ref!.kind === "url" ? [["W", "the original"] as [string, string]] : [])]
           : [["Enter", "open/enter"], ["e", "toggle"], ["D", "delete note"], ["w", "link it"]]
         : [...lensHint, ["w", "link"]]
       : st.up || st.down
@@ -569,7 +578,7 @@ export function App() {
     // Only when the focus, the page or the mode has changed: a render for something that arrived
     // in the background (a list fetched, a scan's suggestions) leaves the page where the reader
     // scrolled it. The panes keep their own focus in view (Panes.tsx).
-    const key = JSON.stringify([f, store.aux, store.mode, store.panes, store.top, store.colWiki?.title]);
+    const key = JSON.stringify([f, store.aux, store.mode, store.panes, store.top, store.colWiki?.title, store.colWiki?.url]);
     const moved = key !== shownFocus;
     shownFocus = key;
     // Another pane opened or gone to (as pages, another page): no preview stays over it.
@@ -617,23 +626,38 @@ export function App() {
     // A covered pane's spine brings that pane back by focusing it.
     const spine = target.closest<HTMLElement>("[data-spine]");
     if (spine) return store.land(Number(spine.dataset.spine));
-    // Article text: a link to another article opens it next; a link out leaves in a new tab (the HTML says so); nothing else navigates.
+    // Article text: a link to another article opens it next (in the link's own language, a web
+    // page's links say theirs), as does a web page's link to another page; a link out leaves in a
+    // new tab (the HTML says so); nothing else navigates.
     const a = target.closest<HTMLAnchorElement>("a");
     if (a && host) {
       if (a.dataset.wiki) {
         e.preventDefault();
         store.paneAt = paneIndex;
         const h = store.wikiHost(host);
-        return store.follow({ kind: "wiki", title: a.dataset.wiki, lang: h?.lang ?? store.wiki.lang });
+        return store.follow({ kind: "wiki", title: a.dataset.wiki, lang: a.dataset.wikiLang ?? h?.lang ?? store.wiki.lang });
+      }
+      if (a.dataset.url && target.closest(".wiki-text")) {
+        e.preventDefault();
+        store.paneAt = paneIndex;
+        return store.follow({ kind: "url", url: a.dataset.url });
       }
       if (!/^https?:/.test(a.getAttribute("href") ?? "")) e.preventDefault();
+      return;
+    }
+    // A figure: what its data-full names, in a new tab: a web page's image itself, a Wikipedia
+    // picture's File page (its author and licence). A video's facade plays instead (Wiki.tsx).
+    const img = host ? target.closest<HTMLImageElement>(".wiki-text img[data-full]") : null;
+    if (img) {
+      e.preventDefault();
+      window.open(img.dataset.full!, "_blank", "noopener,noreferrer");
       return;
     }
     if (a && target.closest(".wattr")) return;
     const wrow = target.closest<HTMLElement>("[data-wrow], [data-sense]");
     if (wrow && host) {
       store.paneAt = paneIndex;
-      const id = Number(wrow.dataset.wrow);
+      const id = rowId(wrow.dataset.wrow);
       const ss = wrow.dataset.sense;
       if (ss) return store.follow({ kind: "wiki", title: ss, lang: store.wikiHost(host)?.lang ?? store.wiki.lang });
       store.setFocus(store.focus, { kind: "wiki", host, row: { t: "sec", id } } as Aux);

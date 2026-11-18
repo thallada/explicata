@@ -123,6 +123,42 @@ export function sameTarget(a: Ref | undefined, b: Ref | undefined): boolean {
 /** The key a Wikipedia target is filed under. */
 export const wikiKey = (lang: string, title: string) => `${lang}:${wikiTitle(title)}`;
 
+const WIKI_HOST = /^([a-z][a-z0-9-]{1,15})\.(?:m\.)?wikipedia\.org$/;
+/** Namespaces whose pages are not articles (an address of one stays a web page). */
+const NOT_ARTICLES = new Set(["special", "file", "image", "media", "category", "talk", "user", "wikipedia", "wp", "project", "help", "template", "portal", "draft", "module", "mediawiki", "timedtext", "book", "gadget", "topic"]);
+
+/**
+ * A Wikipedia article's address as an article target (`https://fr.m.wikipedia.org/wiki/Phare#Histoire`
+ * is w.fr:Phare), so it opens as the article it is; null for any other address, a page outside the
+ * main namespace among them.
+ */
+export function wikiRefOf(url: string): Ref | null {
+  let x: URL;
+  try {
+    x = new URL(url.trim());
+  } catch {
+    return null;
+  }
+  const host = WIKI_HOST.exec(x.hostname);
+  if (!/^https?:$/.test(x.protocol) || !host || host[1] === "www" || x.search || !x.pathname.startsWith("/wiki/")) return null;
+  let raw = x.pathname.slice("/wiki/".length);
+  try {
+    raw = decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+  const ns = /^([^:]+):/.exec(raw)?.[1].replace(/_/g, " ").trim().toLowerCase();
+  if (!raw || (ns && (NOT_ARTICLES.has(ns) || ns.endsWith(" talk")))) return null;
+  try {
+    return validateRef({ kind: "wiki", title: raw, lang: host[1] });
+  } catch {
+    return null;
+  }
+}
+
+/** A target as it is opened: a web address that is a Wikipedia article is that article. */
+export const asOpened = (r: Ref): Ref => (r.kind === "url" ? (wikiRefOf(r.url) ?? r) : r);
+
 // ---- the text form ----
 
 const escapeSeg = (s: string) => s.replace(/[\\/^]/g, (c) => "\\" + c);

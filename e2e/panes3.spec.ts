@@ -2,7 +2,8 @@
  * The panes view: a click anywhere in a pane makes it active and anywhere clears a
  * selection; a column's panes stand in the order of their sources; every pane in a crowded column
  * shows at least its tab, above or below; the active pane is never cut short by its share of a
- * column; a pane cut off for any reason peeks out whole; the curves
+ * column; a pane cut off for any reason peeks out at its fullest, and one that already has all its
+ * column gives it beside the others' tabs does not peek; the curves
  * keep to their sources and landing lines through every kind of layout change (curveFaults); the
  * selection bar keeps clear of a tab; a dotted curve turns toward its source; Alt with h j k l moves
  * between panes. Same build, mock model and mock Wikipedia as the others.
@@ -204,7 +205,7 @@ test("the active pane is never cut short by its share of a column: the others gi
   await noFaults(page, "the active pane elsewhere");
 });
 
-test("a pane cut off for any reason peeks out whole, across and down, and the curves follow it: covered from below or above, by its share, by the column's foot, beside a pinned pane, and with its column covered", async ({ page }) => {
+test("a pane cut off for any reason peeks out at its fullest (whole, if it fits in its column), across and down, and the curves follow it: covered from below or above, by its share, by the column's foot, beside a pinned pane, and with its column covered", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 700 });
   await library(page);
   for (const t of ["Octopus minds", "Explicata", "The tides", "Fixed points"]) await clickOpen(page, "Library", t);
@@ -215,7 +216,7 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
     let peeked = 0;
     for (let i = 0; i < n; i++) {
       const p = col.locator(":scope > .pane").nth(i);
-      const info = await p.evaluate((el) => {
+      const info = await p.evaluate((el, TAB) => {
         const c = el.parentElement!.getBoundingClientRect();
         const r = el.getBoundingClientRect();
         const next = (el.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().top ?? Infinity;
@@ -223,9 +224,12 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
         const need = el.querySelector<HTMLElement>(".pane-body")!.offsetHeight + parseFloat(sc.paddingTop) + parseFloat(sc.paddingBottom);
         const top = Math.max(r.top, c.top);
         const bottom = Math.min(r.bottom, next, c.bottom);
+        // At its fullest: whole, if that fits in the column; else the column less the others' tabs.
+        const n = el.parentElement!.querySelectorAll(":scope > .pane").length;
+        const full = need <= c.height ? need : c.height - (n - 1) * TAB;
         // A point on what shows of it, clear of the pin and x.
-        return { cut: bottom - top < Math.min(need, c.height) - 4, x: Math.max(r.left, c.left) + 14, y: top + Math.min(14, (bottom - top) / 2), colH: c.height, need, title: el.querySelector(".pane-head h2, .top h1")?.textContent?.trim() };
-      });
+        return { cut: bottom - top < full - 4, x: Math.max(r.left, c.left) + 14, y: top + Math.min(14, (bottom - top) / 2), full, title: el.querySelector(".pane-head h2, .top h1")?.textContent?.trim() };
+      }, TAB);
       if (!info.cut && !across) continue;
       await page.mouse.move(info.x, info.y);
       await page.waitForTimeout(450);
@@ -241,7 +245,7 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
         const hit = document.elementFromPoint(Math.max(r.left, c.left) + 60, (Math.max(r.top, c.top) + Math.min(r.bottom, c.bottom)) / 2);
         return { h: r.height, inside: r.top >= c.top - 1 && r.bottom <= c.bottom + 1, top: !!hit && el.contains(hit) };
       });
-      expect(whole.h, `${label}: ${info.title} height`).toBeGreaterThanOrEqual(Math.min(info.need, info.colH) - 3);
+      expect(whole.h, `${label}: ${info.title} height`).toBeGreaterThanOrEqual(info.full - 3);
       expect(whole.inside, `${label}: ${info.title} inside its column`).toBe(true);
       expect(whole.top, `${label}: ${info.title} on top`).toBe(true);
       expect(await curveFaults(page), `${label}: ${info.title} peeking`).toEqual([]);
@@ -282,6 +286,79 @@ test("a pane cut off for any reason peeks out whole, across and down, and the cu
   await still(page);
   expect(await page.locator(".strip > .col").nth(1).evaluate((c) => c.classList.contains("crowded"))).toBe(false);
   expect(await sweep("by share", false)).toBeGreaterThan(0);
+});
+
+test("a pane that already has all its column can give it beside the others' tabs does not peek, its column covered or not; a pane peeking over its column's tabs has their curves under it", async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 700 });
+  await library(page);
+  for (const t of ["Octopus minds", "Explicata", "The tides", "Fixed points"]) await clickOpen(page, "Library", t);
+  // Curves to and from the tabs: a pane opened from each of the others.
+  await clickOpen(page, "Explicata", "Expansion by depth");
+  await clickOpen(page, "Fixed points", "The idea itself");
+  await clickOpen(page, "Octopus minds", "A separate experiment");
+  const col = page.locator(".strip > .col").nth(1);
+  /** The column's panes: their boxes, which are folded to their tabs, and what shows at the middle of each one's top strip. */
+  const column = () =>
+    col.evaluate((c, TAB) => {
+      const ps = [...c.querySelectorAll<HTMLElement>(":scope > .pane")];
+      return ps.map((p) => {
+        const r = p.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + TAB / 2);
+        return { t: p.querySelector(".pane-head h2, .top h1")?.textContent?.trim(), box: [r.left, r.top, r.width, r.height].map(Math.round), tab: p.hasAttribute("data-tab"), shows: !!hit && p.contains(hit), peek: p.hasAttribute("data-peek") };
+      });
+    }, TAB);
+  /** Rest the mouse on the pane at the column's foot, longer than it takes a pane to peek. */
+  const rest = async () => {
+    const b = (await pane(page, "The tides").boundingBox())!;
+    await page.mouse.move(b.x + 60, b.y + b.height / 2);
+    await page.waitForTimeout(450);
+  };
+  /** With this pane active (The tides, or one deeper on its branch): The tides at the column's foot does not peek. */
+  const check = async (label: string, active: string) => {
+    await pane(page, active).locator(".pane-head h2").dispatchEvent("click");
+    await still(page);
+    await page.mouse.move(1910, 690);
+    const before = await column();
+    // The pane looked at, at the foot, longer than the column, below the three others folded to their tabs.
+    expect(before.map((p) => [p.t, p.tab]), label).toEqual([["Explicata", true], ["Fixed points", true], ["Octopus minds", true], ["The tides", false]]);
+    const h = await col.evaluate((c) => c.getBoundingClientRect().height);
+    expect(before[3].box[3], label).toBeGreaterThanOrEqual(h - 3 * TAB - 2);
+    await rest();
+    const after = await column();
+    expect(after[3].peek, `${label}: the pane at the foot`).toBe(false);
+    expect(after[3].box, `${label}: its box`).toEqual(before[3].box);
+    for (const p of after.slice(0, 3)) expect(p.shows, `${label}: ${p.t}'s tab`).toBe(true);
+    await noFaults(page, `${label}: resting on it`);
+    await page.mouse.move(1910, 690);
+  };
+  await check("the column in full view", "The tides");
+  // Its column covered too (a pane deeper on its branch): the column comes out across, the pane stays as it is.
+  await clickOpen(page, "The tides", "The brake");
+  await clickOpen(page, "The idea itself", "Three questions");
+  await pane(page, "The brake").locator(".pane-head h2").dispatchEvent("click");
+  await still(page);
+  expect(await col.evaluate((c) => c.hasAttribute("data-covered") || !!c.nextElementSibling?.hasAttribute("data-over"))).toBe(true);
+  await check("the column covered", "The brake");
+  // A folded pane peeking out of the covered column covers the tabs after it: the curves to and from those tabs are under it, the column's others over the column.
+  const fp = (await pane(page, "Fixed points").boundingBox())!;
+  await page.mouse.move(fp.x + 60, fp.y + TAB / 2);
+  await page.waitForTimeout(450);
+  await expect(col).toHaveAttribute("data-peek", "");
+  await expect(pane(page, "Fixed points")).toHaveAttribute("data-peek", "");
+  const layers = await page.evaluate(() => ({
+    mid: [...document.querySelectorAll<SVGPathElement>(".curves g.mid path")].map((p) => p.dataset.key),
+    over: [...document.querySelectorAll<SVGPathElement>(".curves g.over path")].map((p) => p.dataset.key),
+  }));
+  expect(layers.mid.length).toBeGreaterThan(0);
+  expect(await curveFaults(page)).toEqual([]);
+  // Clear of the tab above it, and of the column's foot.
+  const peeked = (await pane(page, "Fixed points").boundingBox())!;
+  const c = (await col.boundingBox())!;
+  expect(peeked.y).toBeGreaterThanOrEqual(c.y + TAB - 1);
+  expect(peeked.y + peeked.height).toBeLessThanOrEqual(c.y + c.height + 1);
+  expect((await column())[0].shows, "Explicata's tab").toBe(true);
+  await page.mouse.move(1910, 690);
+  await noFaults(page, "back");
 });
 
 test("the curves keep to their sources and landing lines through every kind of layout change: scrolls, a resize, folding, a drag, an article arriving, a sticky tab", async ({ page }) => {

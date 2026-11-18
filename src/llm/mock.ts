@@ -4,7 +4,7 @@
  * It reads the structured `vars` of a request rather than the prose prompt.
  */
 import { clip } from "../core/text";
-import type { CascadeDecision, Contradictions, JsonReq, LinkVerdicts, LLM, Req, Resolutions, Turn, TurnReq } from "./types";
+import type { ArrangeReply, CascadeDecision, Contradictions, JsonReq, LinkVerdicts, LLM, Req, Resolutions, Turn, TurnReq } from "./types";
 import { webOf } from "./web";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -56,6 +56,28 @@ function mockJson(req: JsonReq): unknown {
       return {
         verdicts: props.map((p) => ({ id: p.id, link: mockLinks(p.quote), reason: mockLinks(p.quote) ? "mock: a name or a term a reader may look up" : "mock: one ordinary word needs no link" })),
       } satisfies LinkVerdicts;
+    }
+    case "arrange": {
+      // A web page arranged (server/pageArrange.ts). The sections come back out of order, with a
+      // repeat and a number past the end, as a careless model's might: the cleaning makes them
+      // three sections starting at the first unit after the lead, a third and two thirds of the
+      // way on. A title saying "mockfail" makes the call fail.
+      if (/mockfail/i.test(v.title ?? "")) throw new Error("mock arranger: the call failed");
+      const n = Number(v.units ?? 0);
+      const first = Number(v.first ?? 1);
+      const summary = `Mock summary of “${clip(v.title ?? "", 60)}”: ${n} parts, read from their openings.`;
+      if (v.mode !== "arrange") return { summary, sections: [] } satisfies ArrangeReply;
+      const step = Math.max(1, Math.ceil((n - first + 1) / 3));
+      return {
+        summary,
+        sections: [
+          { title: "Mock part two", start: first + step },
+          { title: "Mock part one", start: first },
+          { title: "Mock part two again", start: first + step },
+          { title: "Mock part three", start: first + 2 * step },
+          { title: "Past the end", start: n + 5 },
+        ],
+      } satisfies ArrangeReply;
     }
   }
 }

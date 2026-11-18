@@ -1,7 +1,8 @@
 /**
  * /research with the mock model: its fake web search and fetch (no network) are shown step by step
- * above the status line, the section it writes carries links to the pages it read, those open in a
- * new tab, and Esc stops a run without keeping anything it did.
+ * above the status line, the section it writes carries links to the pages it read, those open as
+ * the column's web page (W opens the original in a new tab), and Esc stops a run without keeping
+ * anything it did.
  */
 import { expect, test, type Page } from "@playwright/test";
 import { command, idle, jump, keys, openPage, settle, state } from "./helpers";
@@ -62,15 +63,23 @@ test("/research shows its searches and pages, writes a section, and links its cl
   await expect(panel).toHaveCount(0);
 
   // The link opens: go to the section, Tab to the linked words, Enter (twice in the column: a
-  // preview first) opens the page in a new tab.
+  // preview first) opens the page as the column's web page (the mock web has no such page, so it
+  // says why and offers the original); W opens the original in a new tab.
   await jump(page, "On how tides work");
   await keys(page, "l");
   const sec = page.locator(".node.open", { hasText: "pulled by the Moon" }).last();
   await expect(sec.locator(".lmark.l-url")).toHaveText("↗");
   await keys(page, "Tab");
   expect(await state(page, (s) => s.snap.nodes[s.focus.node].body.slice(s.focus.range?.[0], s.focus.range?.[1]))).toBe("pulled by the Moon");
-  for (let i = 0; i < 2 && !(await page.evaluate(() => (globalThis as any).__opened.length)); i++) await keys(page, "Enter");
+  for (let i = 0; i < 2 && !(await page.locator(".wiki-page.web").count()); i++) await keys(page, "Enter");
+  const web = page.locator(".wiki-page.web");
+  await expect(web.locator("a[data-original]")).toHaveAttribute("href", "https://example.org/research/tides");
+  expect(new URL(page.url()).pathname.endsWith(`/u/${encodeURIComponent("https://example.org/research/tides")}`)).toBe(true);
+  expect(await page.evaluate(() => (globalThis as any).__opened)).toEqual([]);
+  await keys(page, "W");
   expect(await page.evaluate(() => (globalThis as any).__opened)).toEqual(["https://example.org/research/tides"]);
+  await keys(page, "h");
+  await expect(web).toHaveCount(0);
 });
 
 test("an ordinary request that asks to look something up uses the web too", async ({ page }) => {

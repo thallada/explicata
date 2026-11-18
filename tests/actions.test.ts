@@ -1,7 +1,7 @@
 /** What the mouse offers (src/ui/actions.ts): every item does what its key does, and the bar, the ⋯ menus and the right-click menu are built from one place. */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { articleRowEntries, barItems, libraryEntries, nodeEntries, paneEntries, selectionEntries, tidy, topEntries, type Act, type Entry, type Item, type NodeCtx, type SelCtx, type TopCtx } from "../src/ui/actions";
+import { articleRowEntries, barItems, libraryEntries, nodeEntries, paneEntries, selectionEntries, tidy, topEntries, webPageEntries, type Act, type Entry, type Item, type NodeCtx, type SelCtx, type TopCtx } from "../src/ui/actions";
 import { deletedPlace, keep, nodeCount, openPanel, step } from "../src/ui/libraries";
 import type { LibraryInfo } from "../src/ui/api";
 
@@ -144,6 +144,12 @@ describe("actions", () => {
     expect(labels(pane).slice(-3)).toEqual(["Pin this pane", "Close this pane", "Show as one column"]);
     expect(find(pane, "Pin this pane").checked).toBe(true);
     expect(labels(paneEntries({ article: "Octopus", pinned: false }, act)).slice(0, 2)).toEqual(["# Octopus", "Open on wikipedia.org"]);
+    // The pane of a section shown as its article: the section's own items (rename, retarget, delete…), then the page's.
+    const link = labels(paneEntries({ node: node({ title: "How a request travels", target: true }), article: "Following one request", web: true, pinned: false }, act));
+    expect(link[0]).toBe("# How a request travels");
+    for (const l of ["Rename", "Link this section to…", "Open its target", "Delete", "Open the original", "Arrange with a model", "Read it again"]) expect(link).toContain(l);
+    expect(link.indexOf("# Following one request")).toBeGreaterThan(link.indexOf("Delete"));
+    expect(labels(paneEntries({ node: node({ target: true }), article: "Octopus", pinned: false }, act))).toContain("Open on wikipedia.org");
     // Its menu goes to the panes around it, by the keys that do.
     const go = paneEntries({ article: "Octopus", pinned: false }, act).find((e) => e.t === "choices" && e.label === "Go to the pane") as Extract<Entry, { t: "choices" }>;
     expect(go.options.map((o) => `${o.label} ${o.key}`)).toEqual(["left A-h", "right A-l", "above A-k", "below A-j"]);
@@ -243,3 +249,23 @@ describe("the libraries panel's state", () => {
     expect([nodeCount(0), nodeCount(1), nodeCount(2)]).toEqual(["0 nodes", "1 node", "2 nodes"]);
   });
 });
+
+describe("a web page's menus", () => {
+  it("offer the original (W), arranging with a model (s) and reading it again (R), keys the handler takes; arranging is disabled where no model may", () => {
+    const { act, calls } = recorder();
+    const pane = paneEntries({ article: "Following one request", web: true, pinned: false }, act);
+    expect(labels(pane).slice(0, 4)).toEqual(["# Following one request", "Open the original", "Arrange with a model", "Read it again"]);
+    const row = articleRowEntries("The proxies", true, act, false, true);
+    expect(labels(row)).toEqual(["# The proxies", "Open beside", "Open in place", "--", "Open the original", "Arrange with a model", "Read it again"]);
+    expect(labels(articleRowEntries("Octopus", true, act))).not.toContain("Arrange with a model");
+    for (const it of items([...pane, ...row, ...webPageEntries(act)])) {
+      calls.length = 0;
+      it.run();
+      expect(calls).toEqual([`press ${it.shift ? "S-" : ""}${it.key}`]);
+    }
+    const keys = readFileSync(new URL("../src/ui/keys.ts", import.meta.url), "utf8");
+    expect(keys).toContain(`store.onWeb && (k === "R" || k === "s")`);
+    expect(find(paneEntries({ article: "A page", web: true, arrange: false, pinned: false }, act), "Arrange with a model").disabled).toBe(true);
+  });
+});
+

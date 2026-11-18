@@ -21,6 +21,9 @@
   /* Wikipedia's text sits on its own ground, so it is never mistaken for the reader's. */
   --wiki-bg: #f2f5f8;
   --wiki-rule: #c9d3dd;
+  /* A web page's text sits on an amber ground: neither the reader's nor Wikipedia's. */
+  --web-bg: #fbf1dc;
+  --web-rule: #e3d3ad;
   --serif: "Source Serif 4 Variable", "Source Serif 4", "Apple Garamond", "Baskerville", "Libre Baskerville", "Times New Roman", serif;
   --sans: "Source Sans 3 Variable", "Source Sans 3", "Lucida Sans Unicode", "Helvetica", sans-serif;
   --mono: "IBM Plex Mono", "Liberation Mono", "Consolas", monospace;
@@ -48,6 +51,8 @@
     --link: #8fb1d8;
     --wiki-bg: #182029;
     --wiki-rule: #34414f;
+    --web-bg: #30240f;
+    --web-rule: #57452a;
   }
 }
 
@@ -647,12 +652,15 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .lcard .lbody { margin-top: 0.3rem; }
 .popup .lcard + .lcard, .popup .body + .lcard { margin-top: 0.5rem; padding-top: 0.45rem; border-top: 1px solid var(--hair); }
 .popup:has(.l-wiki) { background: var(--wiki-bg); border-color: var(--wiki-rule); }
+.popup:has(.l-url) { background: var(--web-bg); border-color: var(--web-rule); }
 .wattr { margin: 0.5rem 0 0; font-family: var(--sans); font-size: 0.6rem; line-height: 1.4; color: var(--faint); text-align: left; text-indent: 0; }
 .wattr a { color: inherit; text-decoration: underline 1px dotted; text-underline-offset: 0.15em; }
 .lpreview.l-wiki { background: var(--wiki-bg); border-left-color: var(--wiki-rule); }
+.lpreview.l-url { background: var(--web-bg); border-left-color: var(--web-rule); }
 .lpreview .lnext { margin: 0.35rem 0 0; }
 .target-row { margin: 0.9rem 0 0.4rem; padding: 0.45rem 0.7rem; border-left: 2px solid var(--wiki-rule); cursor: pointer; }
 .target-row.l-wiki { background: var(--wiki-bg); }
+.target-row.l-url { background: var(--web-bg); border-left-color: var(--web-rule); }
 .target-row.focused { border-left-color: var(--fg); background: var(--sel); }
 
 /* "Linked from" and "Mentioned in". */
@@ -672,12 +680,15 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .picker li .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
 
 /* ---- Wikipedia (src/ui/Wiki.tsx) ----
- * Its own ground, its own face (the bundled sans), a W at its head, its licence at its foot.
+ * Its own ground, its own face (the bundled sans, sized to read like the reader's own text), a W
+ * at its head, its licence at its foot.
  */
 .wiki { font-family: var(--sans); color: var(--soft); }
-.pane.wiki-pane { background: var(--wiki-bg); }
-.wiki-pane .spine span { color: var(--dim); }
-.wiki-pane .spine .wmark { font-weight: 600; }
+/* An article's pane, and the pane of a section shown as its article (a section that is only a link: Panes.tsx). */
+.pane.wiki-pane, .pane.link-pane { background: var(--wiki-bg); }
+:is(.wiki-pane, .link-pane) .spine span { color: var(--dim); }
+:is(.wiki-pane, .link-pane) .spine .wmark { font-weight: 600; }
+.link-rename { margin: 0 0 0.6rem; }
 .wiki-head { margin: 0 0 0.8rem; padding-bottom: 0.35rem; border-bottom: 1px solid var(--wiki-rule); cursor: pointer; }
 .wiki-head.focused { border-bottom-color: var(--fg); }
 .wiki-head.focused h2 { text-decoration: underline 1px solid var(--faint); text-underline-offset: 0.2em; }
@@ -686,7 +697,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .wiki-brand .wmark { display: inline-block; border: 1px solid var(--wiki-rule); border-radius: 2px; padding: 0 0.22em; line-height: 1.25; background: var(--bg); }
 .wiki-head h2 { margin: 0.15rem 0 0; font-family: var(--sans); font-size: 1.28rem; font-weight: 600; line-height: 1.2; color: var(--fg); letter-spacing: -0.005em; }
 .wiki-head .wsub { font-weight: 400; color: var(--dim); }
-.wiki-text { font-size: 0.82rem; line-height: 1.55; }
+.wiki-text { font-size: 0.95rem; line-height: 1.55; }
 .wiki-text p { margin: 0 0 0.65em; }
 .wiki-text ul, .wiki-text ol { margin: 0 0 0.65em; padding-left: 1.3em; }
 .wiki-text dl dd { margin-left: 1.2em; }
@@ -701,7 +712,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 /* Annotations in an article are the library's own notes: its dotted underline, its serif face, set off from Wikipedia's text. */
 .wiki-text .gloss, .wiki-text .inset, .wdetached .inset { font-family: var(--serif); text-align: left; }
 .wiki-text .gloss { color: var(--fg); font-size: 0.98em; }
-.wiki-text .inset, .wdetached .inset { display: block; margin: 0.35rem 0 0.75rem 1.2em; padding: 0.35rem 0.75rem; font-size: 0.86rem; line-height: 1.45; background: var(--bg); color: var(--fg); border-left: 2px dotted var(--faint); }
+.wiki-text .inset, .wdetached .inset { display: block; margin: 0.35rem 0 0.75rem 1.2em; padding: 0.35rem 0.75rem; font-size: 0.95rem; line-height: 1.45; background: var(--bg); color: var(--fg); border-left: 2px dotted var(--faint); }
 .wiki-text .inset.focused, .wdetached .inset.focused { border-left: 2px solid var(--fg); }
 .wiki-text .gloss.focused { background: var(--sel); }
 .wdetached { margin: 0 0 0.6rem; }
@@ -710,12 +721,12 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .wdetached .meta a { color: inherit; text-decoration: underline 1px dotted; text-underline-offset: 0.15em; }
 .wiki-text .wmath.sel { outline: 1px solid var(--sel-strong); }
 .wiki-desc { margin: -0.4rem 0 0.6rem; font-size: 0.74rem; color: var(--dim); font-style: italic; }
-.wiki-summary { margin: 0 0 0.5rem; font-size: 0.82rem; line-height: 1.55; }
+.wiki-summary { margin: 0 0 0.5rem; font-size: 0.95rem; line-height: 1.55; }
 .wiki-more, .wiki-wait, .wiki-back { margin: 0.3rem 0; font-size: 0.66rem; color: var(--faint); letter-spacing: 0.02em; }
 .wiki-problem { margin: 0.4rem 0; padding: 0.4rem 0.6rem; border-left: 2px solid var(--attn); background: var(--bg); font-size: 0.78rem; color: var(--soft); }
 .wrows { list-style: none; margin: 0.9rem 0 0; padding: 0.5rem 0 0; border-top: 1px solid var(--wiki-rule); }
 .wrows.nested { margin: 0.3rem 0 0; border-top: 0; padding-top: 0; }
-.wrow .row { font-size: 0.86rem; }
+.wrow .row { font-size: 0.95rem; }
 .wrow.focused > .row { background: var(--sel); }
 .wrow.focused > .row .mark { color: var(--fg); }
 .wrow.open > .row > .title { font-weight: 600; }
@@ -739,6 +750,49 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 
 /* The column's article page. */
 .wiki-page { background: var(--wiki-bg); padding: 1.2rem 1.4rem 1.4rem; border: 1px solid var(--wiki-rule); }
+
+/* ---- web pages (src/ui/Web.tsx) ----
+ * An article view in every way but its ground and its mark: the .web modifier makes Wikipedia's
+ * tokens the web's amber ones wherever a view (a pane, the column's page, an inset) draws them.
+ */
+.web { --wiki-bg: var(--web-bg); --wiki-rule: var(--web-rule); }
+.web .wiki-brand { text-transform: none; letter-spacing: 0.02em; font-size: 0.66rem; }
+.umark { font-family: var(--sans); font-weight: 400; }
+.web-byline { margin: 0.15rem 0 0; font-size: 0.7rem; color: var(--dim); }
+.web-open { margin: 0.5rem 0; font-size: 0.78rem; }
+.web-open a { color: inherit; text-decoration: underline 1px solid var(--link); text-underline-offset: 0.16em; }
+.web-open a::after { content: "↗"; font-size: 0.7em; vertical-align: 0.45em; color: var(--link); margin-left: 0.05em; }
+/* A figure: never wider than its pane nor taller than most of the window, its box kept from the image's own width and height before it loads, its caption under it. */
+.wiki-text figure { margin: 0.5em 0 0.9em; max-width: 100%; }
+.wiki-text figure > .wraw { line-height: 0; }
+.wiki-text figure img { display: block; max-width: 100%; height: auto; max-height: 70vh; object-fit: contain; object-position: left top; cursor: zoom-in; }
+.wiki-text figcaption { margin-top: 0.3em; font-size: 0.72rem; line-height: 1.4; color: var(--dim); }
+/* A video's facade (src/core/video.ts): its still, or a dark box, with a play mark, in a box of the video's own shape (the nearest common one; 16:9 unknown, and for a player), never wider than the pane nor taller than most of the window. A click puts the player in its place. */
+.wiki-text figure.video { width: 100%; }
+.wiki-text .video-box { position: relative; width: 100%; background: #14161a; line-height: 0; overflow: hidden; }
+.wiki-text .video-box[role="button"] { cursor: pointer; }
+.wiki-text .video-box.r21-9 { aspect-ratio: 21 / 9; max-width: calc(70vh * 21 / 9); }
+.wiki-text .video-box.r16-9 { aspect-ratio: 16 / 9; max-width: calc(70vh * 16 / 9); }
+.wiki-text .video-box.r3-2 { aspect-ratio: 3 / 2; max-width: calc(70vh * 3 / 2); }
+.wiki-text .video-box.r4-3 { aspect-ratio: 4 / 3; max-width: calc(70vh * 4 / 3); }
+.wiki-text .video-box.r1-1 { aspect-ratio: 1; max-width: 70vh; }
+.wiki-text .video-box.r3-4 { aspect-ratio: 3 / 4; max-width: calc(70vh * 3 / 4); }
+.wiki-text .video-box.r9-16 { aspect-ratio: 9 / 16; max-width: calc(70vh * 9 / 16); }
+.wiki-text .video-box > .wraw { width: 100%; height: 100%; }
+.wiki-text .video-box img, .wiki-text .video-box video, .wiki-text .video-box iframe { display: block; width: 100%; height: 100%; max-height: none; border: 0; object-fit: contain; object-position: center; background: #14161a; cursor: inherit; }
+.wiki-text figure.video.embed .video-box img { object-fit: cover; }
+.wiki-text .video-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 3rem; height: 3rem; border-radius: 50%; background: rgb(0 0 0 / 0.62); color: #fff; box-shadow: 0 0 0 2px rgb(255 255 255 / 0.85); font: 1.15rem/3rem var(--sans); text-align: center; text-indent: 0.15rem; pointer-events: none; }
+.wiki-text .video-box[role="button"]:hover .video-play { background: rgb(0 0 0 / 0.85); }
+.wiki-text .video-credit { display: inline-block; margin-top: 0.15em; font-family: var(--sans); font-size: 0.66rem; color: var(--faint); }
+/* What a model made of a page (s): set apart from the page's text, and labelled. */
+.web-model { margin: 0.2rem 0 0.8rem; padding: 0.45rem 0.7rem; border-left: 2px dashed var(--web-rule); background: color-mix(in srgb, var(--bg) 45%, transparent); }
+.web-model-label { margin: 0 0 0.2rem; font-family: var(--sans); font-size: 0.62rem; letter-spacing: 0.02em; color: var(--faint); }
+.web-model-text { margin: 0; font-size: 0.95rem; line-height: 1.55; }
+.web-arranged { margin: 0.6rem 0 0.2rem; }
+@media (prefers-color-scheme: dark) {
+  /* Most images are drawn for a light page: a light plate behind them. */
+  .wiki-text figure img { background: #f3efe6; }
+}
 /* ---- end links and Wikipedia ---- */
 
 /* Suggested links: a faint dashed underline, distinct from a link's solid one and a note's dotted one. */
@@ -1105,4 +1159,5 @@ html { scroll-padding-top: 48px; }
 /* A long press on a link (touch): what it opens, above its menu. */
 .menu-card { padding: 0.5rem 1rem 0.6rem; border-bottom: 1px solid var(--hair); font-family: var(--serif); font-size: 0.82rem; line-height: 1.45; max-height: 40vh; overflow-y: auto; }
 .menu-card:has(.l-wiki) { background: var(--wiki-bg); }
+.menu-card:has(.l-url) { background: var(--web-bg); }
 /* ---- end pages ---- */

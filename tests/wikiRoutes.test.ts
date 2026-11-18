@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WikiClient } from "../server/wiki";
+import { TINY_PNG } from "../server/pageMock";
 import { mockWikiFetch } from "../server/wikiMock";
 import { wikiOff, wikiRoutes } from "../server/wikiRoutes";
 
@@ -80,7 +81,7 @@ describe("/api/wiki over the mock provider", () => {
   let mock: { base: string; server: Server };
   let off: { base: string; server: Server };
   beforeAll(async () => {
-    const client = new WikiClient({ fetch: mockWikiFetch, spacingMs: 0, persist: false, offlineHoldMs: 0 });
+    const client = new WikiClient({ fetch: mockWikiFetch, spacingMs: 0, mediaSpacingMs: 0, persist: false, offlineHoldMs: 0 });
     mock = await serve(wikiRoutes(() => client));
     off = await serve(wikiOff);
   });
@@ -126,8 +127,33 @@ describe("/api/wiki over the mock provider", () => {
     expect(await get(mock.base, "/api/wiki/article?title=No%20such%20page&full=1")).toMatchObject({ status: 404, body: { ok: false, reason: "missing" } });
   });
 
+  it("media: serves a picture an article served here shows, from upload.wikimedia.org only, to this app's own pages only", async () => {
+    const still = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Grey_heron_at_the_weir.jpg/500px-Grey_heron_at_the_weir.jpg";
+    const media = (u: string, headers: Record<string, string> = {}) => fetch(`${mock.base}/api/wiki/media?u=${encodeURIComponent(u)}`, { headers });
+    // Not yet shown in any article served.
+    expect((await media(still)).status).toBe(404);
+    const art = await get(mock.base, "/api/wiki/article?title=Grey%20heron&full=1");
+    expect(art.body.article.lead).toContain(`/api/wiki/media?u=${encodeURIComponent(still)}`);
+    const r = await media(still);
+    expect(r.status).toBe(200);
+    expect(Object.fromEntries(r.headers)).toMatchObject({ "content-type": "image/png", "cache-control": "private, max-age=604800", "content-security-policy": "sandbox", "x-content-type-options": "nosniff" });
+    expect(Buffer.compare(Buffer.from(await r.arrayBuffer()), Buffer.from(TINY_PNG))).toBe(0);
+    // The video's still is shown too; the video file itself is never fetched by the server.
+    expect((await media("https://upload.wikimedia.org/wikipedia/commons/thumb/b/b2/Heron_takes_off.webm/220px--Heron_takes_off.webm.jpg")).status).toBe(200);
+    expect((await media("https://upload.wikimedia.org/wikipedia/commons/transcoded/b/b2/Heron_takes_off.webm/Heron_takes_off.webm.480p.vp9.webm")).status).toBe(404);
+    // A flag icon (dropped), another rendition, another host, plain http: never served.
+    expect((await media("https://upload.wikimedia.org/wikipedia/commons/thumb/f/f0/Flag_of_Europe.svg/23px-Flag_of_Europe.svg.png")).status).toBe(404);
+    expect((await media(still.replace("500px", "250px"))).status).toBe(404);
+    expect((await media("https://evil.example/x.png")).status).toBe(404);
+    expect((await media(still.replace("https:", "http:"))).status).toBe(404);
+    expect((await media("javascript:alert(1)")).status).toBe(400);
+    // Another site's page may not use it as a proxy.
+    expect((await media(still, { "sec-fetch-site": "cross-site" })).status).toBe(403);
+    expect((await media(still, { "sec-fetch-site": "same-origin" })).status).toBe(200);
+  });
+
   it("answers every route with 503 off when turned off, and leaves other paths alone", async () => {
-    for (const path of ["/api/wiki/summary?title=Octopus", "/api/wiki/suggest?q=Oct", "/api/wiki/anything"]) {
+    for (const path of ["/api/wiki/summary?title=Octopus", "/api/wiki/suggest?q=Oct", "/api/wiki/anything", "/api/wiki/media?u=https%3A%2F%2Fupload.wikimedia.org%2Fx.png"]) {
       expect(await get(off.base, path)).toEqual({
         status: 503,
         body: { ok: false, reason: "off", message: "Wikipedia is turned off on this server (EX_WIKI=off)." },

@@ -5,6 +5,7 @@
  *   GET  /api/wiki/summary?title=Octopus[&cached=1]
  *   GET  /api/wiki/article?title=Octopus[&full=1]
  *   GET  /api/wiki/senses?title=Set            the articles a disambiguation page lists
+ *   GET  /api/wiki/media?u=https://upload.wikimedia.org/…   a picture an article served here shows
  *
  * summary &cached=1 answers from the server's cache only, never waiting on Wikipedia (for model
  * prompts): 404 { ok: false, reason: "uncached" } when it has none. article &full=1 returns every
@@ -14,8 +15,14 @@
  * 503 { ok: false, reason, retryAfter } when Wikipedia is unreachable or asked us to wait.
  * A request the browser abandons (a superseded keystroke) is dropped from the queue unsent.
  * With EX_WIKI=off the server wires in wikiOff instead: every route answers 503 reason "off".
+ *
+ * media is the image route for article text (docs/wikipedia.md §3): only addresses on
+ * upload.wikimedia.org that an article served by this server since it started shows (404
+ * otherwise: it is not an open proxy), image types only, sent as server/pageRoutes.ts sends a web
+ * page's, and refused (403) to a request another site's page makes.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { address, crossSite, sendMedia } from "./pageRoutes";
 import { HttpError, abortOnClose, sendJson as send } from "./util";
 import type { CallOpts, Result, Uncached, WikiClient } from "./wiki";
 
@@ -58,6 +65,12 @@ export function wikiRoutes(client: () => WikiClient) {
       const w = client();
       const o: CallOpts = { priority: url.searchParams.get("bulk") === "1" ? "bulk" : "interactive", signal: abortOnClose(res) };
       switch (route) {
+        case "media": {
+          const refused = crossSite(req);
+          if (refused) send(res, 403, { ok: false, message: `Refused ${refused}: this route answers this app's own pages only.` });
+          else sendMedia(res, await w.media(address(url, "u"), { signal: o.signal }));
+          return true;
+        }
         case "suggest":
           reply(res, await w.suggest(text(url, "q", 200), int(url, "limit", 8, 1, 20), o), "suggestions");
           return true;

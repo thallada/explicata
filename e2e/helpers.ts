@@ -253,6 +253,52 @@ export async function seedLinks(request: APIRequestContext) {
   if (!res.ok()) throw new Error(`seeding links failed: ${res.status()} ${await res.text()}`);
 }
 
+/**
+ * The web pages the tests open (server/pageMock.ts's fixtures, EX_PAGES=mock): each kind of page
+ * linked from words of "Error-correcting codes", a tree no other test reads, and one of its
+ * sections given a page as its own target. Written once, over the op API.
+ */
+export const WEB = {
+  tracing: "https://tracing.example.org/posts/following-a-request",
+  essay: "https://essays.example.com/hundred.html",
+  letters: "https://letters.example.net/p/on-maps",
+  rules: "https://software.example.com/2003/10/twelve-rules/",
+  phare: "https://encyclopedie.example.org/fr/Phare_de_la_Pointe",
+  robots: "https://qa.example.com/questions/42/how-do-tides-work",
+  challenge: "https://news.example.com/world/2026/11/harbour",
+  pdf: "https://papers.example.org/whitepaper.pdf",
+  shell: "https://app.example.net/profile/someone",
+  figures: "https://figures.example.org/2026/birds",
+  videos: "https://videos.example.org/2026/weir-films",
+  hostile: "https://hostile.example.org/post",
+  octopus: "https://en.wikipedia.org/wiki/Octopus",
+  /** Answers once, then 410 Gone (Reload keeps the copy, stale). */
+  vanishing: "https://gone.example.org/notes/harbour-wall",
+} as const;
+
+export async function seedWeb(request: APIRequestContext) {
+  const s: Snap = await (await request.get("/api/tree")).json();
+  const top = find(s, "Error-correcting codes");
+  if (s.nodes[top].children.some((c) => s.nodes[c].ref)) return; // already seeded by an earlier test
+  const problem = find(s, "Error-correcting codes", "The problem");
+  const repetition = find(s, "Error-correcting codes", "The problem", "Repetition");
+  const distance = find(s, "Error-correcting codes", "The problem", "Distance");
+  const limit = find(s, "Error-correcting codes", "Shannon's limit");
+  const url = (u: string) => ({ kind: "url", url: u });
+  const ops = [
+    { op: "create", parent: top, kind: "note", quote: "radio fades", ref: url(WEB.octopus) },
+    { op: "create", parent: top, kind: "note", quote: "discs scratch", ref: url(WEB.robots) },
+    { op: "create", parent: top, kind: "note", quote: "memory cells flip", ref: url(WEB.hostile) },
+    { op: "create", parent: problem, kind: "note", quote: "how little extra you can send", ref: url(WEB.tracing) },
+    { op: "create", parent: problem, kind: "note", quote: "ruinously wasteful", ref: url(WEB.figures) },
+    { op: "create", parent: repetition, kind: "note", quote: "take a majority vote", ref: url(WEB.letters) },
+    { op: "update", id: distance, ref: url(WEB.phare) },
+    { op: "create", parent: limit, kind: "note", quote: "a rate in bits per use", ref: url(WEB.essay) },
+  ];
+  const res = await request.post("/api/ops", { data: { author: "linker", message: "Seed links to web pages", ops } });
+  if (!res.ok()) throw new Error(`seeding web links failed: ${res.status()} ${await res.text()}`);
+}
+
 /** A screenshot's pixels (a PNG of 8-bit RGB or RGBA, as Playwright writes them): px(x, y) is [r, g, b]. */
 export function pixels(buf: Buffer): { w: number; h: number; px: (x: number, y: number) => [number, number, number] } {
   let at = 8;
@@ -300,7 +346,12 @@ export function pixels(buf: Buffer): { w: number; h: number; px: (x: number, y: 
 export const curveFaults = (page: Page) =>
   page.evaluate(() => {
     const ie = (globalThis as any).__ie;
-    const refKey = (p: any) => (p.kind === "node" ? `n:${p.id}` : `w:${p.title}${p.sec !== undefined ? `#${p.sec}` : ""}`);
+    const norm = (u: string) => {
+      const x = new URL(u);
+      x.hash = "";
+      return !x.search && x.href.endsWith("/") ? x.href.slice(0, -1) : x.href;
+    };
+    const refKey = (p: any) => (p.kind === "node" ? `n:${p.id}` : p.kind === "web" ? `u:${norm(p.url)}${p.sec ? `#${p.sec}` : ""}` : `w:${p.title}${p.sec !== undefined ? `#${p.sec}` : ""}`);
     const kidClass = (key: string) => {
       let h = 5381;
       for (let i = 0; i < key.length; i++) h = ((h * 33) ^ key.charCodeAt(i)) >>> 0;
@@ -365,8 +416,17 @@ export const curveFaults = (page: Page) =>
       if (under && under.getAttribute("mask") !== "url(#ie-curve-holes)") faults.push("peeking: the curves under it are not masked");
     }
     const owns = (id: string | undefined) => peeked.some((q) => q.contains(document.querySelector(`.pane[data-tid="${id}"]`)));
+    // A pane peeking out of a column that peeks too: the column's other panes' curves are over the column, under that pane (it may cover their tabs).
+    const paneOwns = (id: string | undefined) => peeked.some((q) => q.classList.contains("pane") && q.contains(document.querySelector(`.pane[data-tid="${id}"]`)));
     for (const p of document.querySelectorAll<SVGPathElement>(".curves g.under path")) if (owns(p.dataset.from) || owns(p.dataset.to)) faults.push(`${p.dataset.key}: belongs to what peeks, but is under it`);
-    for (const p of over) if (!owns(p.dataset.from) && !owns(p.dataset.to)) faults.push(`${p.dataset.key}: over what peeks, but not its own`);
+    for (const p of over) if (!paneOwns(p.dataset.from) && !paneOwns(p.dataset.to)) faults.push(`${p.dataset.key}: over what peeks, but not its own`);
+    const mid = document.querySelector<SVGGElement>(".curves g.mid");
+    for (const p of document.querySelectorAll<SVGPathElement>(".curves g.mid path")) if (paneOwns(p.dataset.from) || paneOwns(p.dataset.to) || (!owns(p.dataset.from) && !owns(p.dataset.to))) faults.push(`${p.dataset.key}: over the peeking column and under the pane peeking in it, but not only the column's`);
+    const paneHoles = [...document.querySelectorAll<SVGRectElement>("#ie-curve-mid rect.hole")].map((r) => ({ x: +r.getAttribute("x")! + box.left, y: +r.getAttribute("y")! + box.top }));
+    for (const p of peeked.filter((q) => q.classList.contains("pane") && peeked.some((c) => c !== q && c.contains(q)))) {
+      const r = p.getBoundingClientRect();
+      if (!paneHoles.some((h) => Math.abs(h.x - r.left) < 1.5 && Math.abs(h.y - r.top) < 1.5) || mid?.getAttribute("mask") !== "url(#ie-curve-mid)") faults.push(`peeking ${p.className}: its column's other curves are not kept off it`);
+    }
     const bar = document.querySelector<HTMLElement>(".pane > .selbar");
     const barShown = !!bar && bar.style.visibility !== "hidden";
     if (!peeked.length && holes.length > (barShown ? 1 : 0)) faults.push(`nothing peeks, but ${holes.length} holes are left in the curves`);

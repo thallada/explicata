@@ -1,7 +1,7 @@
 /**
  * The panes view: panes side by side, in the manner of Andy Matuschak's notes. It starts as the
  * path down from the top node; a link followed from a pane opens its target in the next pane
- * (a node from anywhere in the library, a Wikipedia article, a section of one), replacing what was to the
+ * (a node from anywhere in the library, a Wikipedia article or a web page, a section of one), replacing what was to the
  * right. Moving back left closes nothing: the panes stay until something else is opened from an
  * earlier pane, or q or a pane's × closes them. Earlier columns stay at the left as narrow spines
  * when later ones slide over them.
@@ -22,11 +22,13 @@ import { LANES, LANE_FIRST, LANE_LAST, LANE_PITCH, laneOrder } from "./lanes";
 import { ACROSS, DOWN, crowds, fill, fit, folded, mark, offsets, release, resize, reveal, setAttr, share, starts, stick, unmark, whole } from "./stack";
 import { NodeBacklinks, NodeRelated, PaneCtx, TargetRow } from "./Links";
 import { pageAt, paneOfPage } from "./pages";
-import { Close, Pin, W } from "./Pages";
+import { Close, Pin, U, W } from "./Pages";
 import { Abstract, Flags, NodeBody, PendingSections, Row, TitleEditor, TopMatter, isPrompt } from "./Node";
 import { kidClass, refKey, store, type Aux, type Pane as PaneNode, type PaneRef } from "./store";
 import { WikiView } from "./Wiki";
+import { ArticleView, WebView } from "./Web";
 import { article } from "./wiki";
+import { article as webArticle, siteOf } from "./web";
 
 interface PaneProps {
   t: PaneNode;
@@ -56,7 +58,7 @@ const key = (p: PaneProps) => `${refKey(p.p)}|${p.t.hue}|${p.index}|${p.kids}|${
 class Pane extends Component<PaneProps> {
   shouldComponentUpdate(next: PaneProps) {
     if (key(next) !== key(this.props)) return true;
-    if (next.p.kind === "wiki") return true;
+    if (next.p.kind !== "node") return true;
     return store.paneDirty(next.p.id) || !!store.targetOf(next.p.id) || store.linkedFrom(next.p.id).length > 0;
   }
   componentDidMount() {
@@ -71,7 +73,7 @@ class Pane extends Component<PaneProps> {
   }
   render() {
     const p = this.props.p;
-    return <PaneCtx.Provider value={this.props.t.id}>{p.kind === "node" ? <NodePane {...this.props} id={p.id} /> : <WikiPane {...this.props} />}</PaneCtx.Provider>;
+    return <PaneCtx.Provider value={this.props.t.id}>{p.kind === "node" ? <NodePane {...this.props} id={p.id} /> : p.kind === "web" ? <WebPane {...this.props} /> : <WikiPane {...this.props} />}</PaneCtx.Provider>;
   }
 }
 
@@ -177,6 +179,30 @@ function NodePane(props: PaneProps & { id: NodeId }) {
   const kid = t.kids[t.pick];
   const showing = kid?.ref.kind === "node" && store.continuesFrom(kid.ref, props.p) ? kid.ref.id : undefined;
   const forked = new Set(t.kids.flatMap((k, j) => (j !== t.pick && k.ref.kind === "node" && store.continuesFrom(k.ref, props.p) ? [k.ref.id] : [])));
+  // A section that is only a link is shown as its article: the pane reads as an article pane (one
+  // head, the article's; its ground), and the node's own commands are on that head and on its row.
+  if (!top && store.linkOnly(id)) {
+    const web = store.isWeb(`n${id}`);
+    return (
+      <article class={`pane link-pane${web ? " web" : ""}${jump ? " jumped" : ""}${store.preview ? " preview" : ""}${paneClass(props)}`} {...paneAttrs(props, id)}>
+        <Chrome props={props} title={label(snap, id)} mark={web ? <U /> : <W />} />
+        <div class="pane-scroll">
+          <div class="pane-body">
+            <Orphaned on={props.orphan} />
+            {jump && <div class="pane-from">{ancestors(snap, id).reverse().map((a) => label(snap, a)).join(" › ")}</div>}
+            {editing && (
+              <div class="link-rename" data-node={id}>
+                <TitleEditor id={id} />
+              </div>
+            )}
+            <ArticleView host={`n${id}`} own headFocused={focused} />
+            <NodeBacklinks id={id} />
+            <NodeRelated id={id} />
+          </div>
+        </div>
+      </article>
+    );
+  }
   return (
     <article
       class={`pane${top ? " root" : ""}${jump ? " jumped" : ""}${n.kind === "note" ? " note-pane" : ""}${store.preview ? " preview" : ""}${paneClass(props)}`}
@@ -207,7 +233,7 @@ function NodePane(props: PaneProps & { id: NodeId }) {
             </ul>
           )}
           <PendingSections id={id} />
-          {store.articleUnder(id) ? <WikiView host={`n${id}`} /> : <TargetRow id={id} />}
+          {store.articleUnder(id) ? <ArticleView host={`n${id}`} /> : <TargetRow id={id} />}
           <NodeBacklinks id={id} />
           <NodeRelated id={id} />
         </div>
@@ -230,6 +256,27 @@ function WikiPane(props: PaneProps) {
           <Orphaned on={props.orphan} />
           {/* On the focused branch an article pane is named by its column; off it, by its place in the tree. */}
           <WikiView host={props.off ? `f${props.t.id}` : `p${index}`} />
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/** A web page's pane: an article pane with the page's view in it (Web.tsx). */
+function WebPane(props: PaneProps) {
+  const { p, index } = props;
+  if (p.kind !== "web") return null;
+  const a = webArticle(p.url);
+  const sec = p.sec && a.state === "ready" ? a.value.sections.find((x) => x.id === p.sec) : undefined;
+  const page = a.state === "ready" ? a.value.title : siteOf(p.url);
+  const title = sec ? `${sec.heading} · ${page}` : page;
+  return (
+    <article class={`pane wiki-pane web${p.from ? " jumped" : ""}${paneClass(props)}`} {...paneAttrs(props, refKey(p))}>
+      <Chrome props={props} title={title} mark={<U />} />
+      <div class="pane-scroll">
+        <div class="pane-body">
+          <Orphaned on={props.orphan} />
+          <WebView host={props.off ? `f${props.t.id}` : `p${index}`} />
         </div>
       </div>
     </article>
@@ -683,7 +730,7 @@ export function Panes() {
     if (!panes.length) return;
     const next = store.trail[at + 1];
     const a0 = store.aux;
-    const showing = store.showingFocus() || (a0?.kind === "wiki" && a0.row.t === "sec" && next?.kind === "wiki" && next.sec === a0.row.id);
+    const showing = store.showingFocus() || (a0?.kind === "wiki" && a0.row.t === "sec" && !!next && next.kind !== "node" && next.sec === a0.row.id);
     if (store.mode !== "edit") {
       const pane = panes[at];
       nearestY(pane?.querySelector(".sel, .wfocus, .node.focused > .row, .wrow.focused > .row, .backlinks li.focused, .target-row.focused, .wiki-head.focused, .pane-head.focused, .focused"));
@@ -907,10 +954,20 @@ export function Panes() {
       pending = null;
       hide();
     }
+    /** Where in its column a pane may peek while the others keep their tabs: below a tab for each pane above it, above a tab for each below. */
+    const tabRoom = (pane: HTMLElement) => {
+      const col = pane.parentElement as HTMLElement;
+      const c = col.getBoundingClientRect();
+      const ps = [...col.children].filter((p) => p.classList.contains("pane"));
+      const i = ps.indexOf(pane);
+      return { top: c.top + i * TAB, bottom: c.bottom - (ps.length - 1 - i) * TAB };
+    };
     /**
-     * How tall a pane would be shown whole (what its text needs, up to its column's height), if it is
-     * cut off now (0 if not): shown shorter than that for any reason, covered by the pane after it, given
-     * too small a share of its column, or running past the column's foot.
+     * How tall a pane would be shown at its fullest, if it is cut off now (0 if not): what its text
+     * needs, if that fits in its column; if not (it scrolls however tall it is), the column less a tab
+     * for each other pane, so a pane given that already does not cover the others' tabs for a few more
+     * lines. Cut off: shown shorter than that for any reason, covered by the pane after it, given too
+     * small a share of its column, or running past the column's foot.
      */
     const cutOff = (pane: HTMLElement): number => {
       const col = pane.parentElement as HTMLElement;
@@ -920,8 +977,9 @@ export function Panes() {
       const shown = Math.max(0, Math.min(r.bottom, c.bottom, next) - Math.max(r.top, c.top));
       const sc = pane.querySelector<HTMLElement>(".pane-scroll")!;
       const cs = getComputedStyle(sc);
-      const need = needs.current.get(Number(pane.dataset.tid)) ?? pane.querySelector<HTMLElement>(".pane-body")!.offsetHeight + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 1;
-      const full = Math.min(Math.ceil(need), Math.floor(c.height));
+      const need = Math.ceil(needs.current.get(Number(pane.dataset.tid)) ?? pane.querySelector<HTMLElement>(".pane-body")!.offsetHeight + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 1);
+      const room = tabRoom(pane);
+      const full = need <= Math.floor(c.height) ? need : Math.floor(room.bottom - room.top);
       return shown < full - 2 ? full : 0;
     };
     /** What must come out for a pane to show whole: its column, if later columns cover it; the pane, if it is cut off down its column. */
@@ -940,15 +998,18 @@ export function Panes() {
         it.setAttribute("data-peek", "");
         if (it === pane) {
           // As tall as it needs, without moving the panes around it (the extra height takes no room), then lifted into the column.
+          // (Never shorter: a covered pane may be laid out as tall already, and its column's scroll must not move.)
           const full = cutOff(it);
-          if (full) {
-            const h = it.offsetHeight;
+          const h = it.offsetHeight;
+          if (full > h) {
             it.style.setProperty("--peek-h", `${full}px`);
-            it.style.setProperty("--peek-extra", `${Math.max(0, full - h)}px`);
+            it.style.setProperty("--peek-extra", `${full - h}px`);
             it.setAttribute("data-peek-h", "");
           }
+          // Clear of the other panes' tabs, if it fits between them; else anywhere in its column.
           const r = it.getBoundingClientRect();
-          const c = (it.parentElement as HTMLElement).getBoundingClientRect();
+          const room = tabRoom(it);
+          const c = r.height <= room.bottom - room.top + 1 ? room : (it.parentElement as HTMLElement).getBoundingClientRect();
           const dy = Math.max(c.top - r.top, Math.min(0, c.bottom - r.bottom));
           if (dy) it.style.transform = `translateY(${Math.round(dy)}px)`;
         }
@@ -1832,16 +1893,22 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
   const holes = peeked.map((p) => local(p.getBoundingClientRect()));
   const bar = el.querySelector<HTMLElement>(".pane > .selbar");
   const barHole = bar && bar.style.visibility !== "hidden" ? [local(bar.getBoundingClientRect())] : [];
-  const owned = (id: number) => {
+  /** Whether a curve's pane is in what peeks: in a pane that peeks (it is that pane), or only in a column that peeks (another pane in it). */
+  const owner = (id: number): "pane" | "col" | null => {
     const p = els.get(id);
-    return !!p && peeked.some((q) => q.contains(p));
+    if (!p) return null;
+    const by = peeked.filter((q) => q.contains(p));
+    return by.some((q) => q.classList.contains("pane")) ? "pane" : by.length ? "col" : null;
   };
-  const { under, over } = layers(svg, area, [...holes, ...barHole], barHole);
+  // A column peeking with one of its panes: its other panes' curves are over the column but not over that pane, which may cover their tabs.
+  const paneHoles = peeked.flatMap((p, i) => (p.classList.contains("pane") ? [holes[i]] : []));
+  const { under, mid, over } = layers(svg, area, [...holes, ...barHole], [...paneHoles, ...barHole], barHole);
   // Each curve keeps its element, changed only where it changed, so only what moved is painted again.
   const had = new Map<string, SVGPathElement>();
   for (const p of svg.querySelectorAll<SVGPathElement>("path")) had.set(p.dataset.key!, p);
   const at = new Map<Element, number>([
     [under, 0],
+    [mid, 0],
     [over, 0],
   ]);
   out.forEach((c) => {
@@ -1858,7 +1925,8 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
     if (p.dataset.lane !== String(c.lane)) p.dataset.lane = String(c.lane);
     if ((p.dataset.hue ?? "") !== c.hue) c.hue ? (p.dataset.hue = c.hue) : delete p.dataset.hue;
     // In drawing order, the focused branch's last, on top; over what peeks if it belongs to it.
-    const g = owned(c.from) || owned(c.to) ? over : under;
+    const by = [owner(c.from), owner(c.to)];
+    const g = by.includes("pane") ? over : by.includes("col") ? mid : under;
     const k = at.get(g)!;
     at.set(g, k + 1);
     if (g.children[k] !== p) g.insertBefore(p, g.children[k] ?? null);
@@ -1871,20 +1939,16 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
 }
 
 /**
- * The curves' two layers: those under what peeks (with holes where it is, and where the selection
- * bar is), and those over it (its own; a hole only for the bar). Made once; the holes kept as asked.
+ * The curves' three layers: those under what peeks (with holes where it is, and where the selection
+ * bar is); those of a peeking column's other panes, over the column but under a pane of it that
+ * peeks too (holes where that pane is, and the bar); and those over it all (what peeks' own; a hole
+ * only for the bar). Made once; the holes kept as asked.
  */
-function layers(svg: SVGSVGElement, area: DOMRect, holes: { x: number; y: number; w: number; h: number }[], barHoles: { x: number; y: number; w: number; h: number }[]) {
+function layers(svg: SVGSVGElement, area: DOMRect, holes: { x: number; y: number; w: number; h: number }[], midHoles: { x: number; y: number; w: number; h: number }[], barHoles: { x: number; y: number; w: number; h: number }[]) {
   const NS = "http://www.w3.org/2000/svg";
   let defs = svg.querySelector("defs");
   if (!defs) {
     defs = document.createElementNS(NS, "defs");
-    for (const id of ["ie-curve-holes", "ie-curve-bar"]) {
-      const m = document.createElementNS(NS, "mask");
-      m.id = id;
-      m.setAttribute("maskUnits", "userSpaceOnUse");
-      defs.appendChild(m);
-    }
     const clip = document.createElementNS(NS, "clipPath");
     clip.id = "ie-curve-area";
     clip.appendChild(document.createElementNS(NS, "rect"));
@@ -1893,16 +1957,29 @@ function layers(svg: SVGSVGElement, area: DOMRect, holes: { x: number; y: number
     const shown = document.createElementNS(NS, "g");
     shown.setAttribute("clip-path", "url(#ie-curve-area)");
     svg.appendChild(shown);
-    for (const c of ["under", "over"]) {
-      const g = document.createElementNS(NS, "g");
-      g.setAttribute("class", c);
-      shown.appendChild(g);
-    }
   }
+  // Each part made if missing (a drawing an earlier build of the page began has fewer layers).
+  for (const id of ["ie-curve-holes", "ie-curve-mid", "ie-curve-bar"]) {
+    if (defs.querySelector(`#${id}`)) continue;
+    const m = document.createElementNS(NS, "mask");
+    m.id = id;
+    m.setAttribute("maskUnits", "userSpaceOnUse");
+    defs.appendChild(m);
+  }
+  const shown = svg.querySelector<SVGGElement>("g[clip-path]")!;
+  ["under", "mid", "over"].forEach((c, i) => {
+    let g = shown.querySelector<SVGGElement>(`:scope > g.${c}`);
+    if (!g) {
+      g = document.createElementNS(NS, "g");
+      g.setAttribute("class", c);
+    }
+    if (shown.children[i] !== g) shown.insertBefore(g, shown.children[i] ?? null);
+  });
   // Only over the strip.
   const r = svg.querySelector("#ie-curve-area rect")!;
   for (const [k, v] of Object.entries({ x: area.left, y: area.top, width: area.width, height: area.height })) if (r.getAttribute(k) !== String(v)) r.setAttribute(k, String(v));
   const under = svg.querySelector<SVGGElement>("g.under")!;
+  const mid = svg.querySelector<SVGGElement>("g.mid")!;
   const over = svg.querySelector<SVGGElement>("g.over")!;
   const fill = (id: string, g: SVGGElement, hs: typeof holes) => {
     const m = svg.querySelector<SVGMaskElement>(`#${id}`)!;
@@ -1926,8 +2003,9 @@ function layers(svg: SVGSVGElement, area: DOMRect, holes: { x: number; y: number
     g.setAttribute("mask", `url(#${id})`);
   };
   fill("ie-curve-holes", under, holes);
+  fill("ie-curve-mid", mid, midHoles);
   fill("ie-curve-bar", over, barHoles);
-  return { under, over };
+  return { under, mid, over };
 }
 
 /** The words, rows and links the panes were opened from, coloured as pages (pageMarks). */

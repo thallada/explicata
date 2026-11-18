@@ -19,11 +19,16 @@ import { LLMUnavailable, type JsonReq, type LLM, type Req, type TurnReq } from "
 import { seed } from "../src/seed/tree";
 import { Bundle, type Shared } from "./bundle";
 import { claudeLLM, describeError } from "./claude";
+import { CSP } from "./csp";
 import { Libraries, NeedsMigration, importStarters } from "./libraries";
 import { lockHolder, takeLock } from "./lock";
 import { SubscriptionError, queryPlanUsage, subscriptionLLM } from "./subscription";
 import { usage, withMockUsage } from "./usage";
 import { HttpError, ROOT as root, abortOnClose, dataDir, readJson, sendJson as json } from "./util";
+import { PageClient, pages } from "./page";
+import { makeMockPageFetch } from "./pageMock";
+import { Arranger, serverBudget } from "./pageArrange";
+import { pageOff, pageRoutes } from "./pageRoutes";
 import { applyWebPolicy, webConfig } from "./web";
 import { WikiClient, validContact, wiki, wikiLang } from "./wiki";
 import { makeMockWikiFetch } from "./wikiMock";
@@ -87,11 +92,30 @@ const wikiMode: WikiMode = wikiWanted === "live" || wikiWanted === "mock" ? wiki
 if (wikiMode !== wikiWanted) console.warn(`EX_WIKI=${wikiWanted} is not live, mock or off; Wikipedia is off.`);
 // The mock keeps nothing on disk and never holds itself offline, so one test's "offline" title
 // does not leak into the next.
-const mockWiki = wikiMode === "mock" ? new WikiClient({ lang: process.env.EX_WIKI_LANG, fetch: makeMockWikiFetch(undefined, Number(process.env.EX_WIKI_MOCK_BULK_MS) || 0), spacingMs: 0, persist: false, offlineHoldMs: 0 }) : null;
+const mockWiki = wikiMode === "mock" ? new WikiClient({ lang: process.env.EX_WIKI_LANG, fetch: makeMockWikiFetch(undefined, Number(process.env.EX_WIKI_MOCK_BULK_MS) || 0), spacingMs: 0, mediaSpacingMs: 0, persist: false, offlineHoldMs: 0 }) : null;
 const wikiClient = () => (wikiMode === "off" ? null : (mockWiki ?? wiki()));
 const handleWiki = wikiMode === "off" ? wikiOff : wikiRoutes(() => wikiClient()!);
 /** What the UI may know: the mode, the language, and whether a contact is set (never the contact). */
 const wikiState = { mode: wikiMode, lang: wikiLang(process.env.EX_WIKI_LANG), contact: validContact(process.env.EX_WIKI_CONTACT) !== null };
+
+// ---- web pages ----
+
+// EX_PAGES picks where /api/page/* reads pages from: the web (live), the fixtures in
+// server/pageMock.ts (mock: tests and offline work, no network at all), or nowhere (off). As with
+// EX_WIKI, an unrecognised value is off. Only a page a person opens is ever read.
+type PageMode = "live" | "mock" | "off";
+const pagesWanted = process.env.EX_PAGES ?? "live";
+const pageMode: PageMode = pagesWanted === "live" || pagesWanted === "mock" ? pagesWanted : "off";
+if (pageMode !== pagesWanted) console.warn(`EX_PAGES=${pagesWanted} is not live, mock or off; reading web pages is off.`);
+// The mock keeps its snapshots in memory only, so each run starts from nothing read.
+const mockPages = pageMode === "mock" ? new PageClient({ fetch: makeMockPageFetch(), spacingMs: 0, persist: false }) : null;
+// Arranging a page with a model (s on a page) is always the reader's own request, through the
+// shared model, within EX_PAGE_CALLS calls a day for the whole server (default 20, counted in
+// <EX_DATA>/page-calls.json), and never while the plan's limits are nearly used. EX_PAGES_ARRANGE=off
+// turns it off.
+const arrangeOn = process.env.EX_PAGES_ARRANGE !== "off";
+const arranger = new Arranger({ pages: () => mockPages ?? pages(), llm: () => llm, on: arrangeOn, budget: serverBudget(process.env, DATA), plan: () => usage.summary().plan });
+const handlePages = pageMode === "off" ? pageOff : pageRoutes(() => mockPages ?? pages(), () => arranger);
 
 /** A short reason for a failed model call, whichever provider made it. */
 const explain = (err: unknown) => (err instanceof SubscriptionError ? { status: err.status, message: err.message } : describeError(err));
@@ -138,6 +162,7 @@ const shared: Shared = {
     llm: llm?.kind ?? "off",
     model: llm?.model ?? null,
     wiki: wikiState,
+    pages: { mode: pageMode, arrange: arrangeOn && !!llm },
     embed: embed ? (process.env.EX_EMBED === "fake" ? "fake" : "on") : "off",
     web: { on: web.on, searches: web.searches, fetches: web.fetches },
     libraries: libraries.list(),
@@ -216,6 +241,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
   }
 
   if (await handleWiki(req, res, url)) return;
+  if (await handlePages(req, res, url)) return;
 
   // Without a library named, the first one: so `curl /api/tree` still reads a library.
   const first = bundles.get(libraries.first().id)!;
@@ -275,25 +301,8 @@ const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".wasm": "application/wasm",
   ".svg": "image/svg+xml", ".json": "application/json", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8",
 };
-/**
- * Sent with the page in production. The page injects sanitised Wikipedia HTML; this is the second
- * line of defence should anything get past the sanitiser: no scripts, frames, plugins, forms or
- * remote loads but our own. 'wasm-unsafe-eval' lets Loro compile its WebAssembly; inline styles
- * are allowed because Preact sets style attributes.
- */
-const CSP = [
-  "default-src 'self'",
-  "script-src 'self' 'wasm-unsafe-eval'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "connect-src 'self'",
-  "frame-src 'none'",
-  "object-src 'none'",
-  "base-uri 'none'",
-  "form-action 'none'",
-].join("; ");
 
+/** A built file; the page itself goes with the Content-Security-Policy of server/csp.ts. */
 function serveStatic(res: ServerResponse, path: string) {
   // EX_DIST: another build to serve (the browser tests build one per port, so runs side by side do not collide).
   const dist = resolve(root, process.env.EX_DIST ?? "dist");
@@ -341,4 +350,5 @@ createServer(async (req, res) => {
   console.log(
     `wikipedia: ${wikiMode === "live" ? `live (${wikiState.lang}.wikipedia.org, ${wikiState.contact ? "with" : "without"} a contact)` : wikiMode === "mock" ? "mock (fixtures, no network)" : "off"}`,
   );
+  console.log(`web pages: ${pageMode === "live" ? "live (only pages you open)" : pageMode === "mock" ? "mock (fixtures, no network)" : "off"}${pageMode !== "off" ? `; arranged by a model: ${arrangeOn && llm ? `on request, at most ${arranger.budgetMax} calls a day` : "off"}` : ""}`);
 });

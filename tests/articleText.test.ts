@@ -75,4 +75,33 @@ describe("article text", () => {
       }
     }
   });
+
+  it("an annotation made on an article's text before pictures were kept lands on the same words once its figures' captions are text too", async () => {
+    // Grey heron as the sanitiser now makes it, and as the old one did (the same text, no figures).
+    const a = await article("Grey heron");
+    const parts = [{ path: [] as string[], html: a.lead }, ...a.sections.map((s) => ({ path: [s.heading], html: s.html }))];
+    const now = parts.map((p) => ({ path: p.path, t: build(p.html) }));
+    const before = parts.map((p) => ({ path: p.path, t: build(p.html.replace(/<figure[^]*?<\/figure>/g, "").replace(/<p>Herons at the weir<\/p>/, "")) }));
+    expect(now[0].t.text.startsWith("An adult at a weir\n\nThe grey heron")).toBe(true);
+    expect(before[0].t.text.startsWith("The grey heron")).toBe(true);
+    const secsNow = now.map((x) => ({ path: x.path, text: x.t.text }));
+    let checked = 0;
+    for (const [i, s] of before.entries()) {
+      // Every sentence, and a word the captions also use ("weir", "heron"), wherever it occurs.
+      const ranges = [...sentences(s.t.text), ...[...s.t.text.matchAll(/\b(weir|heron)\b/g)].map((m): [number, number] => [m.index!, m.index! + m[0].length])];
+      for (const r of ranges) {
+        const anchor = makeAnchor(s.t.text, r, s.path, a.revisionId);
+        const got = reanchor(anchor, secsNow);
+        if ("detached" in got) throw new Error(`detached: ${anchor.q}`);
+        expect(got.sec).toBe(i);
+        // The same words, in the same place: the text around them is the text that was around them.
+        const t = secsNow[got.sec].text;
+        expect(t.slice(...got.range)).toBe(anchor.q);
+        expect(t.slice(Math.max(0, got.range[0] - anchor.pre.length), got.range[0])).toBe(anchor.pre);
+        expect(t.slice(got.range[1], got.range[1] + anchor.post.length)).toBe(anchor.post);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(10);
+  });
 });

@@ -19,7 +19,7 @@ export interface Req {
   maxTokens?: number;
 }
 
-export type SchemaName = "cascade" | "resolve" | "contradictions" | "review";
+export type SchemaName = "cascade" | "resolve" | "contradictions" | "review" | "arrange";
 
 export interface JsonReq extends Req {
   schema: SchemaName;
@@ -93,4 +93,13 @@ export interface Contradictions {
 /** The link reviewer's verdicts (server/links/review.ts): one per proposal, by its id. */
 export interface LinkVerdicts {
   verdicts: { id: string; link: boolean; reason: string }[];
+}
+
+/**
+ * A web page summarised and perhaps arranged (server/pageArrange.ts): its sections by the unit
+ * number each starts at. Lengths are not limited here: what is too long is clipped afterwards.
+ */
+export interface ArrangeReply {
+  summary: string;
+  sections: { title: string; start: number }[];
 }

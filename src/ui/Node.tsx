@@ -8,6 +8,7 @@ import { streamView } from "../core/marks";
 import { ownerSection } from "../core/links";
 import { ChoiceRows, LinkMark, useForkMark, LinkPreview, NodeBacklinks, NodeRelated, SuggestionCard, TargetRow, articleChoice, sectionChoice, useWikiSuggest, type Choice } from "./Links";
 import { store, type Pending } from "./store";
+import { ArticleView } from "./Web";
 
 // ---- inline text ----
 
@@ -402,10 +403,11 @@ function SectionView({ id }: { id: NodeId }) {
       <Row id={id} open={open} leaf={leaf} editing={editing} />
       {open && (
         <div class="content">
-          {isPrompt(snap, id) ? <Abstract id={id} /> : <NodeBody id={id} />}
+          {/* A section that is only a link is shown as its article, under its row: no empty text above it. */}
+          {store.linkOnly(id) ? null : isPrompt(snap, id) ? <Abstract id={id} /> : <NodeBody id={id} />}
           {kids.length > 0 && <Outline ids={kids} />}
           <PendingSections id={id} />
-          <TargetRow id={id} />
+          {store.articleUnder(id) ? <ArticleView host={`n${id}`} /> : <TargetRow id={id} />}
           <NodeBacklinks id={id} />
           <NodeRelated id={id} />
         </div>

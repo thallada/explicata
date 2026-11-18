@@ -7,12 +7,13 @@ import { Fragment, createContext } from "preact";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { ownerSection, resolveNode } from "../core/links";
 import { isLibraryRoot, isLink, label, topOf, type NodeId, type Snap } from "../core/model";
-import { describeTarget, hostOf, parseTarget, validateRef, wikiTitle, type Ref } from "../core/ref";
+import { describeTarget, hostOf, parseTarget, validateRef, wikiRefOf, wikiTitle, type Ref } from "../core/ref";
 import { clip, plain } from "../core/text";
 import { kidClass, sameAux, store, type Aux } from "./store";
 import type { LinkRow, Status, Sugg } from "./linker";
 import { Hints } from "./Mouse";
 import { press } from "./press";
+import { cachedSummary, pageTitle, readDate } from "./web";
 import { suggest, summary, wikiConfig, type Attribution as Attr, type Suggestion } from "./wiki";
 
 const MARK: Record<Ref["kind"], string> = { wiki: "W", node: "§", url: "↗" };
@@ -62,15 +63,25 @@ export function Attribution({ a }: { a: Attr }) {
   );
 }
 
-/** What a target is, briefly: an article's summary, a node's title, where it is and first lines, a page's host. */
+/**
+ * What a target is, briefly: an article's summary, a node's title, where it is and first lines; a
+ * page's title, site, author, date and first sentence when the server has read it before (its cache
+ * alone is asked: a card never makes the site be read), else its host and address.
+ */
 export function LinkCard({ r, compact }: { r: Ref; compact?: boolean }) {
   if (r.kind === "url") {
+    const sum = cachedSummary(r.url);
+    const s = sum.state === "ready" ? sum.value : null;
+    // The site is the card's head; the line under the title is who wrote it and when.
+    const line = s ? [s.author, s.published && readDate(s.published)].filter(Boolean).join(" · ") : "";
     return (
       <div class="lcard l-url">
         <div class="lhead">
-          <span class="lmark l-url">↗</span> {hostOf(r.url)}
+          <span class="lmark l-url">↗</span> {s?.site ?? hostOf(r.url)}
         </div>
-        {r.title && <div class="ltitle">{r.title}</div>}
+        {(s?.title || r.title) && <div class="ltitle">{s?.title || r.title}</div>}
+        {line && <div class="lsub lbyline">{line}</div>}
+        {s?.sentence && <div class="lbody">{compact ? clip(s.sentence, 200) : s.sentence}</div>}
         <div class="lsub">{clip(r.url, 90)}</div>
       </div>
     );
@@ -125,7 +136,7 @@ export function LinkCard({ r, compact }: { r: Ref; compact?: boolean }) {
 export function LinkPreview({ id }: { id: NodeId }) {
   const n = store.snap.nodes[id];
   if (!n?.ref) return null;
-  const next = n.ref.kind === "wiki" ? "Enter opens the article · W opens it on Wikipedia" : n.ref.kind === "node" ? "Enter goes there · Back returns" : "Enter opens the page in a new tab";
+  const next = n.ref.kind === "wiki" ? "Enter opens the article · W opens it on Wikipedia" : n.ref.kind === "node" ? "Enter goes there · Back returns" : "Enter opens the page here · W opens the original in a new tab";
   return (
     <span class={`inset lpreview l-${n.ref.kind}${store.focus.node === id ? " focused" : ""}`} data-node={id}>
       <LinkCard r={n.ref} />
@@ -332,8 +343,11 @@ export function LinkPicker() {
 
   const choices: Choice[] = [];
   if (/^https?:\/\/\S+$/i.test(text)) {
+    // An address of a Wikipedia article is that article.
+    const article = wikiRefOf(text);
     try {
-      choices.push({ group: "Address", label: hostOf(text), sub: text, ref: validateRef({ kind: "url", url: text }) });
+      if (article?.kind === "wiki") choices.push({ group: "Wikipedia", label: article.title, sub: text, ref: article });
+      else choices.push({ group: "Address", label: hostOf(text), sub: text, ref: validateRef({ kind: "url", url: text }) });
     } catch {
       /* not an address after all */
     }
@@ -343,10 +357,23 @@ export function LinkPicker() {
   choices.push(...libraryChoices(text, spot.node));
   choices.push(...(wiki?.list ?? []).map(articleChoice));
   const sel = Math.min(i, choices.length - 1);
+  // A bare address: its page's title is read now, as part of this choice, and kept in the link
+  // (never later, never because the page was opened). Slow or failing, the link is made without one.
+  const [reading, setReading] = useState<string | null>(null);
   const apply = (c: Choice | undefined) => {
-    if (!c) return;
+    if (!c || reading) return;
+    const ref = c.ref;
+    if (c.group === "Address" && ref.kind === "url" && !ref.title) {
+      setReading(ref.url);
+      void pageTitle(ref.url).then((title) => {
+        if (store.picker !== spot) return; // Esc while it was read: nothing is linked
+        store.closePicker();
+        store.applyTarget(spot, title ? { ...ref, title } : ref);
+      });
+      return;
+    }
     store.closePicker();
-    store.applyTarget(spot, c.ref);
+    store.applyTarget(spot, ref);
   };
   const existing = spot.existing ? store.snap.nodes[spot.existing]?.ref : spot.range ? undefined : store.snap.nodes[spot.node]?.ref;
   return (
@@ -373,6 +400,7 @@ export function LinkPicker() {
           {!choices.length && <li class="none">{text ? "Nothing matches yet." : "Type to search."}</li>}
           {text && !wiki && wikiConfig().mode !== "off" && !/^https?:/i.test(text) && <li class="none">Asking Wikipedia…</li>}
           {wiki?.problem && <li class="none problem">Wikipedia: {wiki.problem}</li>}
+          {reading && <li class="none reading">Reading the page's title… (Esc leaves it unlinked)</li>}
         </ul>
       </div>
     </div>

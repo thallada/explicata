@@ -9,11 +9,14 @@
  *   summary(title)      extract, description, thumbnail, canonical URL, revision (REST page/summary).
  *                       { cacheOnly: true } answers from the cache alone, never the network.
  *   article(title)      lead plus the section list. The whole page is fetched once (action=parse),
- *                       split at its headings, sanitised (images dropped), cached.
+ *                       split at its headings, sanitised (pictures kept as figures), cached.
  *                       { sections: true } returns every section's html too.
+ *   media(u)            a picture an article served here shows, from upload.wikimedia.org only,
+ *                       read with the same User-Agent, at most two at a time and spaced apart.
  *
- * Every request goes through one serial queue with a minimum spacing, priority for interactive
- * calls, Retry-After / 429 / 503 / maxlag handling, and a descriptive User-Agent. Results are
+ * Every API request goes through one serial queue with a minimum spacing, priority for interactive
+ * calls, Retry-After / 429 / 503 / maxlag handling, and a descriptive User-Agent. Pictures go
+ * through a small fetcher of their own (docs/wikipedia.md §1), with the same User-Agent. Results are
  * cached on disk under <EX_DATA>/wiki-cache/, so scanning the same text twice costs nothing.
  * Nothing here throws into a caller: failures come back as { ok: false, reason }.
  *
@@ -22,8 +25,10 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { IMAGE_MAX_BYTES, PageFetcher } from "./pageFetch";
+import type { MediaResult } from "./page";
 import { dataDir, writeAtomic as write } from "./util";
-import { splitArticle } from "./wikiHtml";
+import { UPLOAD_HOST, splitArticle } from "./wikiHtml";
 
 // ---- results ----
 
@@ -169,6 +174,21 @@ const TTL = {
 const SPACING_IDENTIFIED_MS = 1000;
 /** Without one the gateway may treat us as "unidentified" (10/min): stay under it. */
 const SPACING_ANONYMOUS_MS = 6500;
+/**
+ * Pictures from upload.wikimedia.org (a different service from the APIs, with its own limits:
+ * docs/wikipedia.md §1): at most two at a time, starts spaced apart, slower without a contact.
+ */
+const MEDIA_ACTIVE = 2;
+const MEDIA_SPACING_IDENTIFIED_MS = 250;
+const MEDIA_SPACING_ANONYMOUS_MS = 1000;
+/** Picture addresses remembered as shown (most recent kept). */
+const MEDIA_SEEN = 20_000;
+/**
+ * The version of the sanitiser an article in the cache was made by. A cached article made by
+ * another is read again (kept only while Wikipedia cannot be reached): 2 keeps pictures, which 1
+ * (no field) dropped.
+ */
+const SANITISER = 2;
 /** After a network failure, answer "offline" without trying again for this long. */
 const OFFLINE_HOLD_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -203,6 +223,8 @@ interface WikiOptions {
   persist?: boolean;
   /** How long a network failure holds the client offline (default 30 s; the mock uses 0). */
   offlineHoldMs?: number;
+  /** Least time between two picture requests (default 250 ms with a contact, 1 s without; the mock uses 0). */
+  mediaSpacingMs?: number;
 }
 
 /** A Wikipedia language code, or the default. */
@@ -499,6 +521,10 @@ interface CachedArticle {
   disambiguation?: boolean;
   lead: string;
   sections: (SectionInfo & { html: string })[];
+  /** The picture addresses the html shows (absent before pictures were kept). */
+  media?: string[];
+  /** The sanitiser version that made the html (absent: 1, which dropped pictures). */
+  sanitiser?: number;
 }
 
 export class WikiClient {
@@ -510,6 +536,9 @@ export class WikiClient {
   private titles: KvStore<LookupValue>;
   private small: KvStore<unknown>;
   private articles: BlobStore<CachedArticle>;
+  private pictures: PageFetcher;
+  /** Picture addresses in articles served by this server since it started: the only ones media() reads. */
+  private shown = new Map<string, true>();
 
   constructor(o: WikiOptions = {}) {
     this.lang = wikiLang(o.lang);
@@ -529,9 +558,18 @@ export class WikiClient {
       now: this.now,
       sleep: o.sleep ?? defaultSleep,
     });
+    this.pictures = new PageFetcher({
+      fetch: o.fetch ?? fetch,
+      now: this.now,
+      sleep: o.sleep ?? defaultSleep,
+      userAgent: this.userAgent,
+      robots: false,
+      maxActive: MEDIA_ACTIVE,
+      spacingMs: o.mediaSpacingMs ?? (this.contact ? MEDIA_SPACING_IDENTIFIED_MS : MEDIA_SPACING_ANONYMOUS_MS),
+    });
   }
 
-  /** Requests sent to Wikipedia so far. */
+  /** Requests sent to Wikipedia so far (pictures not counted). */
   get requests(): number {
     return this.queue.requests;
   }
@@ -791,10 +829,10 @@ export class WikiClient {
   private async loadArticle(title: string, o: CallOpts): Promise<Result<CachedArticle>> {
     const p = prepareTitle(title);
     if (!("title" in p)) return { ok: false, reason: "missing", message: p.invalid };
-    // The "|0" suffix keeps existing cache files valid.
+    // The "|0" suffix keeps existing cache files valid; one made by an older sanitiser is read again.
     const key = `${p.title}|0`;
     const hit = this.articles.get(key);
-    if (hit?.fresh) return { ok: true, value: hit.value, cached: true };
+    if (hit?.fresh && hit.value.sanitiser === SANITISER) return { ok: true, value: hit.value, cached: true };
     const r = await this.getJson(
       this.actionUrl(
         {
@@ -827,7 +865,10 @@ export class WikiClient {
       pageId: Number(parse.pageid),
       revisionId: Number(parse.revid),
       disambiguation: pageProperties(parse.properties).has("disambiguation"),
-      ...split,
+      lead: split.lead,
+      sections: split.sections,
+      media: split.media,
+      sanitiser: SANITISER,
     };
     this.articles.set(key, value, TTL.article);
     return { ok: true, value, cached: false };
@@ -844,6 +885,7 @@ export class WikiClient {
       const r = await this.loadArticle(title, o);
       if (!r.ok) return r;
       const a = r.value;
+      this.show(a.media ?? []);
       return {
         ...r,
         value: {
@@ -861,9 +903,41 @@ export class WikiClient {
       return unavailable("bad-response", String(e));
     }
   }
+
+  /** Remember the pictures an article being served shows: media() reads those and no others. */
+  private show(media: string[]) {
+    for (const u of media) {
+      this.shown.delete(u);
+      this.shown.set(u, true);
+    }
+    while (this.shown.size > MEDIA_SEEN) this.shown.delete(this.shown.keys().next().value as string);
+  }
+
+  /**
+   * A picture shown in an article this server has served since it started, read from
+   * upload.wikimedia.org with this client's User-Agent; any other address is refused, so the route
+   * is not an open proxy. Never throws.
+   */
+  async media(u: string, o: { signal?: AbortSignal } = {}): Promise<MediaResult | { ok: false; reason: "aborted" }> {
+    let host = "";
+    try {
+      host = new URL(u).hostname;
+    } catch {
+      // not an address: refused below
+    }
+    if (host !== UPLOAD_HOST || !u.startsWith("https://")) return { ok: false, status: 404, message: `Only pictures from ${UPLOAD_HOST} are shown.` };
+    if (!this.shown.has(u)) return { ok: false, status: 404, message: "This picture is not in an article read here." };
+    const r = await this.pictures.get(u, { types: ["image/*"], maxBytes: IMAGE_MAX_BYTES, signal: o.signal });
+    if (o.signal?.aborted) return { ok: false, reason: "aborted" };
+    if (r.ok) return { ok: true, type: r.type, body: r.body };
+    const status = r.reason === "type" ? 415 : r.reason === "too-large" ? 413 : r.status === 429 ? 429 : r.reason === "refused" ? 403 : 502;
+    const message = r.reason === "type" ? "This address does not answer with a picture." : r.reason === "too-large" ? "The picture is larger than 10 MB." : r.message;
+    return { ok: false, status, message };
+  }
 }
 
-const MODIFIED = "Adapted: references, navigation boxes, infoboxes, edit links and images removed.";
+/** What the attribution says was changed: the licence asks that changes be indicated (docs/wikipedia.md §3). */
+const MODIFIED = "Adapted: references, navigation boxes, infoboxes and edit links removed; each picture is credited on its own file page (click it).";
 
 let shared: WikiClient | null = null;
 /** The server's client, configured from EX_DATA, EX_WIKI_LANG and EX_WIKI_CONTACT. */

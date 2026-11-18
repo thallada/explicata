@@ -319,9 +319,73 @@ describe("sanitiser", () => {
     expect(out).toBe(`<p>Let <math display="inline"><mi>x</mi><mo>&lt;</mo></math> &amp; y</p>`);
   });
 
-  it("drops images", () => {
-    const html = `<figure><a href="/wiki/File:X.jpg" class="mw-file-description"><img src="//upload.wikimedia.org/x.jpg" width="200" onload="x"></a><figcaption>Cap</figcaption></figure><p>t</p>`;
-    expect(sanitizeWikiHtml(html, o)).toBe("<p>t</p>");
+  it("keeps a thumbnail as a figure: its 2x rendition through the app's image route, its caption, its File page to credit it", () => {
+    const html = `<figure typeof="mw:File/Thumb"><a href="/wiki/File:X.jpg" class="mw-file-description" onclick="x"><img alt="An x" src="//upload.wikimedia.org/wikipedia/commons/thumb/a/ab/X.jpg/250px-X.jpg" width="250" height="200" onload="x" srcset="//upload.wikimedia.org/wikipedia/commons/thumb/a/ab/X.jpg/375px-X.jpg 1.5x, //upload.wikimedia.org/wikipedia/commons/thumb/a/ab/X.jpg/500px-X.jpg 2x"></a><figcaption>Cap with <a href="/wiki/Octopus">a link</a></figcaption></figure><p>t</p>`;
+    expect(sanitizeWikiHtml(html, o)).toBe(
+      `<figure><img src="/api/wiki/media?u=https%3A%2F%2Fupload.wikimedia.org%2Fwikipedia%2Fcommons%2Fthumb%2Fa%2Fab%2FX.jpg%2F500px-X.jpg" alt="An x" width="500" height="400" loading="lazy" decoding="async" data-full="https://en.wikipedia.org/wiki/File:X.jpg"><figcaption>Cap with <a href="https://en.wikipedia.org/wiki/Octopus" data-wiki="Octopus">a link</a></figcaption></figure><p>t</p>`,
+    );
+    // Old-style thumbnails, on another language's wiki: the File page on that wiki, caption from thumbcaption.
+    const old = `<div class="thumb tright"><div class="thumbinner"><a href="/wiki/Fichier:Y.png" class="image"><img src="//upload.wikimedia.org/y.png" width="220" height="100" class="thumbimage"></a><div class="thumbcaption"><div class="magnify"><a href="/wiki/Fichier:Y.png" class="internal"><img src="//upload.wikimedia.org/magnify.png" width="15" height="11"></a></div>Une légende</div></div></div>`;
+    expect(sanitizeWikiHtml(old, "fr")).toBe(`<figure><img src="/api/wiki/media?u=https%3A%2F%2Fupload.wikimedia.org%2Fy.png" alt="" width="220" height="100" loading="lazy" decoding="async" data-full="https://fr.wikipedia.org/wiki/Fichier:Y.png"><figcaption>Une légende</figcaption></figure>`);
+  });
+
+  it("drops icons and flags, pictures in a sentence, pictures from elsewhere or with no File page, and anything in a dropped box", () => {
+    const file = (name: string, img: string, cls = "") => `<figure typeof="mw:File/Thumb" class="${cls}"><a href="/wiki/File:${name}" class="mw-file-description">${img}</a><figcaption>${name}</figcaption></figure>`;
+    for (const html of [
+      file("Flag.svg", `<img src="//upload.wikimedia.org/flag.png" width="23" height="15">`),
+      file("Tall.svg", `<img src="//upload.wikimedia.org/tall.png" width="300" height="40">`),
+      file("Icon.svg", `<img src="//upload.wikimedia.org/icon.png" width="80" height="80" class="mw-file-element noviewer">`),
+      `<span class="flagicon">${file("Flag2.svg", `<img src="//upload.wikimedia.org/flag2.png" width="60" height="60">`)}</span>`,
+      file("Evil.png", `<img src="https://evil.example/x.png" width="250" height="200">`),
+      file("Data.png", `<img src="data:image/png;base64,AAAA" width="250" height="200">`),
+      `<figure><a href="https://evil.example/" class="mw-file-description"><img src="//upload.wikimedia.org/z.png" width="250" height="200"></a></figure>`,
+      `<figure><img src="//upload.wikimedia.org/z.png" width="250" height="200"></figure>`,
+      `<div role="navigation" class="navbox">${file("Nav.png", `<img src="//upload.wikimedia.org/nav.png" width="250" height="200">`)}</div>`,
+      `<table class="infobox ib-box"><tr><td class="infobox-image">${file("Box.png", `<img src="//upload.wikimedia.org/box.png" width="250" height="200">`)}</td></tr></table>`,
+      `<div class="ambox">${file("Warn.png", `<img src="//upload.wikimedia.org/warn.png" width="250" height="200">`)}</div>`,
+      `<figure typeof="mw:File/Thumb"><a href="/wiki/File:Sound.ogg" class="mw-file-description"><audio src="//upload.wikimedia.org/s.ogg" controls></audio></a><figcaption>A sound</figcaption></figure>`,
+    ]) {
+      expect(sanitizeWikiHtml(html + "<p>t</p>", o), html).toBe("<p>t</p>");
+    }
+    // A picture inline in a sentence goes; the sentence stays one paragraph.
+    expect(sanitizeWikiHtml(`<p>A <span typeof="mw:File"><a href="/wiki/File:Big.png" class="mw-file-description"><img src="//upload.wikimedia.org/big.png" width="300" height="200"></a></span> picture.</p>`, o)).toBe("<p>A  picture.</p>");
+  });
+
+  it("makes a gallery one figure per picture, its caption a paragraph; and a multiple-image block one figure each", () => {
+    const box = (n: string, cap: string) => `<li class="gallerybox"><div class="thumb"><span typeof="mw:File"><a href="/wiki/File:${n}" class="mw-file-description"><img src="//upload.wikimedia.org/thumb/${n}/120px-${n}" width="120" height="90" srcset="//upload.wikimedia.org/thumb/${n}/240px-${n} 2x"></a></span></div><div class="gallerytext">${cap}</div></li>`;
+    const out = sanitizeWikiHtml(`<ul class="gallery mw-gallery-traditional"><li class="gallerycaption">Two</li>${box("A.jpg", "First")}${box("B.jpg", "Second")}</ul>`, o);
+    expect(out).toMatch(/^<p>Two<\/p>\n<figure><img src="\/api\/wiki\/media\?u=[^"]*240px-A\.jpg" alt="" width="240" height="180" [^>]*data-full="https:\/\/en\.wikipedia\.org\/wiki\/File:A\.jpg"><figcaption>First<\/figcaption><\/figure>\n<figure>.*B\.jpg.*<figcaption>Second<\/figcaption><\/figure>$/s);
+    const single = (n: string, cap: string) => `<div class="tsingle"><div class="thumbimage"><span typeof="mw:File"><a href="/wiki/File:${n}" class="mw-file-description"><img src="//upload.wikimedia.org/${n}" width="150" height="100"></a></span></div><div class="thumbcaption">${cap}</div></div>`;
+    const multi = sanitizeWikiHtml(`<div class="thumb tmulti tright"><div class="thumbinner multiimageinner"><div class="trow">${single("L.jpg", "Left")}${single("R.jpg", "Right")}</div><div class="trow"><div class="thumbcaption">Both together</div></div></div></div>`, o);
+    expect(multi.match(/<figure>/g)).toHaveLength(2);
+    expect(multi).toContain("<figcaption>Left</figcaption>");
+    expect(multi).toContain("<figcaption>Right</figcaption>");
+    expect(multi).toMatch(/<p>Both together<\/p>$/);
+  });
+
+  it("makes a video the click-to-play facade: a WebM of 360–720 lines from upload.wikimedia.org, its still through the image route, its File page", () => {
+    const html = `<figure typeof="mw:File/Thumb"><span><video poster="//upload.wikimedia.org/thumb/V.webm/220px--V.webm.jpg" controls="" preload="none" autoplay width="220" height="124" data-mwtitle="V.webm" resource="/wiki/File:V.webm"><source src="//upload.wikimedia.org/V.webm" type="video/webm" data-width="1920" data-height="1080"><source src="//upload.wikimedia.org/transcoded/V.webm/V.webm.480p.vp9.webm" type="video/webm; codecs=&quot;vp9, opus&quot;" data-width="854" data-height="480"><source src="https://evil.example/v.webm" type="video/webm" data-width="640" data-height="360"></video></span><figcaption>A clip</figcaption></figure>`;
+    expect(sanitizeWikiHtml(html, o)).toBe(
+      `<figure class="video" data-video="https://upload.wikimedia.org/transcoded/V.webm/V.webm.480p.vp9.webm" data-width="854" data-height="480" data-file="https://en.wikipedia.org/wiki/File:V.webm"><img src="/api/wiki/media?u=https%3A%2F%2Fupload.wikimedia.org%2Fthumb%2FV.webm%2F220px--V.webm.jpg" alt="" width="854" height="480" loading="lazy" decoding="async"><figcaption>A clip</figcaption></figure>`,
+    );
+    // No File page: no credit, not kept. No source on upload.wikimedia.org: not kept.
+    expect(sanitizeWikiHtml(html.replace(` data-mwtitle="V.webm" resource="/wiki/File:V.webm"`, ""), o)).toBe("");
+    expect(sanitizeWikiHtml(`<figure><video resource="/wiki/File:E.webm" src="https://evil.example/e.webm"></video></figure>`, o)).toBe("");
+  });
+
+  it("lifts the infobox's picture to the top of the lead, its caption with it; the infobox itself stays out", () => {
+    const page =
+      `<div class="mw-parser-output"><div class="hatnote">See also</div><table class="infobox biota"><tbody><tr><th>Heron</th></tr>` +
+      `<tr><td colspan="2" class="infobox-image"><span typeof="mw:File/Frameless"><a href="/wiki/File:H.jpg" class="mw-file-description"><img src="//upload.wikimedia.org/thumb/H.jpg/250px-H.jpg" width="250" height="200" srcset="//upload.wikimedia.org/thumb/H.jpg/500px-H.jpg 2x"></a></span><div class="infobox-caption">An adult</div></td></tr>` +
+      `<tr><th>Range</th><td><span class="flagicon"><img src="//upload.wikimedia.org/f.png" width="23" height="15"></span> Europe</td></tr></tbody></table><p>Lead.</p>` +
+      `<div class="mw-heading mw-heading2"><h2 id="A">A</h2></div><p>Alpha</p></div>`;
+    const { lead, sections, media } = splitArticle(page, "en");
+    expect(lead).toBe(`<figure><img src="/api/wiki/media?u=https%3A%2F%2Fupload.wikimedia.org%2Fthumb%2FH.jpg%2F500px-H.jpg" alt="" width="500" height="400" loading="lazy" decoding="async" data-full="https://en.wikipedia.org/wiki/File:H.jpg"><figcaption>An adult</figcaption></figure>\n<p>Lead.</p>`);
+    expect(sections[0].html).toBe("<p>Alpha</p>");
+    expect(media).toEqual(["https://upload.wikimedia.org/thumb/H.jpg/500px-H.jpg"]);
+    // An infobox without an image cell: the cell of its first picture worth keeping.
+    const plain = splitArticle(`<table class="infobox"><tr><td><img src="//upload.wikimedia.org/i.png" width="20" height="20"></td></tr><tr><td><a href="/wiki/File:P.png" class="mw-file-description"><img src="//upload.wikimedia.org/p.png" width="200" height="150"></a></td></tr></table><p>Lead.</p>`, "en");
+    expect(plain.lead).toMatch(/^<figure><img src="\/api\/wiki\/media\?u=https%3A%2F%2Fupload\.wikimedia\.org%2Fp\.png"[^>]*data-full="https:\/\/en\.wikipedia\.org\/wiki\/File:P\.png"><\/figure>\n<p>Lead\.<\/p>$/);
   });
 
   it("splits an article at its headings into a section tree", () => {
@@ -408,11 +472,107 @@ describe("article", () => {
   it("reads an article cached before the flag existed as not a disambiguation page", async () => {
     const articles = join(dir, "wiki-cache", "en", "articles");
     mkdirSync(articles, { recursive: true });
-    const old = { title: "Old", pageId: 9, revisionId: 10, lead: "<p>Old.</p>", sections: [] };
+    const old = { title: "Old", pageId: 9, revisionId: 10, lead: "<p>Old.</p>", sections: [], sanitiser: 2 };
     writeFileSync(join(articles, createHash("sha1").update("Old|0").digest("hex") + ".json"), JSON.stringify({ v: old, exp: clock + 1000 }));
     const { w, calls } = client(handler);
     expect(await w.article("Old")).toMatchObject({ ok: true, cached: true, value: { title: "Old", disambiguation: false } });
     expect(calls.length).toBe(0);
+  });
+});
+
+describe("an article cached by an older sanitiser", () => {
+  const handler: Handler = (url) =>
+    url.searchParams.get("action") === "parse"
+      ? json({ parse: { title: "Pictured", pageid: 9, revid: 11, text: `<figure><a href="/wiki/File:P.jpg" class="mw-file-description"><img src="//upload.wikimedia.org/p.jpg" width="250" height="200"></a><figcaption>A picture</figcaption></figure><p>Now with pictures.</p>` } })
+      : defaultHandler(url);
+  const cacheOld = () => {
+    const articles = join(dir, "wiki-cache", "en", "articles");
+    mkdirSync(articles, { recursive: true });
+    // Written before pictures were kept: no sanitiser version, no media.
+    const old = { title: "Pictured", pageId: 9, revisionId: 10, lead: "<p>Before pictures.</p>", sections: [] };
+    writeFileSync(join(articles, createHash("sha1").update("Pictured|0").digest("hex") + ".json"), JSON.stringify({ v: old, exp: clock + 3 * 24 * 3600 * 1000 }));
+  };
+
+  it("is read again, though still in date, so its pictures appear at once; then served from the cache", async () => {
+    cacheOld();
+    const { w, calls } = client(handler);
+    const a = await w.article("Pictured");
+    expect(a).toMatchObject({ ok: true, cached: false, value: { revisionId: 11 } });
+    expect(a.ok && a.value.lead).toMatch(/^<figure><img src="\/api\/wiki\/media\?u=https%3A%2F%2Fupload\.wikimedia\.org%2Fp\.jpg"/);
+    expect(calls.length).toBe(1);
+    // A new client (a restarted server) reads it from the disk, as the current sanitiser made it.
+    const again = client(() => {
+      throw new Error("no request expected");
+    });
+    expect(await again.w.article("Pictured")).toMatchObject({ ok: true, cached: true, value: { revisionId: 11 } });
+    expect(again.calls.length).toBe(0);
+  });
+
+  it("is still served, marked stale, while Wikipedia cannot be reached", async () => {
+    cacheOld();
+    const { w } = client(() => {
+      throw new TypeError("fetch failed");
+    });
+    expect(await w.article("Pictured")).toMatchObject({ ok: true, cached: true, stale: true, value: { lead: "<p>Before pictures.</p>" } });
+  });
+});
+
+describe("pictures", () => {
+  const still = "https://upload.wikimedia.org/p.jpg";
+  const handler: Handler = (url) => {
+    if (url.hostname === "upload.wikimedia.org") return new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "content-type": "image/png" } });
+    if (url.searchParams.get("action") === "parse")
+      return json({ parse: { title: "Pictured", pageid: 9, revid: 11, text: `<figure><a href="/wiki/File:P.jpg" class="mw-file-description"><img src="//upload.wikimedia.org/p.jpg" width="250" height="200"></a></figure><p>t</p>` } });
+    return defaultHandler(url);
+  };
+
+  it("are read only once an article served here shows them, only from upload.wikimedia.org, with the client's User-Agent", async () => {
+    const { w, calls } = client(handler, { contact: "someone@example.org", mediaSpacingMs: 0 });
+    expect(await w.media(still)).toMatchObject({ ok: false, status: 404 });
+    expect(calls.length).toBe(0);
+    await w.article("Pictured");
+    expect(await w.media(still)).toMatchObject({ ok: true, type: "image/png" });
+    const req = calls[calls.length - 1];
+    expect(req.url.href).toBe(still);
+    expect(new Headers(req.headers).get("user-agent")).toBe("Explicata/0.1 (someone@example.org)");
+    // Never robots.txt, never another host, never plain http, even when named in an article.
+    expect(calls.some((c) => c.url.pathname === "/robots.txt")).toBe(false);
+    expect(await w.media("https://evil.example/p.jpg")).toMatchObject({ ok: false, status: 404 });
+    expect(await w.media("http://upload.wikimedia.org/p.jpg")).toMatchObject({ ok: false, status: 404 });
+  });
+
+  it("are asked for at most two at a time, spaced apart, and not at all for a while after a 429", async () => {
+    let active = 0;
+    let most = 0;
+    let n = 0;
+    let told = false;
+    let afterTold = 0;
+    const starts: number[] = [];
+    const urls = Array.from({ length: 6 }, (_, i) => `https://upload.wikimedia.org/p${i}.jpg`);
+    const text = urls.map((u, i) => `<figure><a href="/wiki/File:P${i}.jpg" class="mw-file-description"><img src="${u.slice(6)}" width="250" height="200"></a></figure>`).join("") + "<p>t</p>";
+    const { w } = client(async (url) => {
+      if (url.searchParams.get("action") === "parse") return json({ parse: { title: "Many", pageid: 9, revid: 11, text } });
+      if (url.hostname !== "upload.wikimedia.org") return defaultHandler(url);
+      starts.push(clock);
+      if (told) afterTold++;
+      active++;
+      most = Math.max(most, active);
+      await new Promise((r) => setTimeout(r, 5));
+      active--;
+      if (++n === 2) {
+        told = true;
+        return new Response("slow down", { status: 429, headers: { "retry-after": "60" } });
+      }
+      return new Response(new Uint8Array([1]), { headers: { "content-type": "image/png" } });
+    });
+    await w.article("Many");
+    const got = await Promise.all(urls.map((u) => w.media(u)));
+    expect(most).toBeLessThanOrEqual(2);
+    // Anonymous: each waits its turn, a second after the one before.
+    expect(slept.filter((ms) => ms >= 1000).length).toBeGreaterThanOrEqual(starts.length - 1);
+    // Once told to wait 60 s (longer than a read may wait), nothing more is asked (but one already on its way): the rest are refused without a request.
+    expect(afterTold).toBeLessThanOrEqual(1);
+    expect(got.filter((r) => !r.ok && /asked for fewer requests/.test((r as { message: string }).message)).length).toBeGreaterThanOrEqual(3);
   });
 });
 

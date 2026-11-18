@@ -40,6 +40,9 @@ use on their own machine.
 | `EX_LIBRARY` | `library` | Starter trees (`.md` files in the text format), written into the first library when `EX_DATA` is empty. |
 | `EX_USER` | your login name | The name on commits the server makes for you (the page lets you change yours with `/user`). |
 | `EX_WIKI` | `live` | `mock`: built-in test articles, no network (the browser tests); `off`: every `/api/wiki/*` route answers 503. |
+| `EX_PAGES` | `live` | Web pages opened from a link (`/api/page/*`): `mock`: built-in test pages, no network (the browser tests); `off`: every route answers 503. Only a page you open is read, robots.txt is honoured, and the text is cached under `EX_DATA/page-cache/`, never in a library (docs/pages.md). |
+| `EX_PAGES_ARRANGE` | `on` when a model is configured | `off`: `s` on a web page (a model's summary, and sections for a page divided only by length) is refused. |
+| `EX_PAGE_CALLS` | `20` | Model calls a day (UTC) for arranging web pages, for the whole server, counted in `EX_DATA/page-calls.json`. Pages are also not arranged while the plan's limits are nearly used. |
 | `EX_HOSTS` | (none) | Extra host names the dev server answers to, comma-separated. `localhost` and `*.ts.net` (Tailscale) are always allowed. |
 | `EX_WIKI_LANG` | `en` | Which Wikipedia. |
 | `EX_WIKI_CONTACT` | unset | An email address, an `https://` URL or `User:Name` for the User-Agent of Wikipedia requests. Without it requests are spaced 6.5 s apart (the page says so once, the first time it is slow); with it, 1 s. Nothing else about you is sent. |
@@ -188,8 +191,9 @@ Press `?` for every key. The short version:
   in a pane that is not text, a row or a link makes it the active pane; a click anywhere else, or
   Esc, clears a selection. Mouse resting on a pane that is cut off for any reason (covered across
   or down, too small a share of its column, past its foot): after a moment it peeks out whole over
-  its neighbours, its column across and the pane down its column, as tall as its text needs, and
-  stays out while the pointer is on it (the wheel scrolls it); a click makes it the active pane. A
+  its neighbours, its column across and the pane down its column, as tall as its text needs (a pane
+  longer than its column: the column less a tab for each other pane, clear of their tabs; one shown
+  that tall already does not peek down its column), and stays out while the pointer is on it (the wheel scrolls it); a click makes it the active pane. A
   pane's grip (the band above its title, by the pin and x, shown when pointed at) or its tab drags
   it up or down its column; Esc cancels; `Alt+Shift+k` `Alt+Shift+j` (or the pane menu's Move this
   pane up and down) move the active pane a place; the column keeps that order, and a pane opened
@@ -216,7 +220,7 @@ Press `?` for every key. The short version:
 - **Curves.** A curve runs from the words, row or link each pane was opened from into the rule under
   the pane's title, and draws that rule, and a link's underline too, so link, curve and rule are one
   hairline on device pixels. Curves pass over the panes' edges and under the selection bar and the
-  menus; a pane peeking out covers the curves that are not its own; the focused branch's is drawn stronger. Where the title does not show (the pane
+  menus; a pane peeking out covers the curves that are not its own (out of a column peeking too, that column's other panes' as well); the focused branch's is drawn stronger. Where the title does not show (the pane
   folded to its tab, or scrolled past it), the curve runs into the tab's foot instead; out of a
   folded pane whose source is out of sight, it leaves from the end of that pane's tab foot. A source
   scrolled or covered out of sight in a pane that still shows is pointed at: the curve is dotted
@@ -251,11 +255,41 @@ Press `?` for every key. The short version:
   then the article in full (or the node's or page's card). `h` returns to the words.
 - Hovering linked words, or landing on them with `Tab`, previews the target. `Enter` opens it: in
   panes in the next pane; in the column a preview first, then the node (Back returns) or the
-  article as a page of its own. `L` opens a node's own target; a web page opens in a new tab.
+  article as a page of its own. `L` opens a node's own target (in panes, to the right of the
+  node's own pane when that is open). A section that has a target and nothing else of its own (no
+  text, no sections) is shown as its article or page: opened, its pane reads as the article's own
+  (in the column, the article opens under its row), and its head takes the section's keys too
+  (`r` `w` `D`, and `a` or `c`, which make it a section like any other again).
+- A **web page** opens the same way, read once by the server and kept in its cache: its lead, then
+  its sections as rows (by its headings, else its numbered or bold paragraphs, else in parts by
+  length), on an amber ground under ↗ and its site, with its author and date where it gives them
+  and where it is from at its foot. A page that cannot be read here (robots.txt, a bot check, a PDF,
+  a page that needs JavaScript) says why and offers the original. `W` opens the original in a new
+  tab. An address on wikipedia.org opens as the article. Nothing is written on a page's text: its
+  annotations are not kept (docs/pages.md).
+- On a web page, `s` asks the model (only then, within `EX_PAGE_CALLS` calls a day) for a short
+  summary, shown above the page's opening and marked as the model's, and, for a page with no
+  headings that was divided by length, for sections of its choosing; a page with headings keeps
+  them. Pressed again on the same text it costs nothing. `R` reads the page again (it is otherwise
+  kept as first read): unchanged text keeps what the model made; a page that no longer answers
+  keeps the copy read before, marked stale. Both are in the page's menu too. A link's card shows
+  the page's title, author, date and first sentence once the page has been read, and choosing an
+  address in the link picker (`w`) keeps the page's title in the link.
 - An article is shown as a tree, so the same keys work: its sections are rows, `Tab` walks its
   links, `Enter` opens one. A disambiguation page lists its senses. `W` opens the article on
-  wikipedia.org. Article text is set apart (sans-serif, tinted, under a W) and carries its licence
-  line.
+  wikipedia.org. Article text is set apart (sans-serif, tinted, under a W), at the size of your own
+  text, and carries its licence line.
+- **Pictures and videos** in an article or a web page are shown in it, never wider than its pane,
+  each with its caption under it. Every picture comes through the app's own server (it is not
+  an open proxy: only pictures in a page or article read here), so opening a page loads nothing
+  from anywhere else. A click on a web page's picture opens the picture itself in a new tab; on a
+  Wikipedia picture, its File page, where its author and licence are (that is its credit). A video
+  is a still with a play mark (YouTube's thumbnail for a YouTube video, through the same server),
+  and nothing plays or loads from elsewhere until you click it: then a web page's or Wikipedia's
+  video file plays straight from where it is, and a YouTube or Vimeo video in YouTube's
+  privacy-enhanced player or Vimeo's, in a sandboxed frame. Any other embedded frame is a link out.
+  The production page's Content-Security-Policy (`server/csp.ts`) allows exactly that: images from
+  the app itself, video files over https, frames from those two players' addresses only.
 - Under an open node, **Linked from** lists what links to it; under an article, **Mentioned in**
   lists the library's nodes that link to it.
 - **Notes on an article.** In an article's text the keys are a node's: `i` selects a sentence, then
@@ -401,6 +435,8 @@ EX_DATA/libraries/<id>/links/pending.json    its link suggestions, the reviewer'
 EX_DATA/libraries/<id>/vectors/nodes.*       its sections as vectors (derived)
 EX_DATA/libraries/.deleted/<id>-<time>/      a deleted library, moved aside whole
 EX_DATA/wiki-cache/                          Wikipedia answers (derived, shared)
+EX_DATA/page-cache/                          web pages read, one snapshot each (derived, shared)
+EX_DATA/page-calls.json                      model calls made today for arranging pages
 EX_DATA/models/                              the embedding model (shared)
 EX_DATA/server.lock                          the running server's pid
 ```
@@ -415,6 +451,7 @@ library first and is given only that library's data.
 | `/l/<id>` | a library's root |
 | `/l/<id>/n/<node id>` | any other node of it (by its id alone, so a moved or renamed node is still found) |
 | `/l/<id>/w/<lang>/<title>` | a Wikipedia article as a page of its own (the column) |
+| `/l/<id>/u/<address>` | a web page as a page of its own (the column), its address encoded whole |
 
 The address follows the focus; changing the page (hoisting, stepping out) or jumping makes a
 history entry. An address that names nothing shows the library's root; one without a library
@@ -528,7 +565,10 @@ Node ids are the library's, so one batch of ops can work anywhere in it.
 | `GET /api/l/<id>/nodes/<node>/tree[/<branch>]` | one node and everything under it, with their conflicts |
 | `GET /api/l/<id>/nodes/<node>/export[/<branch>]` | the same in the text format; header `x-skipped` counts what was left out |
 | `POST /api/l/<id>/nodes/<node>/import?name=file.md` | body: the file (2 MB at most), read in as the node's last child on main; 422 with `problems` if it does not parse |
-| `GET /api/wiki/…` | Wikipedia through the server's cache: `summary`, `article` (`&full=1` for every section), `senses`, `suggest` (server/wikiRoutes.ts) |
+| `GET /api/wiki/…` | Wikipedia through the server's cache: `summary`, `article` (`&full=1` for every section), `senses`, `suggest`, `media?u=` (a picture on upload.wikimedia.org that an article served here shows; same-origin requests only) (server/wikiRoutes.ts) |
+| `GET /api/page/…` | a web page through the server's cache: `article?url=`, `summary?url=` (`&cached=1`: never read the page), `media?u=` (an image a cached page shows, or a video's still); same-origin requests only (server/pageRoutes.ts) |
+| `POST /api/page/reload` `{ url }` | read the page again: the new copy, or the last one with `stale: <why>` when it no longer answers |
+| `POST /api/page/arrange` `{ url }` | a model's summary of a cached page, and sections for one divided by length: `{ article, called, arranged, note? }`; refused with `{ reason, message }` (404 not read here, 422 too long, 429 the day's calls or the plan, 502 the call failed, 503 no model or `EX_PAGES_ARRANGE=off`) |
 | `POST /api/l/<id>/links/scan` `{ node, review? }` | scan a node and record what is found as pending; with `review`, the model reviewer judges what is new, and the approved links are handed back to be made |
 | `GET /api/l/<id>/links/pending?node=<node>&subtree=1&tier=auto\|suggest&all=1&claim=1` | pending suggestions with the context a reviewer needs; `all` with every determination; `claim` hands out the approved links no page has made |
 | `POST /api/l/<id>/links/accept` / `reject` `{ ids, author? }` | link them in one commit, or record them as declined |
@@ -578,7 +618,11 @@ npm run fixtures render DIR && npm run fixtures check DIR
 - Two replicas linking the same words both keep their link.
 - In history, the top-level nodes a commit touched are placed by where its nodes are now: a commit that
   only deleted names none.
-- Articles are shown without images, references or infoboxes.
+- Articles are shown without references or infoboxes (an infobox's picture is shown at the top of
+  the lead). Wikipedia's pictures are credited by a link to each one's File page (a click on it),
+  not by a line under it.
+- YouTube's player is framed with `referrerpolicy="no-referrer"`. YouTube may refuse to play an
+  embed that sends no referrer; this was not checked against YouTube (docs/pages.md §11).
 - Web research: that queries never carry the library's text rests on the agent's instructions,
   not a check, and a cited source is checked to have been retrieved, not to say what was written.
 

@@ -71,8 +71,10 @@ const quote = (s: string, n = 60) => {
 export interface SelCtx {
   /** The words, for Copy and the menu's head. */
   text: string;
-  /** In Wikipedia's text: no linking by hand, no Related. */
+  /** In Wikipedia's text (or a web page's): no linking by hand, no Related. */
   article: boolean;
+  /** In a web page's text: nothing is written on it, so no lenses either. */
+  web?: boolean;
   /** A link on exactly these words: where it goes. */
   link?: "wiki" | "node" | "url";
   /** A note (with text of its own) on exactly these words. */
@@ -100,6 +102,7 @@ function lenses(act: Act): Item[] {
 
 /** The selection bar: the lenses, then linking (not in an article). Its ⋯ opens `selectionEntries`. */
 export function barItems(c: SelCtx, act: Act): Item[][] {
+  if (c.web) return [[key(act, c.link ? "Open the link" : "Open the original", c.link ? "Enter" : "W", { short: c.link ? "open" : "original" })]];
   const ls = lenses(act);
   return c.article ? [ls] : [ls, [key(act, "Link to…", "w", { short: "link…" })]];
 }
@@ -114,14 +117,15 @@ export function selectionEntries(c: SelCtx, act: Act): Entry[] {
     c.link && key(act, c.panes && !c.pages ? "Open the link beside" : "Open the link", "Enter"),
     c.link && c.panes && key(act, "Open it in place", "Enter", { keyText: "⇧⏎", shift: true, sub: "instead of the pane there" }),
     c.link === "wiki" && key(act, "Open on wikipedia.org", "W"),
+    (c.link === "url" || (c.web && !c.link)) && key(act, "Open the original", "W", { sub: "in a new tab" }),
     c.note && key(act, "Open the note", "Enter"),
     c.suggestion && key(act, `Link to ${c.suggestion}`, "y", { sub: "a suggested link" }),
     c.suggestion && key(act, "Decline the suggestion", "n"),
     (c.link || c.note) && !c.article && key(act, c.link ? "Retarget…" : "Link it…", "w"),
-    (c.link || c.note) && key(act, c.link && !c.note ? "Remove the link" : "Delete the note", "D", c.link && !c.note ? { sub: "and do not link these words again here" } : {}),
+    (c.link || c.note) && !c.web && key(act, c.link && !c.note ? "Remove the link" : "Delete the note", "D", c.link && !c.note ? { sub: "and do not link these words again here" } : {}),
     c.link && c.note && !c.article && { t: "item", label: "Remove the link, keep the note", keyText: "/unlink", run: () => act.command("/unlink") },
     SEP,
-    ...lenses(act),
+    ...(c.web ? [] : lenses(act)),
     SEP,
     !c.article && !c.link && !c.note && key(act, "Link to…", "w"),
     related.length > 0 && head("Link to a related section"),
@@ -196,16 +200,30 @@ export function nodeEntries(c: NodeCtx, act: Act): Entry[] {
 interface PaneCtx {
   /** A node's pane: its node; none for an article's. */
   node?: NodeCtx;
-  /** An article's pane: its title. */
+  /** An article's pane: its title. With `node`, the pane of a section shown as its article: the node's items, then the article's. */
   article?: string;
+  /** The article is a web page (its original is at its own address, not on wikipedia.org). */
+  web?: boolean;
+  /** A web page: whether a model may arrange it here (false: the item is shown, disabled). */
+  arrange?: boolean;
   pinned: boolean;
   /** Whether it can move up, or down, its column (another pane is above it, or below). */
   above?: boolean;
   below?: boolean;
 }
 
+/** What can be done to a web page itself: open the original, have a model arrange it (s), read it again (R). */
+export function webPageEntries(act: Act, arrange = true): Entry[] {
+  return [
+    key(act, "Open the original", "W", { sub: "in a new tab" }),
+    key(act, "Arrange with a model", "s", arrange ? { sub: "a summary; sections for a page divided by length" } : { disabled: true, sub: "no model, or turned off on this server" }),
+    key(act, "Read it again", "R", { sub: "Reload: the page is otherwise kept as first read" }),
+  ];
+}
+
 export function paneEntries(c: PaneCtx, act: Act): Entry[] {
-  const own = c.node ? nodeEntries(c.node, act) : [head(c.article ?? "Wikipedia"), key(act, "Open on wikipedia.org", "W")];
+  const page = c.web ? webPageEntries(act, c.arrange !== false) : [key(act, "Open on wikipedia.org", "W")];
+  const own = c.node ? [...nodeEntries(c.node, act), ...(c.article !== undefined ? [SEP, head(c.article), ...page] : [])] : [head(c.article ?? "Wikipedia"), ...page];
   return tidy([
     ...own,
     SEP,
@@ -227,13 +245,13 @@ export function paneEntries(c: PaneCtx, act: Act): Entry[] {
   ]);
 }
 
-/** A row of an article (a section, a sense): open it. */
-export function articleRowEntries(title: string, panes: boolean, act: Act, pages = false): Entry[] {
+/** A row of an article (a section, a sense) or of a web page: open it; on a web page, what can be done to the page. */
+export function articleRowEntries(title: string, panes: boolean, act: Act, pages = false, web = false, arrange = true): Entry[] {
   return tidy([
     head(title),
     key(act, panes && !pages ? "Open beside" : "Open", "Enter"),
     panes && key(act, "Open in place", "Enter", { keyText: "⇧⏎", shift: true, sub: "instead of the pane there" }),
-    key(act, "Open on wikipedia.org", "W"),
+    ...(web ? [SEP, ...webPageEntries(act, arrange)] : [key(act, "Open on wikipedia.org", "W")]),
   ]);
 }
 

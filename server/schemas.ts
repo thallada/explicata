@@ -17,4 +17,14 @@ export const schemas: Record<SchemaName, z.ZodType> = {
       }),
     ),
   }),
+  // No length limits: a slightly long summary or title is clipped afterwards, not refused.
+  arrange: z.object({
+    summary: z.string().describe("Two to four plain sentences on what the page is about."),
+    sections: z.array(
+      z.object({
+        title: z.string().describe("A short title for the section, in the page's own language."),
+        start: z.number().describe("The number of the unit the section starts at."),
+      }),
+    ),
+  }),
 };

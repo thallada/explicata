@@ -10,7 +10,7 @@
  */
 import { UndoManager } from "loro-crdt";
 import {
-  Doc, OpError, SYSTEM_ORIGIN, ancestors, descendants, isLibraryRoot, isLink, isStale, label, notesOf, sections,
+  Doc, OpError, SYSTEM_ORIGIN, ancestors, descendants, isLibraryRoot, isLink, isStale, label, linkOnly, notesOf, sections,
   staleness, topOf, tops, type NodeId, type Op, type Snap,
 } from "../core/model";
 import { FormatError, serializeDoc } from "../core/format";
@@ -23,9 +23,10 @@ import {
 import { clip, formFor, plain, rangeAt, sentences, slugify, words, type Form, type Range } from "../core/text";
 import { applyLinks, linkIndex, nodeRef, ownerSection, resolveNode } from "../core/links";
 import { annotationsOf, articleNodes, inArticles, makeAnchor, reanchor, type ArticleKey } from "../core/article";
-import { describeTarget, formatTarget, hostOf, parseTargetLoose, wikiKey, type Ref } from "../core/ref";
+import { asOpened, describeTarget, formatTarget, hostOf, parseTargetLoose, wikiKey, type Ref } from "../core/ref";
 import { article as wikiArticle, articleText, cachedExtract, sectionPath, sectionsUnder, sectionTexts, configureWiki, sensesOf as wikiSenses, wikiUrl, type Article, type WikiConfig } from "./wiki";
 import type { ArticleText } from "./articleText";
+import { arrangePage, article as webArticle, canArrange, configurePages, knownArticle, reloadPage, sectionsUnder as webSectionsUnder, siteOf, webKey, type PagesConfig } from "./web";
 import { LENSES } from "../llm/prompts";
 import {
   cascade, commitArticleNote, commitExpansion, deepen, reconcile, resolveConflicts, runAgent, scanContradictions, streamArticleNote, streamExpansion,
@@ -55,11 +56,13 @@ export type Mode = "normal" | "edit" | "command" | "history" | "help" | "jump" |
  * A pane of the panes view. The panes are a tree of forks (forks.ts) whose focused branch is the
  * trail: it starts with the path down from the top node, and a link followed from a pane opens its
  * target in the next pane, so it may hold a node from anywhere in the library, a Wikipedia article or a section
- * of one. `from` is where a jump was made from, which h returns to.
+ * of one, or a web page or a section of one (`sec` is the page's own id for it: "h3", "p2", "c1").
+ * `from` is where a jump was made from, which h returns to.
  */
 export type PaneRef =
   | { kind: "node"; id: NodeId; from?: Back }
-  | { kind: "wiki"; title: string; lang: string; sec?: number; from?: Back };
+  | { kind: "wiki"; title: string; lang: string; sec?: number; from?: Back }
+  | { kind: "web"; url: string; sec?: string; from?: Back };
 export interface Back {
   focus: Focus;
   aux: Aux | null;
@@ -73,24 +76,50 @@ export const kidClass = (key: string) => {
   for (let i = 0; i < key.length; i++) h = ((h * 33) ^ key.charCodeAt(i)) >>> 0;
   return `k${h.toString(36)}`;
 };
-/** Whether two panes show the same thing (a node, or an article or one of its sections). */
-const sameRef = (a: PaneRef, b: PaneRef): boolean =>
-  a.kind === b.kind && (a.kind === "node" ? a.id === (b as { id: NodeId }).id : a.title === (b as { title: string }).title && a.sec === (b as { sec?: number }).sec);
-/** What a pane shows, as a key: `n:<node id>`, or `w:<title>` with `#<section>`. A link's target has the same key as the pane it opens. */
-export const refKey = (p: PaneRef): string => (p.kind === "node" ? `n:${p.id}` : `w:${p.title}${p.sec !== undefined ? `#${p.sec}` : ""}`);
+/**
+ * What a pane shows, as a key: `n:<node id>`; `w:<title>` with `#<section>`; or `u:<address>` (as
+ * compared for sameness: no fragment, no trailing slash) with `#<section>`. A link's target has the
+ * same key as the pane it opens.
+ */
+export const refKey = (p: PaneRef): string => (p.kind === "node" ? `n:${p.id}` : p.kind === "web" ? webKey(p.url, p.sec) : `w:${p.title}${p.sec !== undefined ? `#${p.sec}` : ""}`);
+/** Whether two panes show the same thing (a node, an article or one of its sections, a web page or one of its sections). */
+const sameRef = (a: PaneRef, b: PaneRef): boolean => {
+  if (a.kind === "node" && b.kind === "node") return a.id === b.id;
+  if (a.kind === "wiki" && b.kind === "wiki") return a.title === b.title && a.sec === b.sec;
+  if (a.kind === "web" && b.kind === "web") return refKey(a) === refKey(b);
+  return false;
+};
 const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 const isPaneRef = (r: unknown): r is PaneRef => {
   const o = r as Record<string, unknown> | null;
-  return !!o && typeof o === "object" && ((o.kind === "node" && typeof o.id === "string") || (o.kind === "wiki" && typeof o.title === "string" && typeof o.lang === "string"));
+  if (!o || typeof o !== "object") return false;
+  if (o.kind === "node") return typeof o.id === "string";
+  if (o.kind === "wiki") return typeof o.title === "string" && typeof o.lang === "string";
+  return o.kind === "web" && typeof o.url === "string" && /^https?:\/\//i.test(o.url) && (o.sec === undefined || (typeof o.sec === "string" && /^[a-z]\d+$/.test(o.sec)));
 };
-/** A row of a Wikipedia view: its head (the lead), a section, a sense of a disambiguation page, a "Mentioned in" entry. */
-export type WRow = { t: "head" } | { t: "sec"; id: number } | { t: "sense"; i: number } | { t: "back"; i: number };
 /**
- * Focus on something that is not a library node: a row of a Wikipedia view (`host` says which:
- * `p<i>` the article in pane i, `n<id>` the article under a node, `col` the article page of the
- * column), or words in the text that row shows (a grain and a range, as in a node's body: a
+ * A row of an article view: its head (the lead), a section, a sense of a disambiguation page, a
+ * "Mentioned in" entry. A section's id is a number in a Wikipedia article, a string ("h3") in a web page.
+ */
+export type WRow = { t: "head" } | { t: "sec"; id: number | string } | { t: "sense"; i: number } | { t: "back"; i: number };
+/** A section row's id as a data attribute gives it back: a web page's ids start with a letter. */
+export const rowId = (s: string | undefined): number | string => (s && /^\d+$/.test(s) ? Number(s) : (s ?? ""));
+/**
+ * What an article view shows (Store.viewHost): a Wikipedia article or a web page, where it starts
+ * (`sec`: the lead, 0 or null, or a section), and how. `embedded`: under that node; `nested`: its
+ * sections open in place (the column) rather than as panes; `mentions`: "Mentioned in" is listed.
+ */
+export type ViewHost =
+  | { src: "wiki"; title: string; lang: string; sec: number; embedded?: NodeId; nested?: boolean; mentions?: boolean }
+  | { src: "web"; url: string; sec: string | null; embedded?: NodeId; nested?: boolean };
+/**
+ * Focus on something that is not a library node: a row of an article view, Wikipedia's or a web
+ * page's (`host` says which view: `p<i>` the one in pane i, `f<id>` one in a pane off the focused
+ * branch, `n<id>` the one under a node, `col` the column's article page; Store.viewHost says what
+ * it shows), or words in the text that row shows (a grain and a range, as in a node's body: a
  * sentence, words, a link or an annotation's words), a node's target, or a "Linked from" row. The
- * node focus stays where it was, so leaving the aux focus returns to it.
+ * node focus stays where it was, so leaving the aux focus returns to it. `kind: "wiki"` is any
+ * article view; what only Wikipedia's text allows (annotations) asks Store.wikiHost.
  */
 export type Aux =
   | { kind: "wiki"; host: string; row: WRow; grain?: "sentence" | "word"; range?: Range }
@@ -98,11 +127,12 @@ export type Aux =
   | { kind: "back"; of: NodeId; index: number };
 /** A row in a pane or in the column: a section, or an aux row. */
 export type Row = { node: NodeId } | { aux: Aux };
-/** The column's article page, opened from a link, with the way back. */
+/** The column's article page, opened from a link, with the way back: a Wikipedia article, or with `url` a web page. */
 export interface ColWiki {
   title: string;
   lang: string;
-  stack: { title: string; lang: string; aux: Aux | null }[];
+  url?: string;
+  stack: { title: string; lang: string; url?: string; aux: Aux | null }[];
   back: { focus: Focus; hoist: NodeId | null; aux: Aux | null };
 }
 /** The link picker: what is typed, and what it applies to. */
@@ -116,6 +146,8 @@ export interface Picker {
 }
 
 export const sameAux = (a: Aux | null, b: Aux | null): boolean => JSON.stringify(a) === JSON.stringify(b);
+/** Why the keys that write (e d y x c :, D) do nothing on a web page's text. */
+const WEB_TEXT = "A web page's text is shown as it is: notes on its words are not kept here (annotations are for Wikipedia articles and your own text). Its links open with Enter; W opens the original.";
 /** Page layout: one column with a margin, or panes side by side. Auto picks panes on wide windows. */
 export type View = "auto" | "column" | "panes";
 /** Where a fork's colour shows in the panes view: along its curves and title rules, across its panes' tops, down their left edges, or nowhere. */
@@ -325,8 +357,8 @@ class Store {
   }
   aux: Aux | null = null;
   colWiki: ColWiki | null = null;
-  /** Sections of the column's article page that are open. */
-  colOpen = new Set<number>();
+  /** Sections open in place in the column (its article page, an article under a node), as `<host> <id>` (secOpen). */
+  colOpen = new Set<string>();
   /** Nodes whose article is unfolded beneath them in their pane. */
   expanded = new Set<NodeId>();
   picker: Picker | null = null;
@@ -496,7 +528,9 @@ class Store {
   continuesFrom(p: PaneRef | undefined, q: PaneRef | undefined): boolean {
     if (!p || !q || p.from) return false;
     if (p.kind === "node") return q.kind === "node" && this.snap.nodes[p.id]?.parent === q.id && this.snap.nodes[p.id].kind === "section";
-    return p.sec !== undefined && (q.kind === "wiki" ? q.title === p.title : this.targetOf(q.id)?.kind === "wiki");
+    if (p.sec === undefined) return false;
+    if (q.kind === "node") return this.viewHost(`n${q.id}`)?.src === (p.kind === "wiki" ? "wiki" : "web");
+    return p.kind === "wiki" ? q.kind === "wiki" && q.title === p.title : q.kind === "web" && webKey(q.url) === webKey(p.url);
   }
 
   /** Pane i of the focused branch holds a focus (see holdsIn); a continuation's head only while it is the active pane. */
@@ -514,7 +548,7 @@ class Store {
     const s = this.snap;
     const n = s.nodes[f.node];
     // An annotation is held by the pane showing its article.
-    if (p && n && inArticles(s, f.node)) return this.shows(p.kind === "wiki" ? host : `n${p.id}`, f.node);
+    if (p && n && inArticles(s, f.node)) return this.shows(p.kind !== "node" ? host : `n${p.id}`, f.node);
     if (!p || p.kind !== "node" || !n) return false;
     if (f.grain !== "node" || n.kind === "note") return ownerSection(s, f.node) === p.id || f.node === p.id;
     if (f.node === p.id) return head || !this.continuesFrom(p, q);
@@ -538,7 +572,7 @@ class Store {
   syncTrail() {
     if (!this.panes || !this.session) return;
     const s = this.snap;
-    let f = prune(this.forest, (p) => p.kind === "wiki" || !!s.nodes[p.id]);
+    let f = prune(this.forest, this.livePane);
     if (!rooted(f, { kind: "node", id: this.top }, sameRef)) f = withBranch(f, this.pathRefs(), sameRef);
     this.forest = f;
     this.paneAt = Math.max(0, Math.min(this.paneAt, this.trail.length - 1));
@@ -556,6 +590,17 @@ class Store {
     const at = this.trail.findIndex((_, i) => this.holds(i, this.focus));
     this.paneAt = at >= 0 ? at : this.trail.length - 1;
   }
+
+  /**
+   * Whether a pane still shows something: its node exists; a web page's section is still in the
+   * page (once the page is here: a section id it no longer has is closed, not shown as the lead).
+   */
+  private livePane = (p: PaneRef): boolean => {
+    if (p.kind === "node") return !!this.snap.nodes[p.id];
+    if (p.kind === "wiki" || p.sec === undefined) return true;
+    const a = knownArticle(p.url);
+    return a?.state !== "ready" || a.value.sections.some((x) => x.id === p.sec);
+  };
 
   /**
    * Open something to the right of pane i. If it is already open there, as any fork, that fork is
@@ -616,10 +661,11 @@ class Store {
     return new Map(n.kids.map((k, j) => [refKey(k.ref), { picked: j === n.pick, many: n.kids.length > 1 }]));
   }
 
-  /** A link's target by the key of the pane it opens (refKey); none for a web page or a node that is gone. */
-  targetKey(r: Ref): string | undefined {
+  /** A link's target by the key of the pane it opens (refKey); none for a node that is gone. */
+  targetKey(target: Ref): string | undefined {
+    const r = asOpened(target);
     if (r.kind === "wiki") return `w:${r.title}`;
-    if (r.kind !== "node") return undefined;
+    if (r.kind === "url") return webKey(r.url);
     const id = resolveNode(this.snap, r);
     return id ? `n:${id}` : undefined;
   }
@@ -711,8 +757,7 @@ class Store {
     if (!here.kids.length) return this.say("Nothing opened from this pane yet: Enter or l on a row or link opens it to the right.");
     const f = this.focus;
     const a = this.aux;
-    const key =
-      a?.kind === "wiki" && a.row.t === "sec" ? refKey({ kind: "wiki", title: this.wikiHost(a.host)?.title ?? "", lang: "", sec: a.row.id }) : !a && f.grain === "node" ? refKey({ kind: "node", id: f.node }) : this.selectionTargetKey();
+    const key = a?.kind === "wiki" && a.row.t === "sec" ? this.secKey(a.host, a.row.id) : !a && f.grain === "node" ? refKey({ kind: "node", id: f.node }) : this.selectionTargetKey();
     const k = here.kids.find((c) => refKey(c.ref) === key) ?? here.kids[here.pick];
     this.goPane(k.id);
   }
@@ -765,8 +810,8 @@ class Store {
     if (ref.from && ref.from.pane === i) return this.restore(ref.from);
     this.paneAt = i;
     if (ref.kind === "node" && q?.kind === "node" && this.continuesFrom(ref, q) && this.snap.nodes[ref.id]) return this.setFocus({ node: ref.id, grain: "node" });
-    if (ref.kind === "wiki" && ref.sec !== undefined && q) {
-      const host = q.kind === "wiki" ? `p${i}` : `n${q.id}`;
+    if (ref.kind !== "node" && ref.sec !== undefined && q) {
+      const host = q.kind !== "node" ? `p${i}` : `n${q.id}`;
       return this.setFocus(q.kind === "node" ? { node: q.id, grain: "node" } : this.focus, { kind: "wiki", host, row: { t: "sec", id: ref.sec } });
     }
     this.land(i);
@@ -841,14 +886,14 @@ class Store {
   paneRows(i: number): Row[] {
     const p = this.trail[i];
     if (!p) return [];
-    if (p.kind === "wiki") return this.wikiRows(`p${i}`).map((row) => ({ aux: { kind: "wiki", host: `p${i}`, row } }));
+    if (p.kind !== "node") return this.wikiRows(`p${i}`).map((row) => ({ aux: { kind: "wiki", host: `p${i}`, row } }));
     const s = this.snap;
     if (!s.nodes[p.id]) return [];
     const rows: Row[] = sections(s, p.id).map((node) => ({ node }));
     return [...rows, ...this.auxRows(p.id)];
   }
 
-  /** Under a node: its target (in panes a Wikipedia target is the article itself, unfolded on l), then "Linked from". */
+  /** Under a node: its target (in panes the article itself, unfolded on l, or shown at once for a section that is only a link), then "Linked from". */
   private auxRows(id: NodeId): Row[] {
     const r = this.targetOf(id);
     const rows: Row[] = [];
@@ -908,39 +953,92 @@ class Store {
   auxValid(a: Aux): boolean {
     if (a.kind !== "wiki") return !!this.snap.nodes[a.of];
     if (a.host === "col") return !!this.colWiki;
-    if (a.host.startsWith("p")) return this.trail[+a.host.slice(1)]?.kind === "wiki";
+    if (a.host.startsWith("p")) return (this.trail[+a.host.slice(1)]?.kind ?? "node") !== "node";
     if (a.host.startsWith("f")) return false;
     return !!this.snap.nodes[a.host.slice(1) as NodeId];
   }
 
   /**
-   * The article a Wikipedia host shows, and how. `p<i>` is the article pane at column i of the
-   * focused branch, `f<id>` an article pane off it (by its id in the tree of forks).
+   * What an article view shows, and how (see Aux for the hosts): a Wikipedia article or a web
+   * page. `p<i>` is the article pane at column i of the focused branch, `f<id>` an article pane off
+   * it (by its id in the tree of forks), `n<id>` the target under a node, `col` the column's page.
    */
-  wikiHost(host: string): { title: string; lang: string; sec: number; embedded?: NodeId; nested?: boolean; mentions?: boolean } | null {
-    if (host === "col") return this.colWiki ? { title: this.colWiki.title, lang: this.colWiki.lang, sec: 0, nested: true, mentions: true } : null;
+  viewHost(host: string): ViewHost | null {
+    if (host === "col") {
+      const c = this.colWiki;
+      if (!c) return null;
+      return c.url ? { src: "web", url: c.url, sec: null, nested: true } : { src: "wiki", title: c.title, lang: c.lang, sec: 0, nested: true, mentions: true };
+    }
     if (host.startsWith("p") || host.startsWith("f")) {
       const p = host.startsWith("p") ? this.trail[+host.slice(1)] : this.forkNode(+host.slice(1))?.node.ref;
-      return p?.kind === "wiki" ? { title: p.title, lang: p.lang, sec: p.sec ?? 0, mentions: p.sec === undefined } : null;
+      if (p?.kind === "web") return { src: "web", url: p.url, sec: p.sec ?? null };
+      return p?.kind === "wiki" ? { src: "wiki", title: p.title, lang: p.lang, sec: p.sec ?? 0, mentions: p.sec === undefined } : null;
     }
     const id = host.slice(1) as NodeId;
-    const r = this.targetOf(id);
+    const t = this.targetOf(id);
+    const r = t && asOpened(t);
     // In the column its sections open in place, as on the article page.
-    return r?.kind === "wiki" ? { title: r.title, lang: r.lang, sec: 0, embedded: id, nested: !this.panes } : null;
+    if (r?.kind === "url") return { src: "web", url: r.url, sec: null, embedded: id, nested: !this.panes };
+    return r?.kind === "wiki" ? { src: "wiki", title: r.title, lang: r.lang, sec: 0, embedded: id, nested: !this.panes } : null;
+  }
+
+  /** The Wikipedia article a host shows (viewHost), or null for a web page or nothing: what annotations, senses and "Mentioned in" need. */
+  wikiHost(host: string): Extract<ViewHost, { src: "wiki" }> | null {
+    const h = this.viewHost(host);
+    return h?.src === "wiki" ? h : null;
+  }
+
+  /** Whether an article view is a web page's. */
+  isWeb(host: string): boolean {
+    return this.viewHost(host)?.src === "web";
+  }
+
+  /** The key of the pane a section row of a view opens (refKey). */
+  secKey(host: string, id: number | string): string {
+    const h = this.viewHost(host);
+    if (!h) return "";
+    return h.src === "web" ? webKey(h.url, String(id)) : refKey({ kind: "wiki", title: h.title, lang: h.lang, sec: Number(id) });
   }
 
   /**
    * Whether the article under a node is folded to its summary. A section about an article opens on
    * its own text, with the article folded until l; a note's text is a commentary on the article, so
-   * the article is there in full beneath it.
+   * the article is there in full beneath it; a section that is only a link is shown as its article.
    */
   folded(id: NodeId | undefined): boolean {
-    return !!id && this.snap.nodes[id]?.kind === "section" && !this.expanded.has(id);
+    return !!id && this.snap.nodes[id]?.kind === "section" && !this.expanded.has(id) && !this.linkOnly(id);
   }
 
-  /** Whether a node shows its Wikipedia target as the article itself: always in a pane; in the column, under a note opened as a page. */
+  /**
+   * Whether a section is shown as its article (core linkOnly: a Wikipedia or web target, no text and
+   * no sections of its own): its pane reads as the article's, and in the column the article is
+   * under its row. Not while its text is being written, or written for it: then it is a node like any other.
+   */
+  linkOnly(id: NodeId): boolean {
+    if (!linkOnly(this.snap, id) || (this.edit?.node === id && this.edit.field === "body")) return false;
+    for (const p of this.pending.values()) if (p.node === id) return false;
+    return true;
+  }
+
+  /** A section shown as its article whose head the focus is on (in panes, that article is its pane): the keys that act on a node act on it there. */
+  get linkHead(): NodeId | null {
+    const a = this.aux;
+    if (a?.kind !== "wiki" || a.grain || a.row.t !== "head" || !a.host.startsWith("n")) return null;
+    const id = a.host.slice(1) as NodeId;
+    return this.linkOnly(id) ? id : null;
+  }
+
+  /** Whether a node shows its target, a Wikipedia article or a web page, as the article itself: always in a pane; in the column, under a note opened as a page, or under a section that is only a link. */
   articleUnder(id: NodeId): boolean {
-    return this.targetOf(id)?.kind === "wiki" && (this.panes || (id === this.top && this.snap.nodes[id].kind === "note"));
+    return !!this.viewHost(`n${id}`) && (this.panes || (id === this.top && this.snap.nodes[id].kind === "note") || this.linkOnly(id));
+  }
+
+  /** Whether a section of an article view is open in place (on the column's page, or under a node in the column). */
+  secOpen(host: string, id: number | string): boolean {
+    return this.colOpen.has(`${host} ${id}`);
+  }
+  openSec(host: string, id: number | string) {
+    this.colOpen.add(`${host} ${id}`);
   }
 
   /**
@@ -982,15 +1080,27 @@ class Store {
   }
 
   /**
-   * The rows of a Wikipedia view: its head, then its sections (in a pane, the sections directly
+   * The rows of an article view: its head, then its sections (in a pane, the sections directly
    * under what it shows, since a section opens as the next pane; on the column's page, nested and
-   * opened in place), a disambiguation page's senses, and "Mentioned in".
+   * opened in place), a disambiguation page's senses, and "Mentioned in" (a web page has neither).
    */
   wikiRows(host: string): WRow[] {
-    const h = this.wikiHost(host);
+    const h = this.viewHost(host);
     if (!h) return [];
     const rows: WRow[] = [{ t: "head" }];
     if (this.folded(h.embedded)) return rows;
+    if (h.src === "web") {
+      const a = webArticle(h.url);
+      if (a.state !== "ready") return rows;
+      const visit = (parent: string | null) => {
+        for (const x of webSectionsUnder(a.value, parent)) {
+          rows.push({ t: "sec", id: x.id });
+          if (h.nested && this.secOpen(host, x.id)) visit(x.id);
+        }
+      };
+      visit(h.sec);
+      return rows;
+    }
     const a = wikiArticle(h.title, h.lang);
     if (a.state === "ready") {
       if (a.value.disambiguation && h.sec === 0) {
@@ -1000,7 +1110,7 @@ class Store {
       const visit = (parent: number) => {
         for (const x of sectionsUnder(a.value, parent)) {
           rows.push({ t: "sec", id: x.id });
-          if (h.nested && this.colOpen.has(x.id)) visit(x.id);
+          if (h.nested && this.secOpen(host, x.id)) visit(x.id);
         }
       };
       visit(h.sec);
@@ -1035,13 +1145,18 @@ class Store {
 
   /**
    * Open a target. In panes it opens in the next pane and the focus goes into it; in the column a
-   * node is gone to (Back returns) and an article opens as a page of its own (h or Back returns).
-   * A web page opens in a new tab.
+   * node is gone to (Back returns) and an article or a web page opens as a page of its own (h or
+   * Back returns). An address of a Wikipedia article opens as that article. W opens the original.
    */
-  follow(r: Ref) {
+  follow(target: Ref) {
+    const r = asOpened(target);
     if (r.kind === "url") {
-      window.open(r.url, "_blank", "noopener,noreferrer");
-      return this.say(`Opened ${r.url} in a new tab.`);
+      if (this.panes) {
+        const from = this.backHere();
+        this.paneAt = this.openPane(this.paneAt, { kind: "web", url: r.url, from });
+        return this.setFocus(this.focus, { kind: "wiki", host: `p${this.paneAt}`, row: { t: "head" } });
+      }
+      return this.openColWiki(r.title ?? siteOf(r.url), "", true, r.url);
     }
     if (r.kind === "node") {
       const id = resolveNode(this.snap, r);
@@ -1066,12 +1181,13 @@ class Store {
     this.openColWiki(r.title, r.lang, true);
   }
 
-  /** The column's article page. A further article from it stacks on it; h goes back one. */
-  openColWiki(title: string, lang: string, push: boolean) {
-    if (this.colWiki) this.colWiki.stack.push({ title: this.colWiki.title, lang: this.colWiki.lang, aux: this.aux });
+  /** The column's article page (with `url`, a web page). A further article from it stacks on it; h goes back one. */
+  openColWiki(title: string, lang: string, push: boolean, url?: string) {
+    if (this.colWiki) this.colWiki.stack.push({ title: this.colWiki.title, lang: this.colWiki.lang, url: this.colWiki.url, aux: this.aux });
     else this.colWiki = { title, lang, stack: [], back: { focus: this.focus, hoist: this.hoist, aux: this.aux } };
     this.colWiki.title = title;
     this.colWiki.lang = lang;
+    this.colWiki.url = url;
     this.colOpen.clear();
     this.aux = { kind: "wiki", host: "col", row: { t: "head" } };
     if (push && this.ready) window.history.pushState(null, "", this.here());
@@ -1087,6 +1203,7 @@ class Store {
     if (prev) {
       c.title = prev.title;
       c.lang = prev.lang;
+      c.url = prev.url;
       this.colOpen.clear();
       this.aux = prev.aux ?? { kind: "wiki", host: "col", row: { t: "head" } };
     } else {
@@ -1162,7 +1279,7 @@ class Store {
       }
       setLibrary(library);
       this.library = library;
-      let state: { user: string; llm: LLM["kind"]; model: string | null; library?: string; title?: string; libraries?: LibraryInfo[]; branches?: { name: string }[]; wiki?: WikiConfig; linkJob?: JobState | null; web?: { on: boolean; searches: number; fetches: number } } | null = null;
+      let state: { user: string; llm: LLM["kind"]; model: string | null; library?: string; title?: string; libraries?: LibraryInfo[]; branches?: { name: string }[]; wiki?: WikiConfig; pages?: PagesConfig; linkJob?: JobState | null; web?: { on: boolean; searches: number; fetches: number } } | null = null;
       try {
         const res = await fetch(libApi("/state"));
         if (res.status === 404) {
@@ -1182,6 +1299,7 @@ class Store {
       if (state?.wiki) this.wiki = state.wiki;
       this.web = state?.web ?? { on: false, searches: 0, fetches: 0 };
       if (state?.linkJob?.state === "running") this.links.job = state.linkJob;
+      configurePages(state?.pages, () => this.pageArrived());
       configureWiki(state?.wiki, () => (this.replayHeld(), this.emit()), () => {
         // Once per browser: why Wikipedia is slow, and what makes it fast.
         if (lsGet("ie:wiki-hint", false)) return;
@@ -1459,9 +1577,11 @@ class Store {
     this.emit();
   }
 
-  /** The window's title: the article on the column's article page, else the node the reader is on. */
+  /** The window's title: the article (or web page) on the column's article page, else the node the reader is on. */
   private setTitle() {
-    document.title = this.colWiki ? `${this.colWiki.title} · Wikipedia` : label(this.snap, this.activeNode) || "Explicata";
+    const c = this.colWiki;
+    const page = c?.url ? webArticle(c.url) : null;
+    document.title = c ? (c.url ? `${page?.state === "ready" ? page.value.title : c.title} · ${siteOf(c.url)}` : `${c.title} · Wikipedia`) : label(this.snap, this.activeNode) || "Explicata";
   }
 
   /** Every edit is saved as it is made; this says whether the server has it yet. */
@@ -1491,7 +1611,7 @@ class Store {
     this.hoist = v.hoist && s.nodes[v.hoist] ? v.hoist : null;
     this.focus = v.focus && s.nodes[v.focus.node] ? v.focus : { node: this.top, grain: "node" };
     // The forest of forks; a view saved before orphans has one tree, and before forks only its trail, which loads as one branch.
-    this.forest = prune(restoreForest<PaneRef, Back>(v, isPaneRef), (p) => p.kind === "wiki" || !!s.nodes[p.id]);
+    this.forest = prune(restoreForest<PaneRef, Back>(v, isPaneRef), this.livePane);
     this.paneAt = Math.min(v.paneAt ?? 0, Math.max(0, this.trail.length - 1));
     this.aux = null;
     this.repairView();
@@ -1519,6 +1639,7 @@ class Store {
 
   /** The address of what is on screen: the focused node, so a reload, a link or Back lands on it again. */
   here(): string {
+    if (!this.panes && this.colWiki?.url) return inLibrary(this.library, `/u/${encodeURIComponent(this.colWiki.url)}`);
     if (!this.panes && this.colWiki) return inLibrary(this.library, `/w/${this.colWiki.lang}/${encodeURIComponent(this.colWiki.title.replace(/ /g, "_"))}`);
     const s = this.snap;
     // An annotation has no address of its own: the address stays on what shows its article.
@@ -1643,9 +1764,22 @@ class Store {
     this.markEntry(!named);
   }
 
-  /** Show what a path within the library names (`/`, `/n/<id>`, `/w/<lang>/<title>`): on boot, and on Back and Forward. */
+  /** Show what a path within the library names (`/`, `/n/<id>`, `/w/<lang>/<title>`, `/u/<address>`): on boot, and on Back and Forward. */
   navigate(path: string, history: "replace" | "none") {
     const s = this.snap;
+    // A web page of the column has an address of its own too: the page's, encoded whole.
+    const u = /^\/u\/(.+)$/.exec(path);
+    let url: string | null = null;
+    try {
+      url = u ? decodeURIComponent(u[1]) : null;
+    } catch {
+      /* not an address */
+    }
+    if (url && /^https?:\/\/\S+$/i.test(url) && !this.panes) {
+      if (this.colWiki?.url !== url) this.openColWiki(siteOf(url), "", false, url);
+      if (history === "replace") window.history.replaceState(window.history.state, "", this.here());
+      return this.emit();
+    }
     // An article page of the column has an address of its own, so Back returns to it and from it.
     const w = /^\/w\/([a-z][a-z0-9-]{1,15})\/(.+)$/.exec(path);
     if (w && !this.panes) {
@@ -1656,7 +1790,7 @@ class Store {
         /* keep it as it came */
       }
       title = title.replace(/_/g, " ");
-      if (this.colWiki?.title !== title) this.openColWiki(title, w[1], false);
+      if (this.colWiki?.title !== title || this.colWiki.url) this.openColWiki(title, w[1], false);
       if (history === "replace") window.history.replaceState(window.history.state, "", this.here());
       return this.emit();
     }
@@ -1664,7 +1798,7 @@ class Store {
       this.colWiki = null;
       this.aux = null;
     }
-    const named = w ? ({ node: s.root } as const) : resolve(s, path);
+    const named = w || u ? ({ node: s.root } as const) : resolve(s, path);
     const found = "node" in named && inArticles(s, named.node) ? ({ node: s.root } as const) : named;
     if ("missing" in found || isLibraryRoot(s, found.node)) {
       if ("missing" in found) this.say(`There is no ${found.missing.replace(/^no /, "")} here. Showing the library.`);
@@ -1842,6 +1976,8 @@ class Store {
     if (!this.isOpen(f.node)) return this.setOpen(f.node, true);
     const kids = sections(s, f.node);
     if (kids.length) this.setFocus({ node: kids[0], grain: "node" });
+    // A section shown as its article: into the article, at its head.
+    else if (!this.panes && this.linkOnly(f.node)) this.focusRow({ aux: { kind: "wiki", host: `n${f.node}`, row: { t: "head" } } });
   }
 
   /** Enter on a selection: open the note anchored there, step into it if it is open, or ask for one. */
@@ -1958,13 +2094,13 @@ class Store {
     const a = this.aux;
     if (a?.kind === "wiki") {
       // In an article: into its text, as in a node's body.
-      if (a.row.t === "sec" && this.wikiHost(a.host)?.nested && !this.colOpen.has(a.row.id)) this.colOpen.add(a.row.id);
+      if (a.row.t === "sec" && this.viewHost(a.host)?.nested) this.openSec(a.host, a.row.id);
       const sel = this.selecting();
       if (!sel && a.row.t === "head" && this.auxArticle(a)?.state === "loading") {
         this.held = { aux: a, keys: [...(this.held && sameAux(this.held.aux, a) ? this.held.keys : []), "i"] };
         return this.say("The article is still loading; i selects in it when it arrives.");
       }
-      if (!sel) return this.say(a.row.t === "sec" ? "l opens the section; i then selects in its text." : a.row.t !== "head" ? "Nothing to select here." : this.folded(this.wikiHost(a.host)?.embedded) ? "l unfolds the article; i then selects in it." : "The article is still loading.");
+      if (!sel) return this.say(a.row.t === "sec" ? "l opens the section; i then selects in its text." : a.row.t !== "head" ? "Nothing to select here." : this.folded(this.viewHost(a.host)?.embedded) ? "l unfolds the article; i then selects in it." : this.auxArticle(a)?.state === "failed" ? "Nothing of it is shown here to select in." : "The article is still loading.");
       const unit = sel.grain === "node" ? sentences(sel.text)[0] : sel.grain === "sentence" ? words(sel.text, sel.range)[0] : undefined;
       if (unit) sel.set(sel.grain === "node" ? "sentence" : "word", unit);
       else if (sel.grain === "node") this.say("This part of the article has no text to select.");
@@ -2200,6 +2336,7 @@ class Store {
 
   remove() {
     if (!this.writable()) return;
+    if (this.onWeb) return this.say(WEB_TEXT);
     const s = this.snap;
     const sel = this.articleSelection();
     if (sel) {
@@ -2544,6 +2681,7 @@ class Store {
     if (verb.startsWith("/") && builtin[verb.slice(1)]) return builtin[verb.slice(1)]();
     const lens = LENSES.find((l) => l === text.toLowerCase());
     if (this.inArticleText) return this.expandArticle(lens ?? "elaborate", lens ? undefined : text);
+    if (this.onWeb) return this.say(WEB_TEXT);
     if (this.aux?.kind === "wiki") return this.say("Select words of the article first (i), then : asks about them. The editor works on your own nodes.");
     if (this.focus.grain !== "node") {
       // A question about the selection becomes a note answering it.
@@ -2554,13 +2692,37 @@ class Store {
 
   // ---- keys on aux rows: Wikipedia views, targets, "Linked from" ----
 
-  /** The article text an aux focus is in: the lead or the section its row shows, with the article. None while it loads, or on a row that shows no text. */
+  /** Whether the aux focus is on a web page's view, where nothing is written (no annotations: the library has no place for them). */
+  get onWeb(): boolean {
+    return this.aux?.kind === "wiki" && this.isWeb(this.aux.host);
+  }
+
+  /**
+   * The text an aux focus on an article view is in, Wikipedia's or a web page's: the lead or the
+   * section its row shows (articleText; a web page's cleaned as one), and the language its article
+   * links default to. None while it loads, or on a row that shows no text.
+   */
+  private auxText(a: Aux | null): { at: ArticleText; lang: string } | null {
+    if (a?.kind !== "wiki") return null;
+    const h = this.viewHost(a.host);
+    if (h?.src !== "web") {
+      const spot = this.auxSpot(a);
+      return spot && { at: spot.at, lang: spot.lang };
+    }
+    const art = webArticle(h.url);
+    if (art.state !== "ready") return null;
+    const sec = a.row.t === "head" ? (this.folded(h.embedded) ? undefined : h.sec) : a.row.t === "sec" && h.nested && this.secOpen(a.host, a.row.id) ? String(a.row.id) : undefined;
+    const html = sec === undefined ? undefined : sec === null ? art.value.lead : art.value.sections.find((x) => x.id === sec)?.html;
+    return html === undefined ? null : { at: articleText(html, true), lang: this.wiki.lang };
+  }
+
+  /** The article text an aux focus is in: the lead or the section its row shows, with the article. None while it loads, on a row that shows no text, or on a web page. */
   private auxSpot(a: Aux | null): Spot | null {
     if (a?.kind !== "wiki") return null;
     const h = this.wikiHost(a.host);
     const art = h ? wikiArticle(h.title, h.lang) : null;
     if (!h || art?.state !== "ready") return null;
-    const sec = a.row.t === "head" ? (this.folded(h.embedded) ? -1 : h.sec) : a.row.t === "sec" && h.nested && this.colOpen.has(a.row.id) ? a.row.id : -1;
+    const sec = a.row.t === "head" ? (this.folded(h.embedded) ? -1 : h.sec) : a.row.t === "sec" && h.nested && this.secOpen(a.host, a.row.id) ? Number(a.row.id) : -1;
     const html = sec === 0 ? art.value.lead : art.value.sections.find((x) => x.id === sec)?.html;
     return sec < 0 || html === undefined ? null : { at: articleText(html), sec, article: art.value, lang: h.lang, host: a.host };
   }
@@ -2576,21 +2738,32 @@ class Store {
       this.held = { aux: a, keys: [...(this.held && sameAux(this.held.aux, a) ? this.held.keys : []), delta > 0 ? "Tab" : "S-Tab"] };
       return this.say("The article is still loading; Tab goes to its first link when it arrives.");
     }
-    if (art?.state === "failed") return this.say(`The article could not be loaded: ${art.message}`);
+    if (art?.state === "failed") return this.say(`${this.isWeb(a.host) ? "The page is not shown here" : "The article could not be loaded"}: ${art.message}`);
     const spot = this.auxSpot(a);
-    const spans = spot ? this.spansIn(spot) : [];
-    if (!spans.length) return this.say(a.row.t === "head" || a.row.t === "sec" ? "No links to other articles or notes here." : "");
+    const seen = new Set<string>();
+    const spans = spot ? this.spansIn(spot) : (this.auxText(a)?.at.links.map((l) => l.range) ?? []).filter((r) => !seen.has(r.join()) && !!seen.add(r.join()));
+    if (!spans.length) return this.say(a.row.t === "head" || a.row.t === "sec" ? (spot ? "No links to other articles or notes here." : "No links here.") : "");
     const at = a.range?.[0] ?? (delta > 0 ? -1 : Infinity);
     const next = delta > 0 ? spans.find((r) => r[0] > at) ?? spans[0] : [...spans].reverse().find((r) => r[0] < at) ?? spans[spans.length - 1];
     this.setFocus(this.focus, { ...a, grain: "word", range: next });
   }
 
-  /** The article a focused link inside an article names: the link whose words are exactly the selection. */
-  auxLink(a: Aux): { title: string; lang: string } | null {
+  /**
+   * Where a focused link in an article's text goes, the link whose words are exactly the selection:
+   * an article (in the link's own language, else the text's), or another web page.
+   */
+  auxTarget(a: Aux): Ref | null {
     if (a.kind !== "wiki" || !a.range) return null;
-    const spot = this.auxSpot(a);
-    const l = spot?.at.links.find((x) => x.range[0] === a.range![0] && x.range[1] === a.range![1]);
-    return l && spot ? { title: l.title, lang: spot.lang } : null;
+    const t = this.auxText(a);
+    const l = t?.at.links.find((x) => x.range[0] === a.range![0] && x.range[1] === a.range![1]);
+    if (!l || !t) return null;
+    return "url" in l ? asOpened({ kind: "url", url: l.url }) : { kind: "wiki", title: l.title, lang: l.lang ?? t.lang };
+  }
+
+  /** The article a focused link inside an article names (auxTarget), when it names one. */
+  auxLink(a: Aux): { title: string; lang: string } | null {
+    const r = this.auxTarget(a);
+    return r?.kind === "wiki" ? { title: r.title, lang: r.lang } : null;
   }
 
   // ---- annotating articles (src/core/article.ts) ----
@@ -2650,7 +2823,7 @@ class Store {
   private selecting(): { text: string; grain: Grain; range?: Range; set: (grain: Grain, range?: Range) => void } | null {
     const a = this.aux;
     if (a?.kind === "wiki") {
-      const spot = this.auxSpot(a);
+      const spot = this.auxText(a);
       if (!spot) return null;
       return {
         text: spot.at.text,
@@ -2666,6 +2839,7 @@ class Store {
 
   /** e d y x c and : on words of an article: open the annotation already there, or have one written. */
   private expandArticle(lens: string, question?: string) {
+    if (this.onWeb) return this.say(WEB_TEXT);
     const sel = this.articleSelection();
     if (!sel) return this.say("Select words first: i, then e d y x c or :. An article itself is never deepened or rewritten.");
     const existing = this.annotationAt(sel.spot, sel.range);
@@ -2680,11 +2854,11 @@ class Store {
 
   /** Enter on words of an article: an annotation opens, and Enter again steps into it; a link opens its article; anything else is expanded. */
   private enterArticle() {
-    const sel = this.articleSelection()!;
-    const note = this.annotationAt(sel.spot, sel.range);
+    const sel = this.articleSelection();
+    const note = sel && this.annotationAt(sel.spot, sel.range);
     if (!note) {
-      const link = this.auxLink(sel.a);
-      return link ? this.follow({ kind: "wiki", title: link.title, lang: link.lang }) : this.expandArticle("elaborate");
+      const link = this.aux && this.auxTarget(this.aux);
+      return link ? this.follow(link) : this.expandArticle("elaborate");
     }
     if (this.open.has(note)) return this.setFocus({ node: note, grain: "node" });
     this.open.add(note);
@@ -2767,8 +2941,9 @@ class Store {
 
   /** The views that could show an annotation: the article page, a pane's article, the article under a pane's node or the column's top. */
   private hosts(): string[] {
-    if (!this.panes) return this.colWiki ? ["col"] : this.articleUnder(this.top) ? [`n${this.top}`] : [];
-    return this.trail.flatMap((p, i) => (p.kind === "wiki" ? [`p${i}`] : this.articleUnder(p.id) ? [`n${p.id}`] : []));
+    // In the column: the article page, or each article shown under a node (the top's, a section's that is only a link).
+    if (!this.panes) return this.colWiki ? ["col"] : [...new Set(this.columnRows().flatMap((r) => ("aux" in r && r.aux.kind === "wiki" && r.aux.row.t === "head" ? [r.aux.host] : [])).concat(this.articleUnder(this.top) ? [`n${this.top}`] : []))];
+    return this.trail.flatMap((p, i) => (p.kind !== "node" ? [`p${i}`] : this.articleUnder(p.id) ? [`n${p.id}`] : []));
   }
 
   /** Whether a view shows the article an annotation (or a note inside one) is on. */
@@ -2781,7 +2956,7 @@ class Store {
   /** The view showing the article an annotation is on, the focused pane's first. */
   private hostOf(id: NodeId): string | undefined {
     const p = this.panes ? this.trail[this.paneAt] : undefined;
-    const mine = p ? (p.kind === "wiki" ? `p${this.paneAt}` : `n${p.id}`) : undefined;
+    const mine = p ? (p.kind !== "node" ? `p${this.paneAt}` : `n${p.id}`) : undefined;
     return mine && this.shows(mine, id) ? mine : this.hosts().find((h) => this.shows(h, id));
   }
 
@@ -2798,7 +2973,7 @@ class Store {
     if (!p) return this.setFocus(node, { kind: "wiki", host, row: { t: "head" } });
     const h = this.wikiHost(host)!;
     const row: WRow = p.sec === h.sec ? { t: "head" } : { t: "sec", id: p.sec };
-    if (row.t === "sec") this.colOpen.add(p.sec);
+    if (row.t === "sec") this.openSec(host, p.sec);
     this.setFocus(node, { kind: "wiki", host, row, grain: "word", range: p.range });
   }
 
@@ -2835,7 +3010,7 @@ class Store {
   /** A click or a drag in an article's text: the sentence at a point, or the words dragged over. */
   selectInArticle(host: string, row: WRow, range: Range, grain: "sentence" | "word") {
     const a: Aux = { kind: "wiki", host, row };
-    const spot = this.auxSpot(a);
+    const spot = this.auxText(a);
     if (!spot) return this.setFocus(this.focus, a);
     const all = sentences(spot.at.text);
     const r: Range = grain === "sentence" ? all.find((x) => range[0] >= x[0] && range[0] <= x[1]) ?? all[rangeAt(all, range[0])] : range;
@@ -2854,8 +3029,16 @@ class Store {
     else this.emit();
   }
 
-  /** Why a key that works on a node does nothing on Wikipedia's text, for the status line; null for a key that does work there. */
+  /** Why a key that works on a node does nothing on Wikipedia's text (or a web page's), for the status line; null for a key that does work there. */
   articleRefuses(k: string, selecting: boolean): string | null {
+    if (this.onWeb) {
+      if (["r", "a", "A", "J", "K", ">", "<", "p", "b", "o", "O", "z", "f"].includes(k) && !(selecting && (k === "J" || k === "K"))) return "A web page's text is shown as it is: it cannot be edited, renamed, moved, locked, reconciled or rewritten here. R reads it again; s has a model arrange it.";
+      if (["e", "d", "y", "x", "c", "D", ":"].includes(k)) return WEB_TEXT;
+      if (k === "w") return "Words of a web page cannot be linked from here; W opens the original in a new tab.";
+      if (k === "S" || k === "n") return "Link suggestions are for your own text, not a web page's.";
+      if (/^[1-5]$/.test(k)) return "Related is listed under your own nodes, not under a web page.";
+      return null;
+    }
     const own = "Wikipedia's text is shown as it is: it cannot be edited, renamed, moved, locked, reconciled or rewritten here. Annotations on it can: i selects words, e d y x c writes one.";
     if (["r", "a", "A", "J", "K", ">", "<", "p", "R", "b", "o", "O", "z"].includes(k) && !(selecting && (k === "J" || k === "K"))) return own;
     if (k === "c" && !selecting) return "Wikipedia's text cannot be edited here. Select words (i) and press c to challenge them, or e d y x to annotate them.";
@@ -2868,11 +3051,123 @@ class Store {
     return null;
   }
 
-  /** The article an aux focus shows, as loaded so far. */
+  /** The article (or web page) an aux focus shows, as loaded so far. */
   private auxArticle(a: Aux) {
     if (a.kind !== "wiki") return null;
-    const h = this.wikiHost(a.host);
-    return h ? wikiArticle(h.title, h.lang) : null;
+    const h = this.viewHost(a.host);
+    return !h ? null : h.src === "web" ? webArticle(h.url) : wikiArticle(h.title, h.lang);
+  }
+
+  /**
+   * A web page has arrived (or failed): a pane on a section it no longer has closes (livePane), the
+   * keys that waited for it are done, and the column's page takes its title.
+   */
+  private pageArrived() {
+    const closed = this.pruneSections();
+    if (closed) this.say(closed === 1 ? "A pane showed a section this web page no longer has; it is closed." : `${closed} panes showed sections this web page no longer has; they are closed.`);
+    this.replayHeld();
+    if (this.colWiki?.url) this.setTitle();
+    this.emit();
+  }
+
+  /**
+   * Close the panes on sections a web page no longer has (after it arrived, was read again or was
+   * arranged: its section ids are namespaced by outline, so a pane on a part by length, "c2", does
+   * not survive the model's sections), and move a focus on such a row up to the page's head.
+   * Returns how many panes closed.
+   */
+  private pruneSections(): number {
+    let closed = 0;
+    if (this.panes && this.session) {
+      const was = this.forest;
+      const before = this.panesPlaced.length;
+      this.syncTrail();
+      if (this.forest !== was) {
+        closed = Math.max(1, before - this.panesPlaced.length);
+        this.saveView();
+        this.aux = null;
+        this.land(Math.min(this.paneAt, this.trail.length - 1));
+      }
+    }
+    const a = this.aux;
+    const h = a?.kind === "wiki" ? this.viewHost(a.host) : null;
+    if (a?.kind === "wiki" && h?.src === "web" && a.row.t === "sec") {
+      const art = knownArticle(h.url);
+      if (art?.state === "ready" && !art.value.sections.some((x) => x.id === (a as { row: { id: string | number } }).row.id)) this.aux = { kind: "wiki", host: a.host, row: { t: "head" } };
+    }
+    return closed;
+  }
+
+  /** Actions on a web page waiting for the server, by its key: one at a time per page. */
+  private acting = new Set<string>();
+
+  /** The web page the focus is on (its view's address), or why there is none. */
+  private focusedPage(): { url: string; title: string } | string {
+    const a = this.aux;
+    const h = a?.kind === "wiki" ? this.viewHost(a.host) : null;
+    if (h?.src !== "web") return "Not on a web page.";
+    const art = webArticle(h.url);
+    return { url: h.url, title: art.state === "ready" ? art.value.title : art.state === "failed" && art.title ? art.title : siteOf(h.url) };
+  }
+
+  /**
+   * R on a web page: read it again. Unchanged text keeps what a model made of it; a page that no
+   * longer answers keeps the copy read before, marked stale; one that could not be shown is asked
+   * again at once. Panes on sections it no longer has close.
+   */
+  async reloadWebPage() {
+    const p = this.focusedPage();
+    if (typeof p === "string") return this.say(p);
+    const k = webKey(p.url);
+    if (this.acting.has(k)) return this.say(`Still waiting for ${siteOf(p.url)}…`);
+    this.acting.add(k);
+    this.say(`Reading ${siteOf(p.url)} again…`);
+    try {
+      const r = await reloadPage(p.url);
+      const closed = this.pruneSections();
+      const panes = closed ? ` ${closed === 1 ? "A pane on a section it no longer has is" : `${closed} panes on sections it no longer has are`} closed.` : "";
+      if (!r.ok) this.say(`${clip(p.title, 50)} could not be read again: ${r.message}${panes}`);
+      else if (r.stale) this.say(`${clip(p.title, 50)} no longer answers (${clip(r.stale, 120)}); the copy read before is kept.${panes}`);
+      else this.say(`Read ${clip(r.article.title, 50)} again${r.article.model ? `; ${r.article.model.sections ? "the model's arrangement" : "the model's summary"} is kept, the text being unchanged` : ""}.${panes}`);
+      if (this.colWiki?.url) this.setTitle();
+    } finally {
+      this.acting.delete(k);
+      this.emit();
+    }
+  }
+
+  /**
+   * s on a web page: have a model summarise it, and arrange a page divided only by length into
+   * sections (a page with headings of its own keeps them). Always this explicit request, POST,
+   * within the server's daily budget; a page already arranged as it reads costs no call. Panes on
+   * the old parts close: the model's sections have ids of their own (m1, m2…).
+   */
+  async arrangeWebPage() {
+    const p = this.focusedPage();
+    if (typeof p === "string") return this.say(p);
+    const art = webArticle(p.url);
+    if (art.state === "loading") return this.say("The page is still loading; s arranges it once it is here.");
+    if (art.state === "failed") return this.say("This page is not shown here, so there is nothing to arrange. R reads it again.");
+    if (!canArrange()) return this.say(this.generating ? "Arranging pages with a model is turned off on this server (EX_PAGES_ARRANGE=off)." : "No model is configured on this server, so pages cannot be arranged.");
+    const k = webKey(p.url);
+    if (this.acting.has(k)) return this.say(`Still waiting for the model on ${clip(p.title, 40)}…`);
+    this.acting.add(k);
+    const what = art.value.outline === "chunks" ? "arrange" : "summarise";
+    this.say(`Asking the model to ${what} ${clip(p.title, 50)}…`);
+    try {
+      const r = await arrangePage(p.url);
+      if (!r.ok) return this.say(`Not arranged: ${r.message}`);
+      const closed = this.pruneSections();
+      const panes = closed ? ` ${closed === 1 ? "A pane on one of its old parts is" : `${closed} panes on its old parts are`} closed.` : "";
+      const n = r.article.sections.length;
+      const again = r.called ? "" : " (as before: no new call)";
+      if (r.arranged === "sections") this.say(`Arranged by the model into ${n} sections${again}; its summary is above the lead.${panes}`);
+      else if (r.note) this.say(`${r.note} Its summary is above the lead${again}.`);
+      else this.say(`Summarised by the model${again}: the summary is above the lead; the page keeps its own sections.`);
+    } finally {
+      this.acting.delete(k);
+      this.emit();
+    }
   }
 
   /** Keys pressed on an article that was still loading, to be done once it has (Tab, then perhaps Enter). */
@@ -2915,13 +3210,14 @@ class Store {
       return r ? this.follow(r) : undefined;
     }
     if (a.kind === "back") return this.openLinking(this.linkedFrom(a.of)[a.index]);
-    const h = this.wikiHost(a.host);
+    const h = this.viewHost(a.host);
     if (!h) return;
-    const link = this.auxLink(a);
-    if (link) return this.follow({ kind: "wiki", title: link.title, lang: link.lang });
+    const link = this.auxTarget(a);
+    if (link) return this.follow(link);
     const row = a.row;
-    if (row.t === "back") return this.openLinking(this.mentionsOf(h.lang, this.hostArticle(a.host)!.title)[row.i]);
-    if (row.t === "sense") {
+    if ((row.t === "back" || row.t === "sense") && h.src !== "wiki") return;
+    if (row.t === "back" && h.src === "wiki") return this.openLinking(this.mentionsOf(h.lang, this.hostArticle(a.host)!.title)[row.i]);
+    if (row.t === "sense" && h.src === "wiki") {
       const ss = wikiSenses(h.title, h.lang);
       if (ss.state === "ready" && ss.value[row.i]) this.follow({ kind: "wiki", title: ss.value[row.i].title, lang: h.lang });
       return;
@@ -2933,21 +3229,23 @@ class Store {
       }
       return this.move(1);
     }
+    if (row.t !== "sec") return;
     // A section: in a pane it opens as the next pane (l again steps into it); on the column's page, in place.
     if (h.nested) {
-      if (!this.colOpen.has(row.id)) {
-        this.colOpen.add(row.id);
+      if (!this.secOpen(a.host, row.id)) {
+        this.openSec(a.host, row.id);
         return this.emit();
       }
       return this.move(1);
     }
     const i = this.paneAt;
     const next = this.trail[i + 1];
-    if (next?.kind === "wiki" && next.title === h.title && next.sec === row.id) {
+    const ref: PaneRef = h.src === "web" ? { kind: "web", url: h.url, sec: String(row.id) } : { kind: "wiki", title: h.title, lang: h.lang, sec: Number(row.id) };
+    if (next && sameRef(next, ref)) {
       this.paneAt = i + 1;
       return this.setFocus(this.focus, { kind: "wiki", host: `p${i + 1}`, row: { t: "head" } });
     }
-    this.openPane(i, { kind: "wiki", title: h.title, lang: h.lang, sec: row.id });
+    this.openPane(i, ref);
     if (this.pages) this.land(i + 1);
   }
 
@@ -2956,16 +3254,27 @@ class Store {
     const a = this.aux;
     if (!a) return;
     if (a.kind !== "wiki") return this.setFocus({ node: a.of, grain: "node" });
-    const h = this.wikiHost(a.host);
+    const h = this.viewHost(a.host);
     if (a.row.t !== "head") {
       // On the column's page an open section's subsection steps out to the section first.
-      const art = h ? wikiArticle(h.title, h.lang) : null;
-      const sec = a.row.t === "sec" && art?.state === "ready" ? art.value.sections.find((x) => x.id === (a.row as { id: number }).id) : undefined;
-      const row: WRow = h?.nested && sec?.parent ? { t: "sec", id: sec.parent } : { t: "head" };
+      const id = a.row.t === "sec" ? a.row.id : undefined;
+      const art = h ? (h.src === "web" ? webArticle(h.url) : wikiArticle(h.title, h.lang)) : null;
+      const sections: { id: number | string; parent: number | string | null }[] = art?.state === "ready" ? art.value.sections : [];
+      const parent = id === undefined ? undefined : sections.find((x) => x.id === id)?.parent;
+      const row: WRow = h?.nested && parent ? { t: "sec", id: parent } : { t: "head" };
       return this.setFocus(this.focus, { ...a, row });
     }
     if (a.host === "col") return this.closeColWiki();
-    if (a.host.startsWith("n")) return this.setFocus({ node: a.host.slice(1) as NodeId, grain: "node" });
+    if (a.host.startsWith("n")) {
+      const id = a.host.slice(1) as NodeId;
+      // The head of a pane that is a section shown as its article is that pane's head: h goes back as from a node's pane.
+      if (this.panes && id !== this.top && this.paneHead(id) && this.linkOnly(id)) {
+        this.aux = null;
+        this.focus = { node: id, grain: "node" };
+        return this.out();
+      }
+      return this.setFocus({ node: id, grain: "node" });
+    }
     // The head of an article pane: back where it was opened from, or to the row it continues.
     const i = +a.host.slice(1);
     const p = this.trail[i];
@@ -2973,29 +3282,38 @@ class Store {
     if (i === 0) return;
     this.paneAt = i - 1;
     const q = this.trail[i - 1];
-    if (p?.kind === "wiki" && p.sec !== undefined) {
-      const host = q.kind === "wiki" ? `p${i - 1}` : `n${q.id}`;
+    if (p && p.kind !== "node" && p.sec !== undefined) {
+      const host = q.kind !== "node" ? `p${i - 1}` : `n${q.id}`;
       return this.setFocus(q.kind === "node" ? { node: q.id, grain: "node" } : this.focus, { kind: "wiki", host, row: { t: "sec", id: p.sec } });
     }
     if (q.kind === "node") this.setFocus({ node: q.id, grain: "node" });
     else this.setFocus(this.focus, { kind: "wiki", host: `p${i - 1}`, row: { t: "head" } });
   }
 
-  /** W: the focused article (or the article a focused link names) on Wikipedia itself, in a new tab. */
-  openOnWikipedia() {
+  /**
+   * W: the original of what is focused, in a new tab: the focused article (or the article a focused
+   * link names) on Wikipedia itself; a web page (or a link to one) at its own address.
+   */
+  openOriginal() {
     const a = this.aux;
-    let target: { title: string; lang: string } | null = a ? this.auxLink(a) : null;
+    let target: Ref | null = a ? this.auxTarget(a) : null;
     if (!target && a?.kind === "wiki") {
+      const h = this.viewHost(a.host);
       const k = this.hostArticle(a.host);
-      if (k) target = { title: k.title, lang: k.lang };
+      if (h?.src === "web") target = { kind: "url", url: h.url };
+      else if (k) target = { kind: "wiki", title: k.title, lang: k.lang };
     }
     if (!target) {
       const f = this.focus;
       const note = f.grain !== "node" ? this.noteAt(f.range) : undefined;
       const r = this.targetOf(note ?? (a?.kind === "target" ? a.of : f.node));
-      if (r?.kind === "wiki") target = { title: r.title, lang: r.lang };
+      if (r && r.kind !== "node") target = asOpened(r);
     }
-    if (!target) return this.say("No Wikipedia article here.");
+    if (target?.kind === "url") {
+      window.open(target.url, "_blank", "noopener,noreferrer");
+      return this.say(`Opened ${hostOf(target.url)} in a new tab.`);
+    }
+    if (target?.kind !== "wiki") return this.say("No Wikipedia article or web page here.");
     window.open(wikiUrl(target.title, target.lang), "_blank", "noopener,noreferrer");
     this.say(`Opened “${target.title}” on Wikipedia in a new tab.`);
   }
@@ -3024,7 +3342,7 @@ class Store {
     const f = this.focus;
     const s = this.snap;
     const n = s.nodes[f.node];
-    if (this.aux || !n) return null;
+    if ((this.aux && !this.linkHead) || !n) return null;
     if (f.grain !== "node" && f.range) return { node: f.node, range: f.range, existing: this.noteAt(f.range), text: plain(n.body.slice(f.range[0], f.range[1])).trim() };
     return { node: f.node, text: n.title || plain(label(s, f.node)).replace(/^“|”$/g, "") };
   }
@@ -3093,10 +3411,23 @@ class Store {
     this.say("Unlinked. u to undo.");
   }
 
-  /** L on a node: open its own target (a section about an article, a note that also links). */
+  /**
+   * L on a node: open its own target (a section about an article, a note that also links). Where the
+   * node's own pane is open, the target opens to the right of it, whether the focus is on its head
+   * or on its row in the pane before: never beside it, in the same column.
+   */
   followOwn() {
-    const r = this.targetOf(this.focus.node);
+    const id = this.focus.node;
+    const r = this.targetOf(id);
     if (!r) return this.say("This node has no target. w gives it one.");
+    if (this.panes) {
+      this.syncTrail();
+      const kid = this.paneHead(id) ? undefined : this.branchNodes[this.paneAt]?.kids.find((k) => k.ref.kind === "node" && k.ref.id === id);
+      if (kid) {
+        this.forest = focusIn(this.forest, kid.id);
+        this.paneAt += 1;
+      }
+    }
     this.follow(r);
   }
 

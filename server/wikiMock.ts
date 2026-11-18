@@ -10,19 +10,26 @@
  *   "Rate limited example"  429 with Retry-After: 0
  *   "Slow article"          every answer about it arrives after SLOW_MS
  *   "Hostile article"       HTML full of attacks that must not survive sanitising
+ * "Grey heron" has pictures as Wikipedia marks them up: an infobox image, a thumbnail, a gallery,
+ * a video, and flag icons (which are not kept). Every address on upload.wikimedia.org answers
+ * with one tiny PNG (the same as server/pageMock.ts's), whatever it names.
  * A request is about a title when it is the summary or parse of it, a query whose titles include
  * it, or a search whose query is exactly that title (any case). Typing a prefix of it is normal.
  */
 
+import { TINY_PNG } from "./pageMock";
+
 /** How long "Slow article" takes to answer: long enough for the UI to say Wikipedia is slow. */
 const SLOW_MS = 2500;
 
-type Block = string | string[]; // a paragraph, or a bulleted list
+type Block = string | string[] | { html: string }; // a paragraph, a bulleted list, or markup as it is (a figure, a gallery)
 interface Fixture {
   id: number;
   description: string | null;
   disambiguation?: boolean;
   hatnote?: string;
+  /** More rows for the infobox (an image cell), as markup. */
+  infobox?: string;
   /** Paragraph markup: [[Target]] or [[Target|text]] for links, [ref] for a reference marker. */
   lead: Block[];
   sections?: { heading: string; level?: 3; body: Block[] }[];
@@ -378,6 +385,38 @@ const FIXTURES: Record<string, Fixture> = {
       `<b>Freddie Mercury</b> (born Farrokh Bulsara; 1946–1991) was a British singer and songwriter, famous as the lead vocalist of the rock band Queen.[ref] He was known for his wide vocal range and his flamboyant stage presence.`,
     ],
   },
+  "Grey heron": {
+    id: 1_200_123,
+    description: "Long-legged wading bird of the heron family",
+    infobox: `<tr><td colspan="2" class="infobox-image"><span class="mw-default-size" typeof="mw:File/Frameless"><a href="/wiki/File:Grey_heron_at_the_weir.jpg" class="mw-file-description"><img alt="A grey heron standing in shallow water" src="${thumb("a/a1/Grey_heron_at_the_weir.jpg", 250)}" decoding="async" width="250" height="188" class="mw-file-element" srcset="${thumb("a/a1/Grey_heron_at_the_weir.jpg", 375)} 1.5x, ${thumb("a/a1/Grey_heron_at_the_weir.jpg", 500)} 2x" data-file-width="3000" data-file-height="2250" /></a></span><div class="infobox-caption">An adult at a weir</div></td></tr><tr><th scope="row" class="infobox-label">Range</th><td class="infobox-data"><span class="flagicon"><span class="mw-image-border" typeof="mw:File"><span><img alt="" src="${thumb("f/f0/Flag_of_Europe.svg", 23, ".png")}" decoding="async" width="23" height="15" class="mw-file-element" /></span></span></span> Europe</td></tr>`,
+    lead: [
+      `The <b>grey heron</b> (<i>Ardea cinerea</i>) is a long-legged wading bird of the heron family, native throughout temperate Europe and Asia and parts of Africa.[ref] It hunts by standing motionless in shallow water, at a weir or the edge of a lake, until a fish comes within reach of its bill. It is a bird of rivers, marshes and coasts.`,
+    ],
+    sections: [
+      {
+        heading: "Description",
+        body: [
+          { html: `<figure class="mw-default-size" typeof="mw:File/Thumb"><a href="/wiki/File:Heron_in_flight.jpg" class="mw-file-description"><img src="${thumb("b/b1/Heron_in_flight.jpg", 250)}" decoding="async" width="250" height="167" class="mw-file-element" srcset="${thumb("b/b1/Heron_in_flight.jpg", 375)} 1.5x, ${thumb("b/b1/Heron_in_flight.jpg", 500)} 2x" data-file-width="2400" data-file-height="1600" /></a><figcaption>A heron in flight, its neck folded back</figcaption></figure>` },
+          `The grey heron stands nearly a metre tall, with grey upperparts, a white head and neck, and a black stripe running from the eye to the back of the head. In flight it folds its neck back into an S, which tells it apart from cranes and storks at a distance. <span class="flagicon"><span typeof="mw:File"><a href="/wiki/File:Flag_of_Europe.svg" class="mw-file-description"><img alt="" src="${thumb("f/f0/Flag_of_Europe.svg", 20, ".png")}" width="20" height="13" class="mw-file-element noviewer" /></a></span></span> European birds are slightly paler than those further east.`,
+          { html: `<figure typeof="mw:File"><a href="/wiki/File:Heron_icon.svg" class="mw-file-description"><img src="${thumb("c/c3/Heron_icon.svg", 24, ".png")}" width="24" height="24" class="mw-file-element" /></a><figcaption>An icon</figcaption></figure>` },
+        ],
+      },
+      {
+        heading: "Gallery",
+        body: [
+          { html: `<ul class="gallery mw-gallery-traditional"><li class="gallerycaption">Herons at the weir</li><li class="gallerybox" style="width: 155px"><div class="thumb" style="width: 150px; height: 150px;"><span typeof="mw:File"><a href="/wiki/File:Heron_fishing.jpg" class="mw-file-description" title="Fishing"><img alt="" src="${thumb("d/d4/Heron_fishing.jpg", 120)}" decoding="async" width="120" height="90" class="mw-file-element" srcset="${thumb("d/d4/Heron_fishing.jpg", 180)} 1.5x, ${thumb("d/d4/Heron_fishing.jpg", 240)} 2x" /></a></span></div><div class="gallerytext">Fishing below the weir</div></li><li class="gallerybox" style="width: 155px"><div class="thumb" style="width: 150px; height: 150px;"><span typeof="mw:File"><a href="/wiki/File:Heron_nest.jpg" class="mw-file-description" title="A nest"><img alt="" src="${thumb("e/e5/Heron_nest.jpg", 120)}" decoding="async" width="120" height="80" class="mw-file-element" srcset="${thumb("e/e5/Heron_nest.jpg", 180)} 1.5x, ${thumb("e/e5/Heron_nest.jpg", 240)} 2x" /></a></span></div><div class="gallerytext">A nest high in an alder</div></li></ul>` },
+          `Herons nest in colonies called heronries, usually high in trees near water. The same heronry may be used for decades, and its nests grow larger every year as new sticks are added to the old ones.`,
+        ],
+      },
+      {
+        heading: "Behaviour",
+        body: [
+          { html: `<figure class="mw-default-size" typeof="mw:File/Thumb"><span><video id="mwe_player_0" poster="${thumb("b/b2/Heron_takes_off.webm", 220, "", "-")}" controls="" preload="none" data-mw-tmh="" class="mw-file-element" width="220" height="124" data-durationhint="12" data-mwtitle="Heron_takes_off.webm" data-mwprovider="wikimediacommons" resource="/wiki/File:Heron_takes_off.webm"><source src="//upload.wikimedia.org/wikipedia/commons/b/b2/Heron_takes_off.webm" type="video/webm; codecs=&quot;vp9, opus&quot;" data-width="1920" data-height="1080" /><source src="//upload.wikimedia.org/wikipedia/commons/transcoded/b/b2/Heron_takes_off.webm/Heron_takes_off.webm.480p.vp9.webm" type="video/webm; codecs=&quot;vp9, opus&quot;" data-transcodekey="480p.vp9.webm" data-width="854" data-height="480" /><track src="https://en.wikipedia.org/w/api.php?action=timedtext&amp;title=File%3AHeron_takes_off.webm&amp;lang=en&amp;trackformat=vtt" kind="subtitles" type="text/vtt" srclang="en" /></video></span><figcaption>A heron taking off from the weir</figcaption></figure>` },
+          `A heron may stand still for an hour before it strikes. It eats mostly fish, but also frogs, small mammals and young birds, and it will take food from garden ponds.`,
+        ],
+      },
+    ],
+  },
   "Slow article": {
     id: 1_200_117,
     description: "Test article whose answers arrive slowly",
@@ -429,6 +468,12 @@ const FIXTURES: Record<string, Fixture> = {
 <noscript><img src="https://evil.example/ns.png"></noscript><template><img src="x" onerror="window.__pwned=17"></template>
 <marquee onstart="window.__pwned=18">marquee</marquee>
 <p>Text with &lt;script&gt;window.__pwned=19&lt;/script&gt; written as escaped text, which must stay text.</p>
+<figure typeof="mw:File/Thumb"><a href="/wiki/File:Forged.png" class="mw-file-description" onclick="window.__pwned=23"><img src="https://evil.example/thumb.png" srcset="//upload.wikimedia.org/wikipedia/commons/thumb/e/ee/Forged.png/500px-Forged.png 2x, https://evil.example/3x.png 3x" onerror="window.__pwned=24" onload="window.__pwned=24" style="position:fixed" width="250" height="200"></a><figcaption onmouseover="window.__pwned=25">A forged <a href="javascript:window.__pwned=26">caption</a> on a real file</figcaption></figure>
+<figure typeof="mw:File/Thumb"><a href="javascript:window.__pwned=27" class="mw-file-description"><img src="//upload.wikimedia.org/wikipedia/commons/x/xx/No_credit.png" width="250" height="200"></a><figcaption>A picture with no file page</figcaption></figure>
+<figure typeof="mw:File/Thumb"><a href="/wiki/File:Inline.png" class="mw-file-description"><img src="data:image/png;base64,iVBORw0KGgo=" width="250" height="200"></a><figcaption>A data: picture</figcaption></figure>
+<figure typeof="mw:File/Thumb"><a href="/wiki/File:Script.png" class="mw-file-description"><img src="javascript:window.__pwned=28" width="250" height="200"></a><figcaption>A javascript: picture</figcaption></figure>
+<figure typeof="mw:File/Thumb"><span><video src="https://evil.example/v.webm" poster="javascript:window.__pwned=29" autoplay loop muted onplay="window.__pwned=30" resource="/wiki/File:Autoplay.webm"><source src="//upload.wikimedia.org/wikipedia/commons/a/aa/Autoplay.webm" type="video/webm"></video></span><figcaption>A video that tries to play by itself</figcaption></figure>
+<iframe src="https://www.youtube.com/embed/AAAAAAAAAAA" srcdoc="&lt;script&gt;parent.__pwned=31&lt;/script&gt;"></iframe><iframe src="https://unknown.example/embed"></iframe>
 <!-- <script>window.__pwned=20</script> -->
 </div>`,
   },
@@ -440,6 +485,12 @@ const REDIRECTS: Record<string, string> = {
   Octopuses: "Octopus",
   Cephalopods: "Cephalopod",
 };
+
+/** A thumbnail's address on upload.wikimedia.org as Wikipedia writes it (protocol-relative); `ext` for an SVG's PNG, `sep` "-" for a video's still. */
+function thumb(path: string, width: number, ext = "", sep = "") {
+  const name = path.split("/").pop()!;
+  return `//upload.wikimedia.org/wikipedia/commons/thumb/${path}/${width}px-${sep}${name}${ext || (sep ? ".jpg" : "")}`;
+}
 
 const revisionOf = (f: Fixture) => 1_250_000_000 + f.id;
 const wikidataOf = (f: Fixture) => `Q${90_000_000 + f.id}`;
@@ -458,7 +509,9 @@ function inline(markup: string, refs: { n: number }): string {
 }
 
 function blocks(body: Block[], refs: { n: number }): string {
-  return body.map((b) => (typeof b === "string" ? `<p>${inline(b, refs)}\n</p>` : `<ul>${b.map((li) => `<li>${inline(li, refs)}</li>`).join("\n")}</ul>`)).join("\n");
+  return body
+    .map((b) => (typeof b === "string" ? `<p>${inline(b, refs)}\n</p>` : Array.isArray(b) ? `<ul>${b.map((li) => `<li>${inline(li, refs)}</li>`).join("\n")}</ul>` : b.html))
+    .join("\n");
 }
 
 function pageHtml(title: string, f: Fixture): string {
@@ -475,7 +528,7 @@ function pageHtml(title: string, f: Fixture): string {
     parts.push(blocks(f.lead, refs));
   } else {
     parts.push(
-      `<table class="infobox"><caption class="infobox-title">${escape(title)}</caption><tbody><tr><th scope="row" class="infobox-label">Summary</th><td class="infobox-data">${escape(f.description ?? "")}</td></tr></tbody></table>`,
+      `<table class="infobox"><caption class="infobox-title">${escape(title)}</caption><tbody>${f.infobox ?? ""}<tr><th scope="row" class="infobox-label">Summary</th><td class="infobox-data">${escape(f.description ?? "")}</td></tr></tbody></table>`,
     );
     parts.push(blocks(f.lead, refs));
   }
@@ -505,7 +558,7 @@ function pageHtml(title: string, f: Fixture): string {
 
 /** Link targets written in the lead, in order. */
 function leadLinks(f: Fixture): string[] {
-  const text = f.lead.flat().join(" ");
+  const text = f.lead.filter((b): b is string | string[] => typeof b === "string" || Array.isArray(b)).flat().join(" ");
   return [...new Set([...text.matchAll(/\[\[([^\]|]+)/g)].map((m) => m[1]))];
 }
 
@@ -530,6 +583,7 @@ function safeDecode(s: string) {
 /** Plain text of the given blocks: links as their text, tags and reference markers removed. */
 function plain(body: Block[]): string {
   return body
+    .filter((b): b is string | string[] => typeof b === "string" || Array.isArray(b))
     .flat()
     .join("\n")
     .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, t: string, text?: string) => text ?? t)
@@ -749,6 +803,7 @@ export function makeMockWikiFetch(slowMs = SLOW_MS, bulkMs = 0): typeof fetch {
     const signal = init?.signal;
     signal?.throwIfAborted();
     const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.hostname === "upload.wikimedia.org") return new Response(TINY_PNG, { headers: { "content-type": "image/png" } });
     if (bulkMs && url.searchParams.has("maxlag")) await wait(bulkMs, signal);
     const about = subjects(url).map((t) => find(t)?.f.behaviour);
     if (about.includes("offline")) throw new TypeError("fetch failed");
