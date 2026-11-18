@@ -418,13 +418,15 @@ export const curveFaults = (page: Page) =>
     }
     // What peeks: its place left clear of every curve but its own; nothing left over once it is back.
     const peeked = [...document.querySelectorAll<HTMLElement>("[data-peek]")];
-    const holes = [...document.querySelectorAll<SVGRectElement>("#ie-curve-holes rect.hole")].map((r) => ({ x: +r.getAttribute("x")! + box.left, y: +r.getAttribute("y")! + box.top, w: +r.getAttribute("width")!, h: +r.getAttribute("height")! }));
+    const holes = [...document.querySelectorAll<SVGRectElement>('mask[data-kind="ie-curve-holes"] rect.hole')].map((r) => ({ x: +r.getAttribute("x")! + box.left, y: +r.getAttribute("y")! + box.top, w: +r.getAttribute("width")!, h: +r.getAttribute("height")! }));
     const under = document.querySelector<SVGGElement>(".curves g.under");
+    /** Whether a layer is masked by the mask of this kind (its name changes with its holes). */
+    const masked = (g: SVGGElement | null, kind: string) => g?.getAttribute("mask") === `url(#${document.querySelector(`mask[data-kind="${kind}"]`)?.id})`;
     const over = [...document.querySelectorAll<SVGPathElement>(".curves g.over path")];
     for (const p of peeked) {
       const r = p.getBoundingClientRect();
       if (!holes.some((h) => Math.abs(h.x - r.left) < 1.5 && Math.abs(h.y - r.top) < 1.5 && Math.abs(h.w - r.width) < 1.5 && Math.abs(h.h - r.height) < 1.5)) faults.push(`peeking ${p.className}: its place is not clear of the curves`);
-      if (under && under.getAttribute("mask") !== "url(#ie-curve-holes)") faults.push("peeking: the curves under it are not masked");
+      if (under && !masked(under, "ie-curve-holes")) faults.push("peeking: the curves under it are not masked");
     }
     const owns = (id: string | undefined) => peeked.some((q) => q.contains(document.querySelector(`.pane[data-tid="${id}"]`)));
     // A pane peeking out of a column that peeks too: the column's other panes' curves are over the column, under that pane (it may cover their tabs).
@@ -433,10 +435,10 @@ export const curveFaults = (page: Page) =>
     for (const p of over) if (!paneOwns(p.dataset.from) && !paneOwns(p.dataset.to)) faults.push(`${p.dataset.key}: over what peeks, but not its own`);
     const mid = document.querySelector<SVGGElement>(".curves g.mid");
     for (const p of document.querySelectorAll<SVGPathElement>(".curves g.mid path")) if (paneOwns(p.dataset.from) || paneOwns(p.dataset.to) || (!owns(p.dataset.from) && !owns(p.dataset.to))) faults.push(`${p.dataset.key}: over the peeking column and under the pane peeking in it, but not only the column's`);
-    const paneHoles = [...document.querySelectorAll<SVGRectElement>("#ie-curve-mid rect.hole")].map((r) => ({ x: +r.getAttribute("x")! + box.left, y: +r.getAttribute("y")! + box.top }));
+    const paneHoles = [...document.querySelectorAll<SVGRectElement>('mask[data-kind="ie-curve-mid"] rect.hole')].map((r) => ({ x: +r.getAttribute("x")! + box.left, y: +r.getAttribute("y")! + box.top }));
     for (const p of peeked.filter((q) => q.classList.contains("pane") && peeked.some((c) => c !== q && c.contains(q)))) {
       const r = p.getBoundingClientRect();
-      if (!paneHoles.some((h) => Math.abs(h.x - r.left) < 1.5 && Math.abs(h.y - r.top) < 1.5) || mid?.getAttribute("mask") !== "url(#ie-curve-mid)") faults.push(`peeking ${p.className}: its column's other curves are not kept off it`);
+      if (!paneHoles.some((h) => Math.abs(h.x - r.left) < 1.5 && Math.abs(h.y - r.top) < 1.5) || !masked(mid, "ie-curve-mid")) faults.push(`peeking ${p.className}: its column's other curves are not kept off it`);
     }
     const bar = document.querySelector<HTMLElement>(".pane > .selbar");
     const barShown = !!bar && bar.style.visibility !== "hidden";

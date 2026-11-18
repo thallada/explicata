@@ -1028,9 +1028,11 @@ export function Panes() {
       // Within a column that is out already: only the pane part changes.
       const col = pane?.parentElement as HTMLElement | undefined;
       if (col && peeked.includes(col)) {
-        for (const it of peeked.filter((x) => x !== col)) lower(it);
+        const gone = peeked.filter((x) => x !== col);
+        for (const it of gone) lower(it);
         peeked = [col];
         peekedFor = pane;
+        if (gone.length) schedule();
       } else hide();
       if (!pane || !its.some((x) => !peeked.includes(x))) return;
       pending = pane;
@@ -1938,6 +1940,9 @@ function curves(el: HTMLElement | null, svg: SVGSVGElement | null) {
   markRuled(els, rules);
 }
 
+/** Counts the masks' names (layers). */
+let maskSeq = 0;
+
 /**
  * The curves' three layers: those under what peeks (with holes where it is, and where the selection
  * bar is); those of a peeking column's other panes, over the column but under a pane of it that
@@ -1960,9 +1965,9 @@ function layers(svg: SVGSVGElement, area: DOMRect, holes: { x: number; y: number
   }
   // Each part made if missing (a drawing an earlier build of the page began has fewer layers).
   for (const id of ["ie-curve-holes", "ie-curve-mid", "ie-curve-bar"]) {
-    if (defs.querySelector(`#${id}`)) continue;
+    if (defs.querySelector(`mask[data-kind="${id}"]`)) continue;
     const m = document.createElementNS(NS, "mask");
-    m.id = id;
+    m.dataset.kind = id;
     m.setAttribute("maskUnits", "userSpaceOnUse");
     defs.appendChild(m);
   }
@@ -1982,10 +1987,13 @@ function layers(svg: SVGSVGElement, area: DOMRect, holes: { x: number; y: number
   const mid = svg.querySelector<SVGGElement>("g.mid")!;
   const over = svg.querySelector<SVGGElement>("g.over")!;
   const fill = (id: string, g: SVGGElement, hs: typeof holes) => {
-    const m = svg.querySelector<SVGMaskElement>(`#${id}`)!;
+    const m = svg.querySelector<SVGMaskElement>(`mask[data-kind="${id}"]`)!;
     const key = hs.map((h) => [h.x, h.y, h.w, h.h].map(Math.round).join(",")).join(";");
     if (m.dataset.key === key) return;
     m.dataset.key = key;
+    // A new name each time the holes change, so the layer's own attribute changes with them: a browser
+    // that keeps a masked layer's painting while only the mask's rects change draws it again.
+    m.id = `${id}-${++maskSeq}`;
     if (!hs.length) {
       g.removeAttribute("mask");
       m.replaceChildren();
@@ -2000,7 +2008,7 @@ function layers(svg: SVGSVGElement, area: DOMRect, holes: { x: number; y: number
       return r;
     });
     m.replaceChildren(all, ...cut);
-    g.setAttribute("mask", `url(#${id})`);
+    g.setAttribute("mask", `url(#${m.id})`);
   };
   fill("ie-curve-holes", under, holes);
   fill("ie-curve-mid", mid, midHoles);
