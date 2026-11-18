@@ -788,7 +788,7 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 .web-model { margin: 0.2rem 0 0.8rem; padding: 0.45rem 0.7rem; border-left: 2px dashed var(--web-rule); background: color-mix(in srgb, var(--bg) 45%, transparent); }
 .web-model-label { margin: 0 0 0.2rem; font-family: var(--sans); font-size: 0.62rem; letter-spacing: 0.02em; color: var(--faint); }
 .web-model-text { margin: 0; font-size: 0.95rem; line-height: 1.55; }
-.web-arranged { margin: 0.6rem 0 0.2rem; }
+.web-arranged, .web-auto { margin: 0.6rem 0 0.2rem; }
 @media (prefers-color-scheme: dark) {
   /* Most images are drawn for a light page: a light plate behind them. */
   .wiki-text figure img { background: #f3efe6; }

@@ -6,6 +6,10 @@
  *
  *   tracing      a blog post whose sections are all h3, with <meta name=author> and a <time>
  *   essay        a long headingless essay in a layout table, paragraphs made of <br><br>, no metadata
+ *   drift        a headingless page of plain paragraphs whose title says "mockfail": the mock model
+ *                fails to arrange it (an automatic attempt that comes to nothing, then s)
+ *   slow         a headingless page whose title says "mockslow": the mock model takes 1.5 s over it
+ *                (the "arranging…" line, and a pane on a part by length when the sections arrive)
  *   letters      sections opened by <p>I.</p>, <p>II.</p>…, author and date in JSON-LD
  *   rules        <p><strong>1. …</strong></p> sections, a sidebar full of h2s, a byline class
  *   phare        French, h2 and h3 sections, with junk ones (Sommaire, Voir aussi, Notes et références)
@@ -36,6 +40,8 @@
 export const MOCK_PAGES = {
   tracing: "https://tracing.example.org/posts/following-a-request",
   essay: "https://essays.example.com/hundred.html",
+  drift: "https://notes.example.net/field/unsorted",
+  slow: "https://tides.example.net/slow-water",
   letters: "https://letters.example.net/p/on-maps",
   rules: "https://software.example.com/2003/10/twelve-rules/",
   phare: "https://encyclopedie.example.org/fr/Phare_de_la_Pointe",
@@ -129,6 +135,12 @@ const tracing = page(
 <section id="comments"><h3>4 Comments</h3><p>${prose(40, 20)}</p></section>
 </article></main>${FOOTER}`,
 );
+
+/** A page of plain paragraphs and nothing else: no headings, no metadata but its title. */
+const headingless = (title: string, from: number) =>
+  page(`<title>${title}</title>`, `<article>${Array.from({ length: 12 }, (_, i) => `<p>${prose(125, from + i * 2)}</p>`).join("")}</article>`);
+const drift = headingless("Field notes, unsorted (mockfail)", 3);
+const slow = headingless("Slow water (mockslow)", 7);
 
 const essayParas = Array.from({ length: 14 }, (_, i) => prose(120 + (i % 3) * 15, i * 2));
 const essay = `<html><head><title>A Hundred Small Maps</title></head><body bgcolor="#ffffff">
@@ -290,6 +302,8 @@ const redirect = (to: string, status = 302) => new Response(null, { status, head
 const PAGES: Record<string, () => Response> = {
   [MOCK_PAGES.tracing]: () => html(tracing),
   [MOCK_PAGES.essay]: () => html(essay, 200, { "content-type": "text/html" }),
+  [MOCK_PAGES.drift]: () => html(drift),
+  [MOCK_PAGES.slow]: () => html(slow),
   [MOCK_PAGES.letters]: () => html(letters),
   [MOCK_PAGES.rules]: () => html(rules, 200, { "last-modified": "Tue, 01 Nov 2022 10:00:00 GMT" }),
   [MOCK_PAGES.phare]: () => html(phare),

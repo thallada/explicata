@@ -80,11 +80,19 @@ export interface WebArticle {
   words: number;
   attribution: WebAttribution;
   /**
-   * What a model added at the reader's request (POST /api/page/arrange), never the page's own
+   * What a model added (POST /api/page/arrange, or by itself: server/pageArrange.ts), never the page's own
    * words: a summary, and whether the sections are the model's (outline "model").
    */
   model?: { summary: string; sections: boolean; by?: string; at: string; note?: string };
+  /**
+   * For a page divided by length that a model has not arranged: whether it is being arranged by
+   * itself now, or why it was not (server/pageArrange.ts `auto`). Added by the routes to the page
+   * they send; never kept in the snapshot.
+   */
+  auto?: AutoArrange;
 }
+/** A page divided by length, arranged by itself after it is read: under way, or why not (a refusal's reason and words). */
+export type AutoArrange = { state: "running" } | { state: "skipped"; reason: string; message: string };
 export type WebUnusableReason = "robots" | "refused" | "type" | "empty" | "too-large" | "offline" | "error" | "off";
 /** A page that is not shown: the reader is offered the original, with the reason in plain words. */
 export interface WebUnusable {

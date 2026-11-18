@@ -32,7 +32,7 @@ Seventeen pages, chosen to cover the kinds of page a reader links to, each fetch
 | 16 | WordPress | joelonsoftware.com | 200 | 3,675 | `<strong>N.` | byline class | meta | pseudo-headings |
 | 17 | hand-written | norvig.com | 200 | 2,753 | 9 h2 | layout only → none | none | headings |
 
-("model organise": such a page is split by length, and the reader may have a model arrange it, §10.)
+("model organise": such a page is split by length, and a model arranges it, by itself once and at the reader's request, §10.)
 
 What the table says:
 
@@ -220,7 +220,7 @@ become section titles, the page's `h1` its title, and junk sections are the one 
 | `GET /api/page/summary?url=…[&cached=1]` | 200 `{ ok, cached, summary: WebSummary }`: title, site, author, date, description and the lead's first sentence; `cached=1` never reads the page (404 `uncached`) |
 | `GET /api/page/media?u=…` | the image, if a kept snapshot shows it (a picture, or a video's still: its poster, YouTube's thumbnail): `image/*` only, 10 MB, `cache-control: private, max-age=604800`, `content-security-policy: sandbox`, `x-content-type-options: nosniff`; 404 for any address no snapshot shows (it is not an open proxy), 415 for something that is not an image |
 | `POST /api/page/reload` `{ url }` | the page read again: 200 `{ ok, article }`, or the last copy with `stale: <why>` when it no longer answers; a page never shown that still cannot be is a 422 or 503 `WebUnusable` |
-| `POST /api/page/arrange` `{ url }` | §10: 200 `{ ok, article, called, arranged: "sections" \| "summary", note? }`; refused with `{ ok: false, reason, message }`: 404 `uncached`, 409 `old` (a copy read before arranging existed), 422 `too-long`, 429 `budget` or `plan`, 502 `failed`, 503 `no-model` or `off` |
+| `POST /api/page/arrange` `{ url, auto? }` | §10: 200 `{ ok, article, called, arranged: "sections" \| "summary", note? }`; refused with `{ ok: false, reason, message }`: 404 `uncached`, 409 `old` (a copy read before arranging existed), 422 `too-long`, 429 `budget` or `plan`, 502 `failed`, 503 `no-model` or `off`. With `auto: true` it only waits for an arrangement by itself under way (§10), answering with what it came to (409 `idle`: none under way), and never makes a call |
 
 A page that cannot be shown is a 422 with the `WebUnusable` body; an unreachable or failing site
 503. `EX_PAGES=off` answers every route with 503 `reason: "off"`; `/api/state` says
@@ -250,7 +250,9 @@ refresh. Video and Wikipedia's pictures came later (§11; docs/wikipedia.md §3)
 disk. `MOCK_PAGES` lists their addresses; each is named for the shape it imitates (§1), and one,
 `vanishing`, answers once and then 410, for a Reload that finds a page gone. With `EX_LLM=mock` the
 mock model arranges a page into three sections, sending them out of order, with a repeat and a
-number past the end, so that the cleaning in §10 is exercised every time.
+number past the end, so that the cleaning in §10 is exercised every time. Two headingless fixtures
+are there for arranging by itself: `drift`, whose title says "mockfail", which the mock model fails
+on, and `slow`, whose title says "mockslow", over which it takes 1.5 s.
 
 ## 8. If the server is ever reachable by others
 
@@ -327,13 +329,40 @@ instead. The view reuses the article view's structure and classes (`.wiki`, `.wi
   reader's choice (2.5 s at most, the picker saying so meanwhile, Esc leaving the words unlinked), and
   keeps it in `Ref.title` in the same commit as the link; a page that is slow or cannot be read is
   linked without one. A title is never written because a page was opened.
+- **An address typed into a node's text** (`src/core/bareLinks.ts`, `Store.typedAddresses`) is
+  turned into a titled link once the edit is finished, never while typing, in three steps that are
+  each one commit, so `u` takes each back on its own:
+  1. Each bare `http(s)` address new in this edit (not in the text before it; not inside a code span
+     or words already linked; not a phrase declined in the node's `nolink`; trailing `.,;:!?…` and
+     an unbalanced `)` or `]` left out; a host with a dot) is linked as typed, all in one commit, as
+     selecting it and `w` would: a Wikipedia article's address to the article (`wikiRefOf`), any
+     other to the page. A section whose whole text is one address, with no target and no sections,
+     instead becomes a section that is only that link (its text cleared, `linkOnly`), so it opens
+     straight as the page.
+  2. Each page is read for its title (`GET /api/page/summary`, up to 20 s; at most five pages from
+     one edit, the rest staying linked as typed, and the status line says so); an article's title
+     is in its address. Reading the page also starts arranging it by itself (§10), so the link opens
+     at once, already arranged.
+  3. The address in the text is replaced by the title, with the link's anchor (and `Ref.title`), as
+     the address out then the title in, so undo puts the link back on the address. Only while those
+     words are still the whole address as typed and the link still goes there: a concurrent edit of
+     them, here or merged from another replica, drops the step. A title that arrives while the node's
+     text is being edited again waits for that edit to finish. For a section made a link, its title
+     is set to the page's only while it is empty or a placeholder; a title of its own is kept.
+
+  `u` after step 3 brings the address back, still linked; a later edit finds it in the text before
+  it, so it is never converted again. A page that cannot be read (robots, a refusal, offline, not a
+  page, `EX_PAGES=off`) keeps its address, linked, and the status line says why, once. It is always
+  on: unlike link suggestions it acts only on what the reader typed, and every step is undone like
+  any edit.
 
 ## 10. Arranging with a model (server/pageArrange.ts)
 
-A page with no headings is divided by length (§4), which is honest but blind. On the reader's
-request (`s` on a page, or "Arrange with a model" in its menu; `POST /api/page/arrange`), a model
-writes a short summary of the page and, for a page divided by length, chooses where its sections
-begin. Never on opening, never in the background.
+A page with no headings is divided by length (§4), which is honest but blind. A model writes a
+short summary of the page and, for a page divided by length, chooses where its sections begin: by
+itself, once, for a page divided by length when it is first read (below), and on the reader's
+request (`s` on a page, or "Arrange with a model" in its menu; `POST /api/page/arrange`) for any
+page.
 
 - **What is sent.** The page's title, and each unit of the lead and sections numbered in reading
   order, as its first 150 characters (a figure as `[image: caption]`, a heading as
@@ -361,7 +390,10 @@ begin. Never on opening, never in the background.
   gains only the summary; so does a page short enough to be one lead.
 - **Panes.** Section ids are namespaced by outline, so a pane open on a part by length (`c2`)
   names nothing in the model's outline: it closes when the arranged page arrives, and the status
-  line says so with the result.
+  line says so with the result. Moving such a pane to the model's section that holds its first
+  unit was considered and left out: the arrangement usually arrives within seconds of opening,
+  before the reader has opened a part, and a pane silently showing a different, longer span would
+  lose the place nearly as much as closing it.
 - **The gate**, checked before any call, each refusal a sentence the status line shows: no model;
   `EX_PAGES_ARRANGE=off`; the plan's limits nearly used (`warning`) or refusing (`limited`, server/
   usage.ts), so that what is left of a plan goes to writing; the server's day of calls spent
@@ -369,6 +401,32 @@ begin. Never on opening, never in the background.
   UTC, every call made counted, failed ones too). One call per content hash however many ask at once;
   a page already arranged for the text it now has answers from its snapshot without a call (the
   status line says "no new call").
+- **By itself** (`Arranger.auto`). The owner expected a page without headings of its own to be given
+  section titles without being asked, so the routes that read a page for a person, `article`,
+  `reload` and `summary` (not `&cached=1`: a card never spends anything), start the same call `s`
+  makes, without waiting for it, for a page whose outline is `chunks` and that has nothing a model
+  made for its current hash. Pages with headings or pseudo-headings (real text of the page's own,
+  left as they are), pages short enough to be one lead, and pages that cannot be shown never start
+  it. It goes through the same gate, the same input cap, the same untrusted-text block, the same
+  daily budget and the same single flight per hash, plus one more refusal: `EX_PAGES_ARRANGE=manual`
+  leaves arranging to `s` alone. **One attempt per content hash per server run**: a refusal
+  (budget, plan, too long, an old copy) or a failure is remembered, in memory, and said each time
+  the page is sent, but not tried again by itself; `s` still may. A Reload with unchanged text keeps
+  the hash, and so the arrangement or the refusal; one that changes the text is a new hash and gets
+  one attempt. No model, `off` and `manual` are not attempts, only said. Kept in memory rather than
+  in the snapshot, so a restart is the one way a failed page is tried by itself again.
+- **What the reader sees.** `article` and `reload` send the page with `auto: { state: "running" }`
+  or `{ state: "skipped", reason, message }` (never kept in the snapshot). The page is shown at once,
+  in its parts by length, with one quiet line: "Arranging into sections with a model…", or "Kept in
+  parts by length: <why> s tries again." (nothing about `s` for no model or `off`, "s arranges it"
+  for `manual`). While it runs the browser asks `arrange` with `auto: true`, which only joins the
+  call under way (or answers with the kept result, or why it came to nothing) and can never start a
+  call, so asking costs nothing whatever happens; there is no other channel. When the sections come
+  the page swaps to them in place: the reader's pane on the page stays where it is, a focus on one
+  of its rows moves to its head, and a pane open on a part by length closes (its id, `c2`, names
+  nothing in the model's outline) with one status line saying why. Nothing else is said, so a page
+  arranged before the reader got to its parts changes only its rows. A page read for a link's title
+  (§9) is arranged without any pane open; opening it later finds it done.
 
 ## 11. Videos (and what loads when)
 

@@ -27,7 +27,7 @@ import { usage, withMockUsage } from "./usage";
 import { HttpError, ROOT as root, abortOnClose, dataDir, readJson, sendJson as json } from "./util";
 import { PageClient, pages } from "./page";
 import { makeMockPageFetch } from "./pageMock";
-import { Arranger, serverBudget } from "./pageArrange";
+import { Arranger, arrangeMode, serverBudget } from "./pageArrange";
 import { pageOff, pageRoutes } from "./pageRoutes";
 import { applyWebPolicy, webConfig } from "./web";
 import { WikiClient, validContact, wiki, wikiLang } from "./wiki";
@@ -109,12 +109,13 @@ const pageMode: PageMode = pagesWanted === "live" || pagesWanted === "mock" ? pa
 if (pageMode !== pagesWanted) console.warn(`EX_PAGES=${pagesWanted} is not live, mock or off; reading web pages is off.`);
 // The mock keeps its snapshots in memory only, so each run starts from nothing read.
 const mockPages = pageMode === "mock" ? new PageClient({ fetch: makeMockPageFetch(), spacingMs: 0, persist: false }) : null;
-// Arranging a page with a model (s on a page) is always the reader's own request, through the
-// shared model, within EX_PAGE_CALLS calls a day for the whole server (default 20, counted in
-// <EX_DATA>/page-calls.json), and never while the plan's limits are nearly used. EX_PAGES_ARRANGE=off
-// turns it off.
-const arrangeOn = process.env.EX_PAGES_ARRANGE !== "off";
-const arranger = new Arranger({ pages: () => mockPages ?? pages(), llm: () => llm, on: arrangeOn, budget: serverBudget(process.env, DATA), plan: () => usage.summary().plan });
+// Arranging a page with a model: at the reader's request (s on a page), and by itself, once, for a
+// page with no headings of its own (divided by length) when it is first read. Through the shared
+// model, within EX_PAGE_CALLS calls a day for the whole server (default 20, counted in
+// <EX_DATA>/page-calls.json), and never while the plan's limits are nearly used.
+// EX_PAGES_ARRANGE=manual leaves it to s alone; EX_PAGES_ARRANGE=off turns it off.
+const { on: arrangeOn, auto: arrangeAuto } = arrangeMode(process.env);
+const arranger = new Arranger({ pages: () => mockPages ?? pages(), llm: () => llm, on: arrangeOn, auto: arrangeAuto, budget: serverBudget(process.env, DATA), plan: () => usage.summary().plan });
 const handlePages = pageMode === "off" ? pageOff : pageRoutes(() => mockPages ?? pages(), () => arranger);
 
 /** A short reason for a failed model call, whichever provider made it. */
@@ -350,5 +351,5 @@ createServer(async (req, res) => {
   console.log(
     `wikipedia: ${wikiMode === "live" ? `live (${wikiState.lang}.wikipedia.org, ${wikiState.contact ? "with" : "without"} a contact)` : wikiMode === "mock" ? "mock (fixtures, no network)" : "off"}`,
   );
-  console.log(`web pages: ${pageMode === "live" ? "live (only pages you open)" : pageMode === "mock" ? "mock (fixtures, no network)" : "off"}${pageMode !== "off" ? `; arranged by a model: ${arrangeOn && llm ? `on request, at most ${arranger.budgetMax} calls a day` : "off"}` : ""}`);
+  console.log(`web pages: ${pageMode === "live" ? "live (only pages you open)" : pageMode === "mock" ? "mock (fixtures, no network)" : "off"}${pageMode !== "off" ? `; arranged by a model: ${arrangeOn && llm ? `${arranger.automatic ? "pages without headings by themselves, and " : ""}on request, at most ${arranger.budgetMax} calls a day` : "off"}` : ""}`);
 });

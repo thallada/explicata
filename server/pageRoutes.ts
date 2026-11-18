@@ -5,7 +5,7 @@
  *   GET  /api/page/summary?url=https://…[&cached=1]  title, site, author, date, first sentence
  *   GET  /api/page/media?u=https://…                an image a page read here shows
  *   POST /api/page/reload   { url }                 read the page again (the reader's Reload)
- *   POST /api/page/arrange  { url }                 summarise it with a model, and arrange a page
+ *   POST /api/page/arrange  { url[, auto: true] }   summarise it with a model, and arrange a page
  *                                                    divided by length into sections (pageArrange.ts)
  *
  * summary &cached=1 answers from the snapshot cache only, never reading the page: 404
@@ -27,12 +27,18 @@
  * arranging existed), 422 too-long, 429 budget or plan, 502 failed (the call failed), 503 no-model
  * or off (EX_PAGES_ARRANGE=off).
  *
+ * Arranging by itself: article, reload and summary (not &cached=1) start it for a page divided by
+ * length that a model has not arranged (Arranger.auto), and article and reload send where it stands
+ * in the page's `auto`: { state: "running" } or { state: "skipped", reason, message }. While it runs
+ * the browser asks arrange with `auto: true`, which only waits for the call under way (or answers
+ * with what it came to: 409 idle when nothing is under way) and never starts one.
+ *
  * Every route refuses a request another site's page makes (Sec-Fetch-Site, else Origin, against
  * the request's own Host). Requests with neither header (curl, the tests) are allowed. The two
  * that act (reload reads a site, arrange spends model budget) are POST only; the others GET only.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { MediaResult, PageClient, PageResult, WebUnusable } from "./page";
+import type { MediaResult, PageClient, PageResult, WebArticle, WebUnusable } from "./page";
 import type { ArrangeRefusal, Arranger } from "./pageArrange";
 import { HttpError, abortOnClose, readJson, sendJson as send } from "./util";
 import type { Uncached } from "./wiki";
@@ -94,7 +100,7 @@ export function sendMedia(res: ServerResponse, r: MediaResult | { ok: false; rea
 /** The routes that act, and are POST only; the rest are GET only. */
 const POSTS = new Set(["reload", "arrange"]);
 
-const REFUSED: Record<ArrangeRefusal, number> = { uncached: 404, old: 409, "too-long": 422, budget: 429, plan: 429, failed: 502, "no-model": 503, off: 503 };
+const REFUSED: Record<ArrangeRefusal, number> = { uncached: 404, old: 409, idle: 409, "too-long": 422, budget: 429, plan: 429, failed: 502, "no-model": 503, off: 503, manual: 503 };
 
 function reply<V>(res: ServerResponse, r: PageResult<V> | Uncached | { ok: false; reason: "aborted" }, key: string) {
   if (r.ok) return send(res, 200, { ok: true, cached: r.cached, [key]: r.value });
@@ -118,36 +124,50 @@ export function pageRoutes(client: () => PageClient, arranger?: () => Arranger) 
       send(res, 405, { ok: false, message: `use ${method}` }, { allow: method });
       return true;
     }
+    // A page read or opened: arranged by itself if it is divided by length (never throws, never waits).
+    const auto = (u: string) => arranger?.().auto(u);
+    const withAuto = <R extends { ok: true; value: WebArticle }>(u: string, r: R): R => {
+      const a = auto(u);
+      return a ? { ...r, value: { ...r.value, auto: a } } : r;
+    };
     try {
       const p = client();
       const signal = abortOnClose(res);
       switch (route) {
         case "reload": {
           const body = await readJson<{ url?: unknown }>(req, 16 * 1024);
-          const r = await p.reload(checked(body.url, "url"), { signal });
-          if (r.ok) send(res, 200, { ok: true, cached: false, article: r.value, ...(r.stale ? { stale: r.stale } : {}) });
+          const u = checked(body.url, "url");
+          const r = await p.reload(u, { signal });
+          if (r.ok) send(res, 200, { ok: true, cached: false, article: withAuto(u, r).value, ...(r.stale ? { stale: r.stale } : {}) });
           else reply(res, r, "article");
           return true;
         }
         case "arrange": {
-          const body = await readJson<{ url?: unknown }>(req, 16 * 1024);
+          const body = await readJson<{ url?: unknown; auto?: unknown }>(req, 16 * 1024);
           const u = checked(body.url, "url");
           if (!arranger) {
             send(res, 503, { ok: false, reason: "off", message: "Arranging pages with a model is not available on this server." });
             return true;
           }
           // Not abandoned when the browser goes: the call is made once, and its result kept for the next ask.
-          const r = await arranger().arrange(u);
+          const r = await arranger().arrange(u, { join: body.auto === true });
           if (r.ok) send(res, 200, r);
           else send(res, REFUSED[r.reason], r);
           return true;
         }
-        case "article":
-          reply(res, await p.article(address(url, "url"), { signal }), "article");
+        case "article": {
+          const u = address(url, "url");
+          const r = await p.article(u, { signal });
+          reply(res, r.ok ? withAuto(u, r) : r, "article");
           return true;
+        }
         case "summary": {
           const u = address(url, "url");
-          reply(res, await p.summary(u, { signal, cacheOnly: url.searchParams.get("cached") === "1" }), "summary");
+          const cacheOnly = url.searchParams.get("cached") === "1";
+          const r = await p.summary(u, { signal, cacheOnly });
+          // Read for a link's title (not a card's look at the cache): arranged by itself as when opened.
+          if (r.ok && !cacheOnly) auto(u);
+          reply(res, r, "summary");
           return true;
         }
         case "media":

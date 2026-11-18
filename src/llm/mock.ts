@@ -61,7 +61,8 @@ function mockJson(req: JsonReq): unknown {
       // A web page arranged (server/pageArrange.ts). The sections come back out of order, with a
       // repeat and a number past the end, as a careless model's might: the cleaning makes them
       // three sections starting at the first unit after the lead, a third and two thirds of the
-      // way on. A title saying "mockfail" makes the call fail.
+      // way on. A title saying "mockfail" makes the call fail; one saying "mockslow" makes it take
+      // 1.5 s (mockLLM.json).
       if (/mockfail/i.test(v.title ?? "")) throw new Error("mock arranger: the call failed");
       const n = Number(v.units ?? 0);
       const first = Number(v.first ?? 1);
@@ -228,6 +229,7 @@ export function mockLLM(opts: { delay?: number } = {}): LLM {
     },
     async json<T>(req: JsonReq) {
       if (delay) await sleep(delay);
+      if (req.schema === "arrange" && /mockslow/i.test(req.vars?.title ?? "")) await sleep(1500);
       return mockJson(req) as T;
     },
     async turn(req, signal, onWeb) {

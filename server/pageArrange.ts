@@ -1,6 +1,7 @@
 /**
- * Arranging a web page with a model, at the reader's request (POST /api/page/arrange): a short
- * summary, and for a page divided only by length, sections at the places the model chooses. See
+ * Arranging a web page with a model (POST /api/page/arrange): a short summary, and for a page
+ * divided only by length, sections at the places the model chooses. At the reader's request (s), and
+ * by itself once for a page divided by length when it is first read (`auto`, below). See
  * docs/pages.md §10 for why it is shaped as it is.
  *
  *   What is sent: the page's title and the opening of each of its units, numbered (at most
@@ -23,11 +24,19 @@
  * the server's daily budget of calls (EX_PAGE_CALLS, default 20) is spent. One call per content hash
  * however many ask at once, and none for a page already arranged as it now reads. The call goes
  * through the server's shared model, so it is counted in the usage like every other.
+ *
+ * By itself (`auto`, started by the routes when a page is read or opened, or read for a link's
+ * title): only a page divided by length (outline "chunks"; a page with headings or pseudo-headings,
+ * one short enough to be a lead, and one that cannot be shown never are), not yet arranged as it
+ * now reads, with the same gate, the same call and the same flight as the reader's s, plus
+ * EX_PAGES_ARRANGE=manual, which leaves arranging to s alone. One attempt per content hash in a
+ * server's run: one refused or failed is not tried again by itself (s still may), so nothing loops;
+ * a Reload that changes the text gives it a new hash, and so one more attempt.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ArrangeReply, JsonReq, LLM } from "../src/llm/types";
-import type { ModelWork, PageClient, PageMaterial, WebArticle, WebSection } from "./page";
+import type { AutoArrange, ModelWork, PageClient, PageMaterial, WebArticle, WebSection } from "./page";
 import { clipText, type PageUnit } from "./pageHtml";
 import type { UsageSummary } from "./usage";
 import { dataDir, writeAtomic } from "./util";
@@ -214,7 +223,7 @@ export class DailyBudget {
 
 // ---- the arranger ----
 
-export type ArrangeRefusal = "uncached" | "old" | "no-model" | "off" | "plan" | "budget" | "too-long" | "failed";
+export type ArrangeRefusal = "uncached" | "old" | "no-model" | "off" | "manual" | "plan" | "budget" | "too-long" | "failed" | "idle";
 export type ArrangeResult =
   | {
       ok: true;
@@ -233,10 +242,21 @@ export interface ArrangerOptions {
   llm: () => LLM | null;
   /** False when EX_PAGES_ARRANGE=off. */
   on?: boolean;
+  /** False when EX_PAGES_ARRANGE=manual (or off): a page is arranged only at the reader's request. */
+  auto?: boolean;
   budget: DailyBudget;
   /** The usage tracker's view of the plan (server/usage.ts summary().plan). */
   plan?: () => UsageSummary["plan"];
 }
+
+/** What EX_PAGES_ARRANGE says: off (never), manual (at the reader's request only), anything else both that and by itself. */
+export function arrangeMode(env: NodeJS.ProcessEnv = process.env): { on: boolean; auto: boolean } {
+  const v = (env.EX_PAGES_ARRANGE ?? "").trim().toLowerCase();
+  return { on: v !== "off", auto: v !== "off" && v !== "manual" };
+}
+
+/** Pages remembered as tried by themselves, at most (the oldest forgotten first). */
+const TRIED_MAX = 2000;
 
 /** The budget the server keeps: EX_PAGE_CALLS calls a day, counted in <EX_DATA>/page-calls.json. */
 export function serverBudget(env: NodeJS.ProcessEnv = process.env, dir = dataDir()): DailyBudget {
@@ -246,6 +266,8 @@ export function serverBudget(env: NodeJS.ProcessEnv = process.env, dir = dataDir
 
 export class Arranger {
   private flying = new Map<string, Promise<ArrangeResult>>();
+  /** Content hashes tried by themselves in this run: null while the call is made, else why it came to nothing. */
+  private tried = new Map<string, { reason: ArrangeRefusal; message: string } | null>();
 
   constructor(private o: ArrangerOptions) {}
 
@@ -254,8 +276,18 @@ export class Arranger {
     return this.o.budget.max;
   }
 
-  /** Arrange (or summarise) a page already read here. Never reads the page; never throws. */
-  async arrange(url: string): Promise<ArrangeResult> {
+  /** Whether pages divided by length are arranged by themselves (a model, and EX_PAGES_ARRANGE neither off nor manual). */
+  get automatic(): boolean {
+    return this.o.on !== false && this.o.auto !== false && !!this.o.llm();
+  }
+
+  /**
+   * Arrange (or summarise) a page already read here. Never reads the page; never throws. `join`:
+   * only wait for an arrangement already under way (or answer with the one kept, or why the
+   * automatic attempt came to nothing), never start a call: what the browser asks while a page
+   * is being arranged by itself, so that asking can never spend a call.
+   */
+  async arrange(url: string, o: { join?: boolean } = {}): Promise<ArrangeResult> {
     const m = this.o.pages().material(url);
     if (!m) return { ok: false, reason: "uncached", message: "Only a page already read here can be arranged: open it first." };
     const done = this.kept(m);
@@ -263,11 +295,48 @@ export class Arranger {
     // One call per content hash, however many ask.
     const k = m.article.hash;
     let p = this.flying.get(k);
+    if (!p && o.join) {
+      const was = this.tried.get(k);
+      return { ok: false, ...(was ?? { reason: "idle", message: "This page is not being arranged now: s arranges it." }) };
+    }
     if (!p) {
       p = this.call(url, m).finally(() => this.flying.delete(k));
       this.flying.set(k, p);
     }
     return p;
+  }
+
+  /**
+   * Arrange a page by itself, after it was read or opened: only a page divided by length, not yet
+   * arranged as it now reads, and not tried by itself before in this run. Starts the call (the same
+   * one s makes, in the same flight) and does not wait for it. Returns where that stands for the
+   * page as now kept: under way, or why it is not done; undefined when there is nothing to say (a
+   * page with sections of its own, one already arranged, one not kept here). Never throws.
+   */
+  auto(url: string): AutoArrange | undefined {
+    const m = this.o.pages().material(url);
+    if (!m || m.article.outline !== "chunks" || this.kept(m)) return undefined;
+    const k = m.article.hash;
+    if (this.flying.has(k)) return { state: "running" };
+    const was = this.tried.get(k);
+    if (was) return { state: "skipped", ...was };
+    if (was === null) return undefined; // tried, and kept or gone since
+    // Refusals that hold for the whole run are not attempts: they are said each time, never remembered.
+    const always = this.refusal(true);
+    if (always && (always.reason === "no-model" || always.reason === "off" || always.reason === "manual")) return { state: "skipped", ...always };
+    const now = always ?? (m.units ? null : { reason: "old" as const, message: "This copy of the page was read before pages could be arranged: R reads it again, and it is arranged then." });
+    this.remember(k, now);
+    if (now) return { state: "skipped", ...now };
+    void this.arrange(url).then((r) => {
+      if (!r.ok) this.remember(k, { reason: r.reason, message: r.message });
+    });
+    return { state: "running" };
+  }
+
+  private remember(k: string, v: { reason: ArrangeRefusal; message: string } | null) {
+    this.tried.delete(k);
+    this.tried.set(k, v);
+    if (this.tried.size > TRIED_MAX) this.tried.delete(this.tried.keys().next().value as string);
   }
 
   /** The result kept for the page as it now reads, if there is one. */
@@ -276,10 +345,11 @@ export class Arranger {
     return { ok: true, article: m.view, called: false, arranged: m.model.sections ? "sections" : "summary", ...(m.model.note ? { note: m.model.note } : {}) };
   }
 
-  /** Why no call may be made now, or null. */
-  private refusal(): { reason: ArrangeRefusal; message: string } | null {
+  /** Why no call may be made now, or null. `auto`: for an attempt by itself, which EX_PAGES_ARRANGE=manual refuses too. */
+  private refusal(auto = false): { reason: ArrangeRefusal; message: string } | null {
     if (!this.o.llm()) return { reason: "no-model", message: "No model is configured on this server, so pages cannot be arranged." };
     if (this.o.on === false) return { reason: "off", message: "Arranging pages with a model is turned off on this server (EX_PAGES_ARRANGE=off)." };
+    if (auto && this.o.auto === false) return { reason: "manual", message: "This server arranges pages only when asked (EX_PAGES_ARRANGE=manual)." };
     const plan = this.o.plan?.();
     if (plan?.limited) return { reason: "plan", message: `The plan is refusing requests now${plan.limitLabel ? ` (its ${plan.limitLabel} limit)` : ""}${plan.limitResetsAt ? `, until ${plan.limitResetsAt.slice(0, 16).replace("T", " ")} UTC` : ""}; pages are not arranged until it lifts.` };
     if (plan?.warning) return { reason: "plan", message: `The plan's limits are nearly used${plan.remainingPercent !== null ? ` (${plan.remainingPercent}% left)` : ""}; pages are not arranged until they reset, so the calls are kept for writing.` };

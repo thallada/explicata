@@ -4,15 +4,16 @@
  * its sections as rows that open as panes, and where it is from at its foot; each outline the
  * server makes (headings, pseudo-headings, parts by length); a page that cannot be shown says why
  * and offers the original; figures come through the app's media route; a reload keeps the panes;
- * a hostile page runs nothing and loads nothing from elsewhere; s has the mock model arrange a page
- * and R reads one again; a link's card shows what the server's cache knows of its page, and the
+ * a hostile page runs nothing and loads nothing from elsewhere; a page with no headings is arranged
+ * by the mock model by itself, once (or says why not), s has it arrange or summarise one, and R
+ * reads one again; a link's card shows what the server's cache knows of its page, and the
  * link picker keeps an address's title; a section that is only a link is shown as its page or
  * article at once (its pane reads as the article's; in the column, under its row), and L opens a
  * section's target to the right of its pane. Nothing here touches the network:
  * the server's fetch is the mock's, and the browser's requests elsewhere are refused.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { WEB, command, jump, keys, noFaults, pane, seedLinks, seedWeb, settle, state, still, visit, wide } from "./helpers";
+import { WEB, command, jump, keys, noFaults, pageCalls, pane, seedLinks, seedWeb, settle, state, still, visit, wide } from "./helpers";
 
 /** The panes' refs, left to right, as short names: a node's title, W:article, U:host/path#section. */
 const trail = (page: Page) =>
@@ -109,7 +110,7 @@ test("panes: a link to a web page opens it in the next pane: its site, title and
   await keys(page, "Escape Escape");
 });
 
-test("each outline the server makes: pseudo-headings, strong headings with a byline class, parts by length, junk sections left out", async ({ page }) => {
+test("each outline the server makes: pseudo-headings, strong headings with a byline class, parts by length (arranged by a model by itself, or not), junk sections left out", async ({ page }) => {
   await wide(page, "Error-correcting codes");
   await follow(page, WEB.letters);
   let web = page.locator(".wiki-pane.web").last();
@@ -124,11 +125,19 @@ test("each outline the server makes: pseudo-headings, strong headings with a byl
   await expect(web.locator(".web-byline")).toHaveText("Jo Calloway · Notes on Software · 9 Oct 2003");
   await expect(web.locator(".wrow").first()).toContainText("1. Do you keep a list of bugs?");
 
+  // No headings: divided by length, and arranged by the model by itself. No metadata at all: the byline is the site alone.
   await follow(page, WEB.essay);
   web = page.locator(".wiki-pane.web").last();
-  await expect(web.locator(".wiki")).toHaveAttribute("data-outline", "chunks");
-  // No metadata at all: the byline is the site alone, and each part is named by its first words.
   await expect(web.locator(".web-byline")).toHaveText("essays.example.com");
+  await expect(web.locator(".wiki")).toHaveAttribute("data-outline", "model");
+  await expect(web.locator(".web-auto")).toHaveCount(0);
+
+  // One the model cannot arrange keeps its parts, each named by its first words, and says why in one quiet line.
+  await follow(page, WEB.drift);
+  web = page.locator(".wiki-pane.web").last();
+  await expect(web.locator(".web-auto")).toHaveAttribute("data-auto", "skipped");
+  await expect(web.locator(".wiki")).toHaveAttribute("data-outline", "chunks");
+  await expect(web.locator(".web-auto")).toHaveText(/^Kept in parts by length: The model call failed: .* s tries again\.$/);
   expect((await web.locator(".wrow > .row .title").allTextContents()).every((t) => t.endsWith("…"))).toBe(true);
   await expect(web.locator(".wiki > .wattr")).toContainText("divided into parts by length");
 
@@ -377,39 +386,54 @@ async function posted(page: Page, key: string, route: "arrange" | "reload"): Pro
   return (await res).json();
 }
 
-test("s: the model arranges a page divided by length; a pane on an old part closes; the summary is shown, labelled; a second s makes no call; a page with headings gains only the summary", async ({ page }) => {
+test("a page with no headings is arranged by itself, once: “arranging…” meanwhile; a pane on a part by length closes when the sections arrive; the summary is shown, labelled; s then makes no call; a page with headings gains only the summary", async ({ page }) => {
   await wide(page, "Error-correcting codes");
-  await follow(page, WEB.essay);
+  const calls = pageCalls();
+  // The mock model takes 1.5 s over this page: it shows its parts by length meanwhile, and says so.
+  await follow(page, WEB.slow);
   const web = page.locator(".wiki-pane.web").last();
   await expect(web.locator(".wiki")).toHaveAttribute("data-outline", "chunks");
+  await expect(web.locator(".web-auto")).toHaveText("Arranging into sections with a model…");
   await expect(web.locator(".web-model")).toHaveCount(0);
-  // A part by length open as the next pane.
+  // A part by length open as the next pane, while the model works.
   await keys(page, "j l");
-  expect((await trail(page)).at(-1)).toBe("U:essays.example.com/hundred.html#c1");
-  const first = await posted(page, "s", "arrange");
-  expect(first).toMatchObject({ ok: true, called: true, arranged: "sections" });
+  expect((await trail(page)).at(-1)).toBe("U:tides.example.net/slow-water#c1");
+  // The sections arrive: the page swaps to them, and the pane on the old part closes, the status line saying so.
   await expect(web.locator(".wiki")).toHaveAttribute("data-outline", "model");
   await expect(web.locator(".wrow > .row .title")).toHaveText(["Mock part one", "Mock part two", "Mock part three"]);
-  // The pane on the old part is closed, and the status line says so.
-  await expect(status(page)).toContainText("Arranged by the model into 3 sections");
-  await expect(status(page)).toContainText("A pane on one of its old parts is closed.");
-  expect((await trail(page)).at(-1)).toBe("U:essays.example.com/hundred.html");
+  await expect(web.locator(".web-auto")).toHaveCount(0);
+  await expect(status(page)).toContainText("A model has arranged this page into sections; the pane on one of its parts by length is closed.");
+  expect((await trail(page)).at(-1)).toBe("U:tides.example.net/slow-water");
+  expect(pageCalls()).toBe(calls + 1);
   // The summary above the page's own opening, marked as the model's; the foot says what the model did.
   const summary = web.locator(".web-model");
   await expect(summary.locator(".web-model-label")).toContainText("Summary written by a model (mock)");
-  await expect(summary.locator(".web-model-text")).toContainText("Mock summary of “A Hundred Small Maps”");
-  await expect(web.locator(".wiki > .wiki-text")).toContainText("A Hundred Small Maps");
+  await expect(summary.locator(".web-model-text")).toContainText("Mock summary of “Slow water (mockslow)”");
   await expect(web.locator(".web-arranged")).toContainText("Sections arranged by a model");
   const foot = web.locator(".wiki > .wattr");
   await expect(foot).toContainText("sections arranged by a model; summary written by a model");
   await expect(foot).not.toContainText("divided into parts by length");
   // A section of the model's opens as a pane like any other.
   await keys(page, "j l");
-  expect((await trail(page)).at(-1)).toBe("U:essays.example.com/hundred.html#m1");
+  expect((await trail(page)).at(-1)).toBe("U:tides.example.net/slow-water#m1");
   await keys(page, "h");
-  // Again: the kept result, no call.
+  // s: the kept result, no call. Opened again, or read again unchanged: no call either.
   expect(await posted(page, "s", "arrange")).toMatchObject({ ok: true, called: false, arranged: "sections" });
   await expect(status(page)).toContainText("no new call");
+  expect(await posted(page, "R", "reload")).toMatchObject({ ok: true, article: { outline: "model" } });
+  await follow(page, WEB.letters);
+  await follow(page, WEB.slow);
+  await expect(page.locator(".wiki-pane.web").last().locator(".wiki")).toHaveAttribute("data-outline", "model");
+  expect(pageCalls()).toBe(calls + 1);
+
+  // One the model failed on, by itself: s tries again (a call), and says why it failed again.
+  await follow(page, WEB.drift);
+  const drift = page.locator(".wiki-pane.web").last();
+  await expect(drift.locator(".web-auto")).toHaveAttribute("data-auto", "skipped");
+  const before = pageCalls();
+  expect(await posted(page, "s", "arrange")).toMatchObject({ ok: false, reason: "failed" });
+  await expect(status(page)).toContainText("Not arranged: The model call failed");
+  expect(pageCalls()).toBe(before + 1);
 
   // A page with headings of its own keeps them, and gains the summary only.
   await follow(page, WEB.tracing);
@@ -427,6 +451,25 @@ test("s: the model arranges a page divided by length; a pane on an old part clos
   await expect(page.locator(".menu")).toContainText("Arrange with a model");
   await expect(page.locator(".menu")).toContainText("Read it again");
   await page.keyboard.press("Escape");
+});
+
+test("when the day's budget is spent, a page with no headings keeps its parts with one quiet line saying so, and s says it again", async ({ page }) => {
+  // The server's own refusal is tested in tests/pageArrange.test.ts; here the browser is given it, as
+  // a server with its budget spent would send it, so the shared server's budget is left alone.
+  const spent = "Today's 20 model calls for arranging pages are used up on this server (EX_PAGE_CALLS); it starts again tomorrow (UTC).";
+  await page.route((u) => u.pathname === "/api/page/article" && u.searchParams.get("url") === WEB.drift, async (route) => {
+    const res = await route.fetch();
+    const body = await res.json();
+    await route.fulfill({ response: res, json: { ...body, article: { ...body.article, auto: { state: "skipped", reason: "budget", message: spent } } } });
+  });
+  await page.route((u) => u.pathname === "/api/page/arrange", (route) => route.fulfill({ status: 429, json: { ok: false, reason: "budget", message: spent } }));
+  await wide(page, "Error-correcting codes");
+  await follow(page, WEB.drift);
+  const web = page.locator(".wiki-pane.web").last();
+  await expect(web.locator(".web-auto")).toHaveText(`Kept in parts by length: ${spent} s tries again.`);
+  await expect(web.locator(".wiki")).toHaveAttribute("data-outline", "chunks");
+  expect(await posted(page, "s", "arrange")).toMatchObject({ ok: false, reason: "budget" });
+  await expect(status(page)).toContainText(`Not arranged: ${spent}`);
 });
 
 test("R reads a page again: unchanged text keeps the model's sections; a page that no longer answers keeps the copy read before, marked stale", async ({ page }) => {

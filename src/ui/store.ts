@@ -26,7 +26,8 @@ import { annotationsOf, articleNodes, inArticles, makeAnchor, reanchor, type Art
 import { asOpened, describeTarget, formatTarget, hostOf, parseTargetLoose, wikiKey, type Ref } from "../core/ref";
 import { article as wikiArticle, articleText, cachedExtract, sectionPath, sectionsUnder, sectionTexts, configureWiki, sensesOf as wikiSenses, wikiUrl, type Article, type WikiConfig } from "./wiki";
 import type { ArticleText } from "./articleText";
-import { arrangePage, article as webArticle, canArrange, configurePages, knownArticle, reloadPage, sectionsUnder as webSectionsUnder, siteOf, webKey, type PagesConfig } from "./web";
+import { arrangePage, article as webArticle, canArrange, configurePages, knownArticle, pageInfo, reloadPage, sectionsUnder as webSectionsUnder, siteOf, webKey, type PagesConfig } from "./web";
+import { linkAddresses, titleLink, titleWhole, type AddressLink } from "../core/bareLinks";
 import { LENSES } from "../llm/prompts";
 import {
   cascade, commitArticleNote, commitExpansion, deepen, reconcile, resolveConflicts, runAgent, scanContradictions, streamArticleNote, streamExpansion,
@@ -1299,7 +1300,7 @@ class Store {
       if (state?.wiki) this.wiki = state.wiki;
       this.web = state?.web ?? { on: false, searches: 0, fetches: 0 };
       if (state?.linkJob?.state === "running") this.links.job = state.linkJob;
-      configurePages(state?.pages, () => this.pageArrived());
+      configurePages(state?.pages, (w) => this.pageArrived(!!w?.arranged));
       configureWiki(state?.wiki, () => (this.replayHeld(), this.emit()), () => {
         // Once per browser: why Wikipedia is slow, and what makes it fast.
         if (lsGet("ie:wiki-hint", false)) return;
@@ -2286,6 +2287,7 @@ class Store {
         this.apply([...(value !== n[e.field] ? [op] : []), ...links], `${e.field === "title" ? "Rename" : "Edit"} “${clip(e.field === "title" ? value : label(s, e.node), 40)}”`);
         if (value !== n[e.field]) this.afterEdit(e.node, `the ${e.field} of “${n.title}” was edited by a person`);
         if (e.field === "body") this.links.scan(e.node, "human", marks);
+        if (e.field === "body" && value !== n.body) this.typedAddresses(e.node, n.body);
       } else if (n && marks.length) {
         this.links.scan(e.node, "human", marks);
       } else if (n && e.fresh && !n.title && !n.body) {
@@ -2296,6 +2298,72 @@ class Store {
     this.focus = { node: this.snap.nodes[this.focus.node] ? this.focus.node : this.top, grain: "node" };
     this.remember();
     this.emit();
+    // Titles that arrived while this node's text was being edited, tried now against what it reads.
+    const waiting = e && this.titling.get(e.node);
+    if (waiting) {
+      this.titling.delete(e.node);
+      for (const f of waiting) f();
+      this.emit();
+    }
+  }
+
+  /** Titles of typed addresses waiting for an edit of their node's text to finish, by node. */
+  private titling = new Map<NodeId, (() => void)[]>();
+
+  /**
+   * Bare addresses typed into a node's text, once the edit is finished (src/core/bareLinks.ts):
+   * linked as typed, one commit; then each page's title read (at most TITLED from one edit; an
+   * article's title is in its address) and put in place of the address, one commit each, while the
+   * words are still the address as typed. A page that cannot be read leaves its address linked as
+   * typed, and the status line says why, once. Always on: the reader asked for it, and each step is
+   * undone by u like any edit.
+   */
+  private typedAddresses(id: NodeId, before: string) {
+    const doc = this.doc;
+    const meta = { author: this.user };
+    let r: ReturnType<typeof linkAddresses> = { links: [], whole: null };
+    this.agentUndo = null;
+    this.attempt(() => (r = linkAddresses(doc, id, before, meta)));
+    const TITLED = 5;
+    // Each title is tried when it arrives, or once an edit of the same node in the meantime is finished.
+    const when = (node: NodeId, f: () => void) => {
+      if (doc !== this.doc) return;
+      if (this.edit?.node === node && this.edit.field === "body") this.titling.set(node, [...(this.titling.get(node) ?? []), f]);
+      else f(), this.emit();
+    };
+    const titleOf = (url: string, target: Ref): Promise<{ ok: true; title: string | null } | { ok: false; message: string }> => (target.kind === "wiki" ? Promise.resolve({ ok: true, title: target.title }) : pageInfo(url));
+    const unread = (url: string, why: string) => this.say(`No title for ${clip(url, 60)}: ${clip(why, 140)} The address stays as typed, linked.`);
+    if (r.whole) {
+      const w = r.whole;
+      this.say(`This section is now a link to ${w.target.kind === "wiki" ? `the article “${w.target.title}”` : hostOf(w.url)}${w.target.kind === "url" ? "; reading the page for its title…" : "."}`);
+      void titleOf(w.url, w.target).then((t) =>
+        when(w.node, () => {
+          if (!t.ok) return unread(w.url, t.message);
+          if (t.title && titleWhole(doc, w, t.title, meta)) this.say(`Named “${clip(t.title, 60)}” after its page. u to undo.`);
+        }),
+      );
+      return;
+    }
+    if (!r.links.length) return;
+    const urls = [...new Set(r.links.map((l) => l.url))];
+    const read = urls.filter((u) => r.links.find((l) => l.url === u)!.target.kind === "url");
+    const left = read.slice(TITLED);
+    const skip = new Set(left);
+    this.say(`${r.links.length === 1 ? "Linked the address" : `Linked ${r.links.length} addresses`}${read.length > skip.size ? "; reading the page titles…" : "."}${left.length ? ` ${left.length} more ${left.length === 1 ? "is" : "are"} linked as typed, without reading ${left.length === 1 ? "its page" : "their pages"} (at most ${TITLED} are read from one edit).` : ""}`);
+    for (const url of urls) {
+      if (skip.has(url)) continue;
+      const links: AddressLink[] = r.links.filter((l) => l.url === url);
+      void titleOf(url, links[0].target).then((t) =>
+        when(id, () => {
+          if (!t.ok) return unread(url, t.message);
+          if (!t.title) return;
+          let n = 0;
+          // Last first: titling one occurrence moves the text after it, never before.
+          for (const l of [...links].reverse()) this.attempt(() => void (titleLink(doc, l, t.title!, meta) && n++));
+          if (n) this.say(`Linked as “${clip(t.title, 60)}”, the ${links[0].target.kind === "wiki" ? "article's" : "page's"} title. u brings the address back.`);
+        }),
+      );
+    }
   }
 
   /**
@@ -3059,12 +3127,14 @@ class Store {
   }
 
   /**
-   * A web page has arrived (or failed): a pane on a section it no longer has closes (livePane), the
-   * keys that waited for it are done, and the column's page takes its title.
+   * A web page has arrived (or failed), or one divided by length has been arranged by itself
+   * (`arranged`): a pane on a section it no longer has closes (livePane), the keys that waited for
+   * it are done, and the column's page takes its title.
    */
-  private pageArrived() {
+  private pageArrived(arranged = false) {
     const closed = this.pruneSections();
-    if (closed) this.say(closed === 1 ? "A pane showed a section this web page no longer has; it is closed." : `${closed} panes showed sections this web page no longer has; they are closed.`);
+    const what = arranged ? (closed === 1 ? "A model has arranged this page into sections; the pane on one of its parts by length is closed." : `A model has arranged this page into sections; the ${closed} panes on its parts by length are closed.`) : closed === 1 ? "A pane showed a section this web page no longer has; it is closed." : `${closed} panes showed sections this web page no longer has; they are closed.`;
+    if (closed) this.say(what);
     this.replayHeld();
     if (this.colWiki?.url) this.setTitle();
     this.emit();

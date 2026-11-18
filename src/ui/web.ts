@@ -8,12 +8,14 @@
  * ask the server's cache alone (summary &cached=1), which never reads the site. The page's HTML
  * arrives sanitised and is cleaned again where it is drawn (wiki.ts articleText, with `web` set).
  * Two actions the reader takes on a page replace what is kept here: Reload (read it again) and
- * Arrange (a model's summary, and sections for a page divided only by length).
+ * Arrange (a model's summary, and sections for a page divided only by length). So does a page
+ * divided by length that the server is arranging by itself: it comes with `auto: running`, is shown
+ * as it is meanwhile, and is replaced by the arranged page when the server has it (`follow`).
  */
-import type { WebArticle, WebSection, WebSummary, WebUnusable } from "../../server/page";
+import type { AutoArrange, WebArticle, WebSection, WebSummary, WebUnusable } from "../../server/page";
 import { normUrl } from "../llm/web";
 
-export type { WebArticle, WebSection, WebSummary, WebUnusable };
+export type { AutoArrange, WebArticle, WebSection, WebSummary, WebUnusable };
 
 /** Why a page is not shown: the server's reason and its words, with what it knew of the page. */
 export type WebProblem = Pick<WebUnusable, "message" | "title" | "description" | "site"> & { reason: WebUnusable["reason"] | "uncached" };
@@ -33,9 +35,11 @@ export interface PagesConfig {
 }
 
 let config: PagesConfig = { mode: "live" };
-let onChange: () => void = () => {};
+/** Told when a page has arrived or changed; `arranged` when it is a page the server arranged by itself. */
+type Changed = (what?: { arranged?: string }) => void;
+let onChange: Changed = () => {};
 
-export function configurePages(c: Partial<PagesConfig> | undefined, changed: () => void) {
+export function configurePages(c: Partial<PagesConfig> | undefined, changed: Changed) {
   if (c) config = { ...config, ...c };
   onChange = changed;
 }
@@ -77,6 +81,7 @@ function load<T>(cache: Map<string, Loadable<T>>, key: string, path: string, fie
   void get<T>(path, field).then((r) => {
     cache.set(key, r.ok ? { state: "ready", value: r.value, cached: r.cached } : { state: "failed", at: Date.now(), ...stripOk(r) });
     onChange();
+    if (r.ok && field === "article") follow(r.value as WebArticle);
   });
   return cache.get(key)!;
 }
@@ -131,6 +136,7 @@ async function post<X>(route: "reload" | "arrange", url: string): Promise<Acted<
     if (res.ok && body.ok && body.article) {
       articles.set(normUrl(url), { state: "ready", value: body.article as WebArticle, cached: false });
       summaries.delete(normUrl(url));
+      follow(body.article as WebArticle, url);
       return body as unknown as Acted<X>;
     }
     const reason = typeof body.reason === "string" ? body.reason : "error";
@@ -141,6 +147,42 @@ async function post<X>(route: "reload" | "arrange", url: string): Promise<Acted<
   } catch {
     return { ok: false, reason: "offline", message: "The local server could not be reached." };
   }
+}
+
+/** Pages whose arranging by itself is being waited for, by key. */
+const following = new Set<string>();
+
+/**
+ * A page the server is arranging by itself (`auto: running`): wait for it, by asking arrange with
+ * `auto`, which never starts a call of its own, and put what comes in place of the page kept here,
+ * the arranged page, or the same page with why it was not arranged. `url` is the address asked for,
+ * which is what the server keeps the page under.
+ */
+function follow(a: WebArticle, url = a.requested) {
+  const k = normUrl(url);
+  if (a.auto?.state !== "running" || following.has(k)) return;
+  following.add(k);
+  const settle = (next: WebArticle | null, auto?: AutoArrange) => {
+    const have = articles.get(k);
+    if (have?.state !== "ready" || have.value.hash !== a.hash) return; // read again since: that copy has its own state
+    if (next) {
+      articles.set(k, { state: "ready", value: next, cached: false });
+      summaries.delete(k);
+      return onChange({ arranged: url });
+    }
+    const { auto: _, ...rest } = have.value;
+    articles.set(k, { ...have, value: auto ? { ...rest, auto } : rest });
+    onChange();
+  };
+  void fetch("/api/page/arrange", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, auto: true }) })
+    .then(async (res) => {
+      const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (res.ok && body.ok && body.article) return settle(body.article as WebArticle);
+      const reason = typeof body.reason === "string" ? body.reason : "error";
+      settle(null, reason === "idle" ? undefined : { state: "skipped", reason, message: typeof body.message === "string" && body.message ? body.message : `The server answered ${res.status}.` });
+    })
+    .catch(() => settle(null, { state: "skipped", reason: "offline", message: "The local server could not be reached." }))
+    .finally(() => following.delete(k));
 }
 
 const strs = (body: Record<string, unknown>, ...ks: string[]) => Object.fromEntries(ks.filter((k) => typeof body[k] === "string" && body[k]).map((k) => [k, body[k] as string]));
@@ -160,18 +202,32 @@ const TITLE_WAIT_MS = 2500;
  * none (only its host), cannot be read, or takes longer than `wait`.
  */
 export async function pageTitle(url: string, wait = TITLE_WAIT_MS): Promise<string | null> {
-  if (config.mode === "off") return null;
+  const r = await pageInfo(url, wait);
+  return r.title ?? null;
+}
+
+/**
+ * A page's own title, read now (and kept by the server, which arranges a page divided by length
+ * by itself meanwhile): for an address typed into a node's text. `title` is null when the page
+ * gives none but its host; a page that cannot be read says why (with the title it gave, if any).
+ */
+export async function pageInfo(url: string, wait = 20_000): Promise<{ ok: true; title: string | null } | { ok: false; message: string; title?: string | null }> {
+  if (config.mode === "off") return { ok: false, message: PLAIN.off };
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), wait);
   try {
     const res = await fetch(`/api/page/summary?url=${encodeURIComponent(url)}`, { signal: ac.signal });
-    const body = (await res.json().catch(() => ({}))) as { summary?: { title?: unknown }; title?: unknown };
+    const body = (await res.json().catch(() => ({}))) as { summary?: { title?: unknown }; title?: unknown; message?: unknown; reason?: unknown };
     const t = body.summary?.title ?? body.title;
-    if (typeof t !== "string") return null;
-    const title = t.replace(/\s+/g, " ").trim().slice(0, 300);
-    return title && title !== siteOf(url) ? title : null;
+    const words = typeof t === "string" ? t.replace(/\s+/g, " ").trim().slice(0, 300) : "";
+    const title = words && words !== siteOf(url) ? words : null;
+    if (!res.ok || !body.summary) {
+      const reason = typeof body.reason === "string" && body.reason in PLAIN ? (body.reason as WebProblem["reason"]) : "error";
+      return { ok: false, message: typeof body.message === "string" && body.message ? body.message : PLAIN[reason], title };
+    }
+    return { ok: true, title };
   } catch {
-    return null;
+    return { ok: false, message: ac.signal.aborted ? "The page took too long to answer." : "The local server could not be reached." };
   } finally {
     clearTimeout(timer);
   }

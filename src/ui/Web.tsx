@@ -11,9 +11,10 @@
  * always clear whose text this is. Its head names the site, the title and who wrote it; its foot
  * says where it is from, when it was read and what was changed. A page that cannot be shown says
  * why in plain words and offers the original. Nothing is written on it: annotations are for
- * Wikipedia's text and the reader's own. What a model made of it at the reader's request (s) is
- * marked as the model's: its summary above the lead (the page's own opening still follows), a
- * line when the sections are the model's, and the foot.
+ * Wikipedia's text and the reader's own. What a model made of it (at the reader's request, s, or by
+ * itself for a page with no headings) is marked as the model's: its summary above the lead (the
+ * page's own opening still follows), a line when the sections are the model's, and the foot. While a
+ * page divided by length is being arranged by itself, or when it was not, one quiet line says so.
  */
 import { useContext } from "preact/hooks";
 import { clip, type Range } from "../core/text";
@@ -94,10 +95,22 @@ function Attribution({ a }: { a: WebArticle["attribution"] }) {
 function ModelSummary({ m }: { m: NonNullable<WebArticle["model"]> }) {
   return (
     <aside class="web-model" data-model-summary>
-      <p class="web-model-label">Summary written by a model{m.by ? ` (${m.by})` : ""} from the page's openings, at your request; not the author's words</p>
+      <p class="web-model-label">Summary written by a model{m.by ? ` (${m.by})` : ""} from the page's openings; not the author's words</p>
       <p class="web-model-text">{m.summary}</p>
       {m.note && <p class="web-model-label">{m.note}</p>}
     </aside>
+  );
+}
+
+/** What s does after an arrangement by itself was not made, by its reason: nothing, where s would be refused the same. */
+const AGAIN: Record<string, string> = { manual: " s arranges it.", "no-model": "", off: "" };
+
+/** One quiet line on a page divided by length: a model is arranging it, or why it is not (and what s does). */
+function AutoLine({ auto }: { auto: NonNullable<WebArticle["auto"]> }) {
+  return (
+    <p class="web-model-label web-auto" data-auto={auto.state}>
+      {auto.state === "running" ? "Arranging into sections with a model…" : `Kept in parts by length: ${auto.message}${AGAIN[auto.reason] ?? " s tries again."}`}
+    </p>
   );
 }
 
@@ -189,7 +202,8 @@ export function WebView({ host, own, headFocused }: { host: string } & ViewOpts)
       {at0.stale && <p class="wiki-wait">The page no longer answers; this is the copy read before. R tries again.</p>}
       {!sec && v.model?.summary && <ModelSummary m={v.model} />}
       {sec || v.lead ? <WebText host={host} row={{ t: "head" }} html={sec ? sec.html : v.lead} /> : null}
-      {!sec && v.outline === "model" && <p class="web-model-label web-arranged">Sections arranged by a model at your request; the page has no headings of its own.</p>}
+      {!sec && v.outline === "model" && <p class="web-model-label web-arranged">Sections arranged by a model; the page has no headings of its own.</p>}
+      {!sec && v.auto && <AutoLine auto={v.auto} />}
       <Rows article={v} host={host} parent={h.sec} nested={!!h.nested} at={at} showing={showing} />
       <Attribution a={at0} />
     </section>

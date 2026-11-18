@@ -41,8 +41,8 @@ use on their own machine.
 | `EX_USER` | your login name | The name on commits the server makes for you (the page lets you change yours with `/user`). |
 | `EX_WIKI` | `live` | `mock`: built-in test articles, no network (the browser tests); `off`: every `/api/wiki/*` route answers 503. |
 | `EX_PAGES` | `live` | Web pages opened from a link (`/api/page/*`): `mock`: built-in test pages, no network (the browser tests); `off`: every route answers 503. Only a page you open is read, robots.txt is honoured, and the text is cached under `EX_DATA/page-cache/`, never in a library (docs/pages.md). |
-| `EX_PAGES_ARRANGE` | `on` when a model is configured | `off`: `s` on a web page (a model's summary, and sections for a page divided only by length) is refused. |
-| `EX_PAGE_CALLS` | `20` | Model calls a day (UTC) for arranging web pages, for the whole server, counted in `EX_DATA/page-calls.json`. Pages are also not arranged while the plan's limits are nearly used. |
+| `EX_PAGES_ARRANGE` | `on` when a model is configured | A model's summary of a web page, and sections for a page divided only by length: on request (`s`), and by itself, once, for a page with no headings when it is first read. `manual`: only on request. `off`: never (`s` is refused). |
+| `EX_PAGE_CALLS` | `20` | Model calls a day (UTC) for arranging web pages, by request or by themselves, for the whole server, counted in `EX_DATA/page-calls.json`. Pages are also not arranged while the plan's limits are nearly used. |
 | `EX_HOSTS` | (none) | Extra host names the dev server answers to, comma-separated. `localhost` and `*.ts.net` (Tailscale) are always allowed. |
 | `EX_WIKI_LANG` | `en` | Which Wikipedia. |
 | `EX_WIKI_CONTACT` | unset | An email address, an `https://` URL or `User:Name` for the User-Agent of Wikipedia requests. Without it requests are spaced 6.5 s apart (the page says so once, the first time it is slow); with it, 1 s. Nothing else about you is sent. |
@@ -267,10 +267,17 @@ Press `?` for every key. The short version:
   a page that needs JavaScript) says why and offers the original. `W` opens the original in a new
   tab. An address on wikipedia.org opens as the article. Nothing is written on a page's text: its
   annotations are not kept (docs/pages.md).
-- On a web page, `s` asks the model (only then, within `EX_PAGE_CALLS` calls a day) for a short
-  summary, shown above the page's opening and marked as the model's, and, for a page with no
-  headings that was divided by length, for sections of its choosing; a page with headings keeps
-  them. Pressed again on the same text it costs nothing. `R` reads the page again (it is otherwise
+- A page with **no headings** of its own is first shown divided by length, and the model is asked
+  once, by itself, for sections of its choosing and a short summary (within `EX_PAGE_CALLS` calls a
+  day, never while the plan's limits are nearly used; `EX_PAGES_ARRANGE=manual` leaves it to `s`).
+  A quiet line says "Arranging into sections with a model…" meanwhile, and the page swaps to the
+  sections when they come (a pane open on one of its parts by length closes, and the status line
+  says so). When it is not done (the day's calls used, the plan nearly used, no model, the call
+  failed) the parts stay and the line says why; it is not tried again by itself for the same text.
+  The result is kept with the page, so opening it again costs nothing.
+- On a web page, `s` asks the model for the same: a short summary, shown above the page's opening
+  and marked as the model's, and, for a page divided by length, sections of its choosing; a page
+  with headings keeps them. Pressed again on the same text it costs nothing. `R` reads the page again (it is otherwise
   kept as first read): unchanged text keeps what the model made; a page that no longer answers
   keeps the copy read before, marked stale. Both are in the page's menu too. A link's card shows
   the page's title, author, date and first sentence once the page has been read, and choosing an
@@ -304,7 +311,16 @@ Press `?` for every key. The short version:
   is listed at the top of its section as detached, with a link to the old revision. Tables and
   preformatted blocks are shown but cannot be selected; a formula is selected whole.
 - To link by hand, select words (`i`, widen with `H` `L`) and press `w`: the picker offers library
-  sections and notes, Wikipedia articles and, for a pasted address, the web page. `w` on a link
+  sections and notes, Wikipedia articles and, for a pasted address, the web page.
+- **An address typed into a node's text** (`http://` or `https://`, not in a `code span`, not on
+  words already linked) is linked when the edit is finished, as `w` would link it; then the page's
+  title is read and put in place of the address, the link moving with it (a Wikipedia article's
+  address links to the article, under its title). Each is one step of `u`: `u` after the title
+  brings the address back, still linked, and it is not converted again. A page that cannot be read
+  keeps its address, linked, and the status line says why. At most five pages are read from one
+  edit. A section whose whole text is one address becomes a section that is only that link, named
+  after the page if it had no title of its own. A page with no headings is arranged in the
+  background meanwhile, so opening the link is immediate. `w` on a link
   retargets it, `D` removes it (for good: see below); `:/link target` and `:/unlink` do the same.
 - A link to a deleted node stays in the text, marked broken, with the titles down to it from the
   library root, so undoing the delete finds it again.
@@ -568,7 +584,7 @@ Node ids are the library's, so one batch of ops can work anywhere in it.
 | `GET /api/wiki/…` | Wikipedia through the server's cache: `summary`, `article` (`&full=1` for every section), `senses`, `suggest`, `media?u=` (a picture on upload.wikimedia.org that an article served here shows; same-origin requests only) (server/wikiRoutes.ts) |
 | `GET /api/page/…` | a web page through the server's cache: `article?url=`, `summary?url=` (`&cached=1`: never read the page), `media?u=` (an image a cached page shows, or a video's still); same-origin requests only (server/pageRoutes.ts) |
 | `POST /api/page/reload` `{ url }` | read the page again: the new copy, or the last one with `stale: <why>` when it no longer answers |
-| `POST /api/page/arrange` `{ url }` | a model's summary of a cached page, and sections for one divided by length: `{ article, called, arranged, note? }`; refused with `{ reason, message }` (404 not read here, 422 too long, 429 the day's calls or the plan, 502 the call failed, 503 no model or `EX_PAGES_ARRANGE=off`) |
+| `POST /api/page/arrange` `{ url, auto? }` | a model's summary of a cached page, and sections for one divided by length: `{ article, called, arranged, note? }`; refused with `{ reason, message }` (404 not read here, 422 too long, 429 the day's calls or the plan, 502 the call failed, 503 no model or `EX_PAGES_ARRANGE=off`). `auto: true` only waits for an arrangement under way (409 `idle` if there is none) and never makes a call. `article`, `reload` and `summary` start one by themselves for a page divided by length; `article` and `reload` say where it stands in the page's `auto` |
 | `POST /api/l/<id>/links/scan` `{ node, review? }` | scan a node and record what is found as pending; with `review`, the model reviewer judges what is new, and the approved links are handed back to be made |
 | `GET /api/l/<id>/links/pending?node=<node>&subtree=1&tier=auto\|suggest&all=1&claim=1` | pending suggestions with the context a reviewer needs; `all` with every determination; `claim` hands out the approved links no page has made |
 | `POST /api/l/<id>/links/accept` / `reject` `{ ids, author? }` | link them in one commit, or record them as declined |

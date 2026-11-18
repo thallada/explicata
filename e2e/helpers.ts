@@ -7,7 +7,8 @@
  * words, links on the screenshot's cells; the articles are the mock
  * Wikipedia's fixtures in server/wikiMock.ts).
  */
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { inflateSync } from "node:zlib";
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
@@ -261,6 +262,10 @@ export async function seedLinks(request: APIRequestContext) {
 export const WEB = {
   tracing: "https://tracing.example.org/posts/following-a-request",
   essay: "https://essays.example.com/hundred.html",
+  /** Headingless, and the mock model fails to arrange it ("mockfail" in its title). */
+  drift: "https://notes.example.net/field/unsorted",
+  /** Headingless, and the mock model takes 1.5 s to arrange it ("mockslow"). */
+  slow: "https://tides.example.net/slow-water",
   letters: "https://letters.example.net/p/on-maps",
   rules: "https://software.example.com/2003/10/twelve-rules/",
   phare: "https://encyclopedie.example.org/fr/Phare_de_la_Pointe",
@@ -297,6 +302,12 @@ export async function seedWeb(request: APIRequestContext) {
   ];
   const res = await request.post("/api/ops", { data: { author: "linker", message: "Seed links to web pages", ops } });
   if (!res.ok()) throw new Error(`seeding web links failed: ${res.status()} ${await res.text()}`);
+}
+
+/** Model calls made today to arrange pages, as the e2e server counts them (<EX_DATA>/page-calls.json). */
+export function pageCalls(): number {
+  const file = join(process.env.EX_E2E_DATA ?? "", "page-calls.json");
+  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as { used: number }).used : 0;
 }
 
 /** A screenshot's pixels (a PNG of 8-bit RGB or RGBA, as Playwright writes them): px(x, y) is [r, g, b]. */

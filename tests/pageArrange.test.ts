@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mockLLM } from "../src/llm/mock";
 import type { ArrangeReply, JsonReq, LLM } from "../src/llm/types";
 import { BY_MODEL, PageClient, SUMMARY_BY_MODEL, type WebArticle } from "../server/page";
-import { ARRANGE_SYSTEM, Arranger, DailyBudget, MAX_TOKENS, MIN_OPENING, OPENING, arrangeInput, cleanSections, estimate, serverBudget, type ArrangerOptions } from "../server/pageArrange";
+import { ARRANGE_SYSTEM, Arranger, DailyBudget, MAX_TOKENS, MIN_OPENING, OPENING, arrangeInput, arrangeMode, cleanSections, estimate, serverBudget, type ArrangerOptions } from "../server/pageArrange";
 import type { PageUnit } from "../server/pageHtml";
 import { MOCK_PAGES, makeMockPageFetch } from "../server/pageMock";
 import { pageRoutes } from "../server/pageRoutes";
@@ -377,6 +377,119 @@ describe("Reload", () => {
   });
 });
 
+describe("arranging by itself (Arranger.auto)", () => {
+  const settled = () => new Promise((r) => setTimeout(r, 5));
+
+  it("a page divided by length: one call, started and not waited for; then kept, so opening it again costs nothing", async () => {
+    const { pages, llm, arranger } = await setup({ llm: counting(undefined, 20) });
+    const calls = (llm as ReturnType<typeof counting>).calls;
+    expect(arranger.auto(MOCK_PAGES.essay)).toEqual({ state: "running" });
+    // Asked again while it runs: the same flight, no second call; the browser's join waits for it.
+    expect(arranger.auto(MOCK_PAGES.essay)).toEqual({ state: "running" });
+    const joined = await arranger.arrange(MOCK_PAGES.essay, { join: true });
+    expect(joined).toMatchObject({ ok: true, called: true, arranged: "sections" });
+    expect(calls).toHaveLength(1);
+    // Arranged as it now reads: nothing more to say, and no call, however often it is opened.
+    expect(arranger.auto(MOCK_PAGES.essay)).toBeUndefined();
+    const again = (await pages.article(MOCK_PAGES.essay)) as { ok: true; value: WebArticle };
+    expect(again.value.outline).toBe("model");
+    expect(await arranger.arrange(MOCK_PAGES.essay, { join: true })).toMatchObject({ ok: true, called: false });
+    expect(calls).toHaveLength(1);
+    // What is sent is what s sends: the same cap and the same untrusted-text block.
+    expect(calls[0].system).toBe(ARRANGE_SYSTEM);
+    expect(calls[0].prompt).toContain("<page_text>");
+    expect(calls[0].vars?.mode).toBe("arrange");
+  });
+
+  it("a page with headings, one short enough to be a lead, and one not read here: nothing, no call", async () => {
+    const { llm, arranger } = await setup({ read: [MOCK_PAGES.tracing, MOCK_PAGES.letters, MOCK_PAGES.vanishing, MOCK_PAGES.pdf] });
+    for (const u of [MOCK_PAGES.tracing, MOCK_PAGES.letters, MOCK_PAGES.vanishing, MOCK_PAGES.pdf, MOCK_PAGES.essay]) expect(arranger.auto(u)).toBeUndefined();
+    await settled();
+    expect((llm as ReturnType<typeof counting>).calls).toHaveLength(0);
+  });
+
+  it("the day's budget spent: not tried, and why, every time it is asked; the join and s are refused the same, with no call", async () => {
+    const llm = counting();
+    const { arranger } = await setup({ llm, budget: new DailyBudget(null, 0) });
+    const st = arranger.auto(MOCK_PAGES.essay);
+    expect(st).toMatchObject({ state: "skipped", reason: "budget", message: expect.stringMatching(/used up/) });
+    expect(arranger.auto(MOCK_PAGES.essay)).toEqual(st);
+    expect(await arranger.arrange(MOCK_PAGES.essay, { join: true })).toMatchObject({ ok: false, reason: "budget" });
+    expect(await arranger.arrange(MOCK_PAGES.essay)).toMatchObject({ ok: false, reason: "budget" });
+    expect(llm.calls).toHaveLength(0);
+  });
+
+  it("the plan nearly used, no model, EX_PAGES_ARRANGE=off or manual: skipped with the reason, no call; manual leaves s working", async () => {
+    const plan = () => ({ windows: [], tightest: null, remainingPercent: 8, resetsAt: null, warning: true, limited: false, limitResetsAt: null, limitLabel: null, overage: null, updatedAt: null, source: null });
+    const cases: [Setup, string][] = [
+      [{ plan }, "plan"],
+      [{ llm: null }, "no-model"],
+      [{ on: false, auto: false }, "off"],
+      [{ auto: false }, "manual"],
+    ];
+    for (const [o, reason] of cases) {
+      const llm = o.llm === null ? null : counting();
+      const { arranger } = await setup({ ...o, llm });
+      expect(arranger.auto(MOCK_PAGES.essay)).toMatchObject({ state: "skipped", reason });
+      await settled();
+      if (llm) expect((llm as ReturnType<typeof counting>).calls).toHaveLength(0);
+      if (reason === "manual") {
+        expect(arranger.automatic).toBe(false);
+        expect(await arranger.arrange(MOCK_PAGES.essay)).toMatchObject({ ok: true, called: true });
+      }
+    }
+  });
+
+  it("a failed attempt is not tried again by itself (it waits for s); a Reload that changes the text tries once more", async () => {
+    let fail = true;
+    const llm = counting((req) => {
+      if (fail) throw new Error("the model is down");
+      return { summary: "Arranged.", sections: [{ title: "One", start: Number(req.vars?.first) }, { title: "Two", start: Number(req.vars?.first) + 3 }] };
+    });
+    const base = makeMockPageFetch();
+    let html = await (await base(MOCK_PAGES.essay)).text();
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) =>
+      String(input) === MOCK_PAGES.essay ? new Response(html, { headers: { "content-type": "text/html" } }) : base(input, init)) as typeof globalThis.fetch;
+    const pages = client(fetch);
+    await pages.article(MOCK_PAGES.essay);
+    const arranger = new Arranger({ pages: () => pages, llm: () => llm, budget: new DailyBudget(null, 20) });
+    expect(arranger.auto(MOCK_PAGES.essay)).toEqual({ state: "running" });
+    expect(await arranger.arrange(MOCK_PAGES.essay, { join: true })).toMatchObject({ ok: false, reason: "failed" });
+    await settled();
+    for (let i = 0; i < 3; i++) expect(arranger.auto(MOCK_PAGES.essay)).toMatchObject({ state: "skipped", reason: "failed", message: /the model is down/ });
+    expect(llm.calls).toHaveLength(1);
+    // Read again, unchanged: the same hash, still not tried again.
+    await pages.reload(MOCK_PAGES.essay);
+    expect(arranger.auto(MOCK_PAGES.essay)).toMatchObject({ state: "skipped", reason: "failed" });
+    expect(llm.calls).toHaveLength(1);
+    // s tries again, and works.
+    fail = false;
+    expect(await arranger.arrange(MOCK_PAGES.essay)).toMatchObject({ ok: true, called: true, arranged: "sections" });
+    expect(llm.calls).toHaveLength(2);
+    // Changed text: a new hash, the parts by length again, and one attempt for it.
+    html = html.replace("June 2019", "July 2019");
+    const r = await pages.reload(MOCK_PAGES.essay);
+    expect(r.ok && r.value.outline).toBe("chunks");
+    expect(arranger.auto(MOCK_PAGES.essay)).toEqual({ state: "running" });
+    expect(await arranger.arrange(MOCK_PAGES.essay, { join: true })).toMatchObject({ ok: true, called: true });
+    expect(llm.calls).toHaveLength(3);
+  });
+
+  it("the join never starts a call", async () => {
+    const llm = counting();
+    const { arranger } = await setup({ llm });
+    expect(await arranger.arrange(MOCK_PAGES.essay, { join: true })).toMatchObject({ ok: false, reason: "idle" });
+    expect(llm.calls).toHaveLength(0);
+  });
+
+  it("EX_PAGES_ARRANGE: off, manual, else both", () => {
+    expect(arrangeMode({})).toEqual({ on: true, auto: true });
+    expect(arrangeMode({ EX_PAGES_ARRANGE: "manual" })).toEqual({ on: true, auto: false });
+    expect(arrangeMode({ EX_PAGES_ARRANGE: "off" })).toEqual({ on: false, auto: false });
+    expect(arrangeMode({ EX_PAGES_ARRANGE: "on" })).toEqual({ on: true, auto: true });
+  });
+});
+
 describe("POST /api/page/reload and /api/page/arrange", () => {
   let server: Server;
   let base: string;
@@ -410,13 +523,41 @@ describe("POST /api/page/reload and /api/page/arrange", () => {
 
   it("arrange: 404 for a page not read here; then the page arranged; then the kept result", async () => {
     expect(await post("arrange", { url: MOCK_PAGES.essay })).toMatchObject({ status: 404, body: { ok: false, reason: "uncached" } });
-    expect((await post("reload", { url: MOCK_PAGES.essay })).status).toBe(200);
+    // Read (here by a Reload): a page divided by length is arranged by itself, and s finds it done or joins it.
+    expect(await post("reload", { url: MOCK_PAGES.essay })).toMatchObject({ status: 200, body: { article: { outline: "chunks", auto: { state: "running" } } } });
     const r = await post("arrange", { url: MOCK_PAGES.essay });
-    expect(r).toMatchObject({ status: 200, body: { ok: true, called: true, arranged: "sections", article: { outline: "model" } } });
+    expect(r).toMatchObject({ status: 200, body: { ok: true, arranged: "sections", article: { outline: "model" } } });
     expect((await post("arrange", { url: MOCK_PAGES.essay })).body).toMatchObject({ ok: true, called: false });
     expect(llm.calls).toHaveLength(1);
     const article = await (await fetch(`${base}/api/page/article?url=${encodeURIComponent(MOCK_PAGES.essay)}`)).json();
     expect(article.article.outline).toBe("model");
+  });
+
+  it("article starts arranging a page divided by length and says so; the join waits for it; a page with headings says nothing", async () => {
+    const before = llm.calls.length;
+    const first = await (await fetch(`${base}/api/page/article?url=${encodeURIComponent(MOCK_PAGES.drift)}`)).json();
+    expect(first.article).toMatchObject({ outline: "chunks", auto: { state: "running" } });
+    const joined = await post("arrange", { url: MOCK_PAGES.drift, auto: true });
+    // The mock model fails a page whose title says "mockfail": the join answers with the failure.
+    expect(joined).toMatchObject({ status: 502, body: { ok: false, reason: "failed" } });
+    const again = await (await fetch(`${base}/api/page/article?url=${encodeURIComponent(MOCK_PAGES.drift)}`)).json();
+    expect(again.article.auto).toMatchObject({ state: "skipped", reason: "failed" });
+    expect(llm.calls.length).toBe(before + 1);
+    const tracing = await (await fetch(`${base}/api/page/article?url=${encodeURIComponent(MOCK_PAGES.tracing)}`)).json();
+    expect(tracing.article.auto).toBeUndefined();
+    expect(llm.calls.length).toBe(before + 1);
+  });
+
+  it("summary, read for a link's title, starts it too; a card's look at the cache does not", async () => {
+    const before = llm.calls.length;
+    const card = await fetch(`${base}/api/page/summary?url=${encodeURIComponent(MOCK_PAGES.slow)}&cached=1`);
+    expect(card.status).toBe(404);
+    expect((await (await fetch(`${base}/api/page/summary?url=${encodeURIComponent(MOCK_PAGES.slow)}`)).json()).summary.title).toBe("Slow water (mockslow)");
+    expect(await post("arrange", { url: MOCK_PAGES.slow, auto: true })).toMatchObject({ status: 200, body: { ok: true, called: true, arranged: "sections" } });
+    expect(llm.calls.length).toBe(before + 1);
+    const read = await (await fetch(`${base}/api/page/summary?url=${encodeURIComponent(MOCK_PAGES.slow)}&cached=1`)).json();
+    expect(read.ok).toBe(true);
+    expect(llm.calls.length).toBe(before + 1);
   });
 
   it("reload: a page that cannot be shown is a 422, as for article", async () => {
