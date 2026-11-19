@@ -501,8 +501,10 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 
 /*
  * Branch colours (forks.ts): a fork's panes and curves share a colour, a plain trail keeps one, and
- * the first trail has none. Seven hues at one OKLCH lightness and a low chroma, in an order that
- * keeps neighbours apart for red-green and blue-yellow colour blindness too. The focused branch's at
+ * the first trail has none. Sixteen hues in two tiers: 0–7 at one OKLCH lightness and a low chroma,
+ * in an order that keeps neighbours apart for red-green and blue-yellow colour blindness too; 8–15
+ * deeper (darker in light, lower in dark) and stronger, at the hue angles halfway between the
+ * first's, used once those are taken. Saved boards keep their indices. The focused branch's at
  * full strength, the others' fainter. Where it shows, by `/colors` (.panes[data-colors]): line, the
  * curve and the rule under the pane's title (its tab's foot, a dash on its spine); top, a band
  * across the pane's top; edge, a band down its left; off, nowhere. Never the pane's ground.
@@ -515,6 +517,15 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
   --hue-4: oklch(60% 0.1 210);
   --hue-5: oklch(60% 0.1 120);
   --hue-6: oklch(60% 0.1 255);
+  --hue-7: oklch(60% 0.1 345);
+  --hue-8: oklch(44% 0.13 52);
+  --hue-9: oklch(44% 0.13 142);
+  --hue-10: oklch(44% 0.13 277);
+  --hue-11: oklch(44% 0.13 7);
+  --hue-12: oklch(44% 0.13 187);
+  --hue-13: oklch(44% 0.13 97);
+  --hue-14: oklch(44% 0.13 232);
+  --hue-15: oklch(44% 0.13 322);
   /* The first trail's, near the text's ink. */
   --hue-none: oklch(50% 0 0);
 }
@@ -527,6 +538,15 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
     --hue-4: oklch(74% 0.085 210);
     --hue-5: oklch(74% 0.085 120);
     --hue-6: oklch(74% 0.085 255);
+    --hue-7: oklch(74% 0.085 345);
+    --hue-8: oklch(60% 0.13 52);
+    --hue-9: oklch(60% 0.13 142);
+    --hue-10: oklch(60% 0.13 277);
+    --hue-11: oklch(60% 0.13 7);
+    --hue-12: oklch(60% 0.13 187);
+    --hue-13: oklch(60% 0.13 97);
+    --hue-14: oklch(60% 0.13 232);
+    --hue-15: oklch(60% 0.13 322);
     --hue-none: oklch(80% 0 0);
   }
 }
@@ -538,6 +558,15 @@ kbd, .help code { font-family: var(--mono); font-size: 0.86em; border: 1px solid
 [data-hue="4"] { --hue: var(--hue-4); }
 [data-hue="5"] { --hue: var(--hue-5); }
 [data-hue="6"] { --hue: var(--hue-6); }
+[data-hue="7"] { --hue: var(--hue-7); }
+[data-hue="8"] { --hue: var(--hue-8); }
+[data-hue="9"] { --hue: var(--hue-9); }
+[data-hue="10"] { --hue: var(--hue-10); }
+[data-hue="11"] { --hue: var(--hue-11); }
+[data-hue="12"] { --hue: var(--hue-12); }
+[data-hue="13"] { --hue: var(--hue-13); }
+[data-hue="14"] { --hue: var(--hue-14); }
+[data-hue="15"] { --hue: var(--hue-15); }
 /* Fainter off the focused branch. Both are fixed per pane, so moving the branch changes no custom property (which every element in the pane would inherit). */
 .pane, .curves path, .trail-step, .map-row, .rail { --hue-faint: color-mix(in oklab, var(--hue) 70%, transparent); }
 .panes:not([data-colors="off"]) .curves path { stroke: var(--hue-faint); stroke-width: var(--hair, 1px); }
@@ -1067,6 +1096,15 @@ html { scroll-padding-top: 48px; }
 [data-src-hue="4"] { --src-hue: var(--hue-4); }
 [data-src-hue="5"] { --src-hue: var(--hue-5); }
 [data-src-hue="6"] { --src-hue: var(--hue-6); }
+[data-src-hue="7"] { --src-hue: var(--hue-7); }
+[data-src-hue="8"] { --src-hue: var(--hue-8); }
+[data-src-hue="9"] { --src-hue: var(--hue-9); }
+[data-src-hue="10"] { --src-hue: var(--hue-10); }
+[data-src-hue="11"] { --src-hue: var(--hue-11); }
+[data-src-hue="12"] { --src-hue: var(--hue-12); }
+[data-src-hue="13"] { --src-hue: var(--hue-13); }
+[data-src-hue="14"] { --src-hue: var(--hue-14); }
+[data-src-hue="15"] { --src-hue: var(--hue-15); }
 [data-src-hue]:not([data-src-on]) { --src-hue-now: color-mix(in oklab, var(--src-hue) 70%, transparent); }
 [data-src-hue][data-src-on] { --src-hue-now: var(--src-hue); }
 .panes[data-layout="pages"]:not([data-colors="off"]) :is(.lnk, .wiki-text a)[data-src-hue] { text-decoration-color: var(--src-hue-now); text-decoration-thickness: 2px; }

@@ -20,7 +20,7 @@
  */
 
 /** How many colours branches cycle through (style.css `--hue-0` …). */
-export const HUES = 7;
+export const HUES = 16;
 
 export interface Tree<R, S = unknown> {
   ref: R;
